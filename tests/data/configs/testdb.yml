@@ -1,0 +1,45 @@
+db_name: testdb
+description: test db config
+paths:
+  land: s3://mojap-land/dep/{{env}}/{{db}}
+  raw-hist: s3://mojap-raw-hist/dep/{{env}}/{{db}}
+  curated: s3://alpha-dep-etl/{{env}}/{{db}}/curated
+  derived: s3://alpha-dep-etl/{{env}}/{{db}}/derived
+db_lint_options:
+  compress-data: false
+  remove-tables-on-pass: true
+  all-must-pass: true
+  validator-engine: pandas
+  timestamp-partition-name: mojap_file_land_timestamp
+tables:
+  table1:
+    etl_stages: &default_etl
+      land:
+        file_format: csv
+      raw-hist:
+        file_format: csv
+      curated:
+        file_format: parquet
+    transform_type: default
+    lint_options: &default_lint
+      required: false
+      expect-header: true
+      headers-ignore-case: false
+      allow-missing-cols: true
+    frequency: "@daily"
+  table2: &default_table_spec
+    etl_stages: *default_etl
+    transform_type: custom
+    lint_options: *default_lint
+    frequency: "@daily"
+  table3:
+    etl_stages:
+      derived:
+        file_format: parquet
+    transform_type: derived
+    lint_options: *default_lint
+    input_data:
+      testdb:
+        table1: raw-hist
+        table2: raw-hist
+    frequency: "@daily"

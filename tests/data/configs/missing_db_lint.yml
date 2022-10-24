@@ -1,0 +1,22 @@
+db_name: missing_db_lint
+description: missing_db_lint test db
+tables:
+  table1:
+    etl_stages: &default_etl
+      land:
+        file_format: parquet
+      raw-hist:
+        file_format: parquet
+      curated:
+        file_format: parquet
+    transform_type: custom
+    lint_options: &default_lint
+      required: false
+      expect-header: true
+      headers-ignore-case: false
+      allow-missing-cols: true
+  table2: &default_table_spec
+    etl_stages: *default_etl
+    transform_type: default
+    lint_options: *default_lint
+  table3: *default_table_spec

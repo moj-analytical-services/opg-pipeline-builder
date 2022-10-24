@@ -1,0 +1,22 @@
+{
+    "columns": [
+        {
+            "name": "my_int",
+            "type": "int64",
+            "nullable": true
+        },
+        {
+            "name": "hobby",
+            "type": "string",
+            "nullable": true
+        }
+    ],
+    "_converted_from": "arrow_schema",
+    "$schema": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.3.0.json",
+    "name": "table2",
+    "description": "",
+    "file_format": "csv",
+    "sensitive": false,
+    "primary_key": [],
+    "partitions": []
+}

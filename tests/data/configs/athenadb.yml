@@ -1,0 +1,47 @@
+db_name: athenadb
+description: test db config
+paths:
+  land: s3://alpha-dep-etl/examples/{{env}}/{{db}}/land
+  raw: s3://alpha-dep-etl/examples/{{env}}/{{db}}/raw
+  curated: s3://alpha-dep-etl/examples/{{env}}/{{db}}/curated
+  derived: s3://alpha-dep-etl/examples/{{env}}/{{db}}/derived
+db_lint_options:
+  compress-data: false
+  remove-tables-on-pass: true
+  all-must-pass: true
+  validator-engine: pandas
+  timestamp-partition-name: mojap_file_land_timestamp
+shared_sql:
+  default:
+    - raw_to_curated
+tables:
+  table1:
+    etl_stages: &default_etl
+      land:
+        file_format: parquet
+      raw:
+        file_format: parquet
+      curated:
+        file_format: parquet
+    transform_type: default
+    lint_options: &default_lint
+      required: false
+      expect-header: true
+      headers-ignore-case: false
+      allow-missing-cols: true
+    frequency: "@daily"
+  table2:
+    etl_stages:
+      derived:
+        file_format: parquet
+    transform_type: derived
+    lint_options: *default_lint
+    input_data:
+      testdb:
+        table1: curated
+    frequency: "@daily"
+    sql:
+      temp:
+        - table2_copy
+      final:
+        - table2

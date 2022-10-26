@@ -18,6 +18,20 @@ from ..utils.utils import (
 
 
 class DataLinterTransformEngine(BaseTransformEngine):
+    """
+    mp_args: Optional[Union[dict, None]]
+        Multiprocessing arguments for data_linter. See validator
+        in opg_etl.utils.linter_utils for structure of the dictionary
+        to pass.
+
+    dag_timestamp: Optional[Union[int, None]]
+        Integer timestamp for the pipeline run. Only needs to be specified
+        if temp_staging is set to True in mp_args.
+    """
+
+    mp_args: Optional[Union[dict, None]] = None
+    dag_timestamp: Optional[Union[int, None]] = get_dag_timestamp()
+
     @staticmethod
     def _validate_mp_args(mp_args: dict) -> None:
         schema = {
@@ -142,7 +156,6 @@ class DataLinterTransformEngine(BaseTransformEngine):
         mp_args,
         dag_timestamp: int,
         timestamp_partition_name: Optional[str] = "mojap_file_land_timestamp",
-        **kwargs,
     ) -> None:
         proceed = False
         if mp_args is not None:
@@ -165,9 +178,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             for tbl_name in config["tables"]:
                 tbl_tmp_path = os.path.join(pass_tmp_path, tbl_name)
 
-                tbl_tmp_files = get_modified_filepaths_from_s3_folder(
-                    tbl_tmp_path, **kwargs
-                )
+                tbl_tmp_files = get_modified_filepaths_from_s3_folder(tbl_tmp_path)
 
                 tbl_moj_prts = [
                     extract_mojap_partition(
@@ -192,14 +203,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 for tmp_file in tbl_tmp_files:
                     wr.s3.delete_objects(tmp_file)
 
-    def run(
-        self,
-        tables: List[str],
-        stage: str = "raw-hist",
-        mp_args: Optional[Union[dict, None]] = None,
-        dag_timestamp: Optional[Union[int, None]] = get_dag_timestamp(),
-        **kwargs,
-    ) -> None:
+    def run(self, tables: List[str], stage: str = "raw-hist") -> None:
         """Runs data_linter based on db config over the given tables
 
         Runs data_linter over data in land and moves it to
@@ -215,25 +219,16 @@ class DataLinterTransformEngine(BaseTransformEngine):
         tables: List[str]
             List of table names.
 
-        stages: str
+        stage: str
             ETL stage for linter metadata
-
-        mp_args: Optional[Union[dict, None]]
-            Multiprocessing arguments for data_linter. See validator
-            in opg_etl.utils.linter_utils for structure of the dictionary
-            to pass.
-
-        dag_timestamp: Optional[Union[int, None]]
-            Integer timestamp for the pipeline run. Only needs to be specified
-            if temp_staging is set to True in mp_args.
-
-        kwargs:
-            Args to pass to move_from_tmp_to_pass (see opg_etl.utils.linter_utils)
 
         Return
         ------
         None
         """
+        mp_args = self.mp_args
+        dag_timestamp = self.dag_timestamp
+
         if mp_args is None:
             mp_args = get_multiprocessing_settings()
 
@@ -247,7 +242,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
 
-        db = self._db
+        db = self.db
         primary_partition = db.primary_partition_name()
         db_config = db.lint_config(tables, meta_stage=stage, tmp_staging=tmp_staging)
         if db_config:
@@ -260,7 +255,6 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     mp_args=mp_args,
                     dag_timestamp=dag_timestamp,
                     timestamp_partition_name=primary_partition,
-                    **kwargs,
                 )
 
             else:

@@ -143,12 +143,12 @@ def test_db_tables(db_fixt):
 
 
 def test_db_config(db_fixt):
-    from opg_pipeline_builder.validator import read_db_config
+    from opg_pipeline_builder.validator import read_pipeline_config
 
     db, _ = db_fixt
-    db_config = read_db_config(db.name)
+    pipeline_config = read_pipeline_config(db.name)
 
-    assert db_config == db.config
+    assert pipeline_config == db.config
 
 
 def test_db_metadata_path(db_fixt):
@@ -369,11 +369,11 @@ def tbl_fixt(request):
 
 @pytest.fixture
 def db_config(tbl_fixt):
-    from opg_pipeline_builder.validator import read_db_config
+    from opg_pipeline_builder.validator import read_pipeline_config
 
     _, expected = tbl_fixt
-    db_config = read_db_config(expected["db_name"])
-    return db_config
+    db_config = read_pipeline_config(expected["db_name"])
+    return db_config.dict()
 
 
 def test_db_tbl_name(tbl_fixt):

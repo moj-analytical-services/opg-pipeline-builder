@@ -22,6 +22,19 @@ from ..utils.schema_reader import SchemaReader
 
 
 class AthenaTransformEngine(BaseTransformEngine):
+    """
+    sql_table_filter: Optional[bool] = False
+        Optional arg whether to use the given table's name to filter
+        shared sql tables rather than using the first result.
+
+    **jinja_args
+        Optional jinja args to pass onto the pydbtools SQL call.
+    """
+
+    sql_table_filter: Optional[bool] = False
+    db_search_limit: Optional[Union[int, None]] = None
+    jinja_args: Optional[Union[dict, None]] = None
+
     def _create_shared_tmp_tables(
         self, tf_types: List[str], snapshot_timestamps: str, **jinja_args
     ) -> None:
@@ -305,14 +318,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     tmp_db=tmp_db,
                 )
 
-    def run(
-        self,
-        stages: Dict[str, str],
-        tables: Union[List[str], None] = None,
-        sql_table_filter: Optional[bool] = False,
-        db_search_limit: Optional[int] = 10_000,
-        **jinja_args,
-    ):
+    def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform tranfromation.
@@ -328,19 +334,14 @@ class AthenaTransformEngine(BaseTransformEngine):
             pass all db tables for processing. Note, tables not applicable to this
             step will be filtered out prior to transformation.
 
-        sql_table_filter: Optional[bool] = False
-            Optional arg whether to use the given table's name to filter
-            shared sql tables rather than using the first result.
-
-        **jinja_args
-            Optional jinja args to pass onto the pydbtools SQL call.
-
         Return
         ------
         None
         """
-        if tables is None:
-            tables = get_source_tbls()
+        sql_table_filter = self.sql_table_filter
+        db_search_limit = self.db_search_limit
+        jinja_args = {} if self.jinja_args is None else self.jinja_args
+        tables = get_source_tbls() if tables is None else tables
 
         db = self.db
         db_name = db.name
@@ -494,7 +495,10 @@ class AthenaTransformEngine(BaseTransformEngine):
                 print(f"No partitions to process for {table_name}")
 
     def run_derived(
-        self, tables: List[str], stage: Optional[str] = "derived", **jinja_args
+        self,
+        tables: List[str],
+        stage: Optional[str] = "derived",
+        jinja_args: Optional[dict] = None,
     ):
         """Creates derived tables for db using Athena
 
@@ -516,6 +520,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         """
         if stage != "derived":
             raise ValueError("Expecting derived ETL step for this transform")
+
+        if jinja_args is None:
+            jinja_args = {}
 
         db = self.db
         primary_partition = db.primary_partition_name()

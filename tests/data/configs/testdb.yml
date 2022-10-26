@@ -1,5 +1,8 @@
 db_name: testdb
 description: test db config
+etl:
+  - step: to_land
+    engine_name: data_linter
 paths:
   land: s3://mojap-land/dep/{{env}}/{{db}}
   raw-hist: s3://mojap-raw-hist/dep/{{env}}/{{db}}
@@ -37,7 +40,6 @@ tables:
       derived:
         file_format: parquet
     transform_type: derived
-    lint_options: *default_lint
     input_data:
       testdb:
         table1: raw-hist

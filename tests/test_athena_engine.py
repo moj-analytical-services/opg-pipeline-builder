@@ -402,7 +402,9 @@ class TestAthenaTransformEngine:
         glue_client.create_table(**spec)
 
         if status:
-            transform.run_derived(tables=[table.name], database_name=get_full_db_name())
+            transform.run_derived(
+                tables=[table.name], jinja_args={"database_name": get_full_db_name()}
+            )
 
             copied_meta.remove_column(primary_partition)
 

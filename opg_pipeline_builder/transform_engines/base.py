@@ -3,9 +3,10 @@ import logging
 import awswrangler as wr
 
 from copy import deepcopy
-from inspect import signature
+from inspect import getmembers, signature, isfunction
 from datetime import datetime
 from dataengineeringutils3.s3 import _add_slash
+from pydantic import BaseModel
 from ssm_parameter_store import EC2ParameterStore
 from typing import Union, List, Dict, Optional, Tuple
 
@@ -25,18 +26,26 @@ from ..utils.utils import (
 )
 
 
-class BaseTransformEngine:
-    def __init__(self, db_name: Optional[str] = None, debug: Optional[bool] = False):
+class BaseTransformEngine(BaseModel):
+    db: Database
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __init__(
+        self, db_name: Optional[str] = None, debug: Optional[bool] = False, **kwargs
+    ):
         if db_name is None:
             db_name = get_source_db()
-        self._db = Database(db_name=db_name)
+        db = Database(db_name=db_name)
+        super().__init__(db=db, **kwargs)
 
         if debug:
             for name in logging.Logger.manager.loggerDict.keys():
                 if any([logger in name for logger in aws_loggers]):
                     logging.getLogger(name).setLevel(logging.WARNING)
 
-        self._validate()
+        self._validate_method_kwargs()
 
     @staticmethod
     def _check_public_method_args(parameters: object) -> bool:
@@ -46,11 +55,11 @@ class BaseTransformEngine:
         if "stages" or "stage" in parameters:
             return True
 
-    def _validate(self):
+    def _validate_method_kwargs(self):
         methods = [
             signature(getattr(self, method_name)).parameters
-            for method_name in dir(self)
-            if callable(getattr(self, method_name)) and not method_name.startswith("_")
+            for method_name, _ in getmembers(self, predicate=isfunction)
+            if not method_name.startswith("_")
         ]
 
         validation = all(
@@ -64,10 +73,6 @@ class BaseTransformEngine:
             raise AssertionError(
                 "Transform engine public methods have invalid" " arguments."
             )
-
-    @property
-    def db(self) -> str:
-        return self._db
 
     # Helper methods - all private
     def _list_table_files(
@@ -117,7 +122,7 @@ class BaseTransformEngine:
         if modified_before is None:
             modified_before = get_end_date()
 
-        table = self._db.table(table_name)
+        table = self.db.table(table_name)
         etl_stages = deepcopy(table.etl_stages())
         table_paths = table.table_data_paths()
 

@@ -64,7 +64,7 @@ class Pipeline:
             db_name = get_source_db()
 
         self._db = Database(db_name)
-        self._tf = Transforms(db_name=db_name, debug=debug)
+        self._tf = Transforms()
 
         missing_etl_steps = {
             step: None for step in etl_steps if step not in pipeline_etl_steps

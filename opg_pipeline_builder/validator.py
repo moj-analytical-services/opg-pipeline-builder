@@ -1,196 +1,304 @@
 import os
 import yaml
-from .utils.constants import project_root, meta_data_base_path, get_env, etl_stages
-from data_linter import validation
-from jsonschema import validate, exceptions
+import inspect
+import importlib
+
+from pathlib import Path
 from copy import deepcopy
+from itertools import chain
+from croniter import croniter
+from data_linter import validation
+from typing import Any, List, Dict, Optional
+from pydantic import BaseModel, MissingError, ValidationError, root_validator, validator
+from opg_pipeline_builder.utils.constants import (
+    etl_stages,
+    transform_types,
+    sql_path,
+    project_root,
+    etl_steps,
+)
 
 
-def _validate_config_keys(config: dict) -> None:
-    config_keys = list(config.keys())
+class TableConfig(BaseModel):
+    etl_stages: Dict[str, Dict[str, str]]
+    transform_type: str
+    frequency: str
+    sql: Optional[Dict[str, List[str]]] = None
+    lint_options: Optional[Dict[str, Any]] = None
+    input_data: Optional[Dict[str, Dict[str, str]]] = None
 
-    if (
-        set(config_keys).intersection(
-            ["db_name", "description", "db_lint_options", "paths", "tables"]
+    @root_validator(pre=True, allow_reuse=True)
+    def check_transform_type_consistency(cls, values):
+        transform_type = values.get("transform_type")
+        input_data = values.get("input_data")
+        lint_options = values.get("lint_options")
+        sql = values.get("sql")
+
+        if transform_type == "derived":
+            assert lint_options is None, "Derived table should not have lint_options"
+            assert input_data is not None, "Derived table should have input_data"
+        else:
+            assert (
+                lint_options is not None
+            ), f"{transform_type} table should have lint_options"
+            assert (
+                input_data is None
+            ), f"{transform_type} table should not have input_data"
+            assert sql is None, f"{transform_type} table should not have sql"
+
+        return values
+
+    @validator("frequency", allow_reuse=True)
+    def check_valid_cron(cls, v):
+        assert croniter.is_valid(v), f"{v} isn't a valid cron expression"
+        return v
+
+    @validator("etl_stages", allow_reuse=True)
+    def check_valid_etl_stages(cls, v):
+        inv_stages = [k for k, _ in v.items() if k not in etl_stages]
+        assert not inv_stages, f"ETL stages must be one of {', '.join(etl_stages)}"
+        return v
+
+    @validator("transform_type", allow_reuse=True)
+    def check_transform_type(cls, v):
+        assert (
+            v in transform_types
+        ), f"Transform type should be one of {', '.join(transform_types)}"
+        return v
+
+
+class ETLStepConfig(BaseModel):
+    step: str
+    engine_name: str
+    transform_name: Optional[str] = None
+    transform_kwargs: Optional[Dict[str, object]] = None
+
+    @validator("step", allow_reuse=True)
+    def check_in_etl_steps(cls, v):
+        assert v in etl_steps, f"{v} not one of the following: {', '.join(etl_steps)}"
+        return v
+
+    @validator("engine_name", allow_reuse=True)
+    def check_engine_exists(cls, v, values):
+        method = values.get("transform_name", "run")
+
+        engine_spec = importlib.util.find_spec(
+            v, package="opg_pipeline_builder.transform_engines"
         )
-        is False
-    ):
-        raise KeyError("config does not contain required keys")
 
+        if engine_spec is None:
+            module_path = f"engines.{v}"
+            try:
+                engine_module = importlib.import_module(module_path)
+            except ModuleNotFoundError:
+                raise ModuleNotFoundError(f"Cannot find transform engine {v}")
+        else:
+            engine_module = importlib.import_module(
+                f"opg_pipeline_builder.transform_engines.{v}"
+            )
 
-def _validate_db_config_lint(config: dict):
-    full_lint_config = deepcopy(config["db_lint_options"])
-    if full_lint_config is not None:
-        full_lint_config["tables"] = {}
-        for table in config.get("tables").keys():
-            table_lint_config = config["tables"][table]
-            table_tf = table_lint_config["transform_type"]
-
-            if table_tf != "derived":
-                try:
-                    lint_opt = table_lint_config["lint_options"]
-                    full_lint_config["tables"][table] = lint_opt
-
-                except Exception:
-                    raise KeyError(f"{table} does not have lint options")
-
-        dummy_s3_paths = {
-            "land-base-path": "s3://testing-bucket/land/",  # Where to get the data from
-            "fail-base-path": "s3://testing-bucket/fail/",  # Where to write if failed
-            "pass-base-path": "s3://testing-bucket/pass/",  # Where to write if passed
-            "log-base-path": "s3://testing-bucket/logs/",
-        }
-
-        full_lint_config = {**dummy_s3_paths, **full_lint_config}
+        class_name = (
+            "".join([n[0].upper() + n[1:].lower() for n in v.split("_")])
+            + "TransformEngine"
+        )
 
         try:
-            validation.load_and_validate_config(full_lint_config)
+            engine = getattr(engine_module, class_name)
+        except AttributeError:
+            raise AttributeError(f"Engine {v} should contain a {class_name} class.")
 
-        except Exception:
-            raise ValueError("Incorrect data_linter config options")
-
-
-def _validate_db_config_tables(config: dict) -> None:
-    meta_path_prefix = os.path.join(meta_data_base_path, get_env(), config["db_name"])
-
-    cfig_tbls = config["tables"]
-    cfig_stgs = set()
-    for tbl in cfig_tbls:
-        tbl_stgs = set(cfig_tbls[tbl]["etl_stages"].keys())
-        cfig_stgs = cfig_stgs.union(tbl_stgs)
-
-    stage_meta_tbls = {}
-    for stage in cfig_stgs:
-        try:
-            stage_meta_files = os.listdir(os.path.join(meta_path_prefix, stage))
-        except FileNotFoundError:
-            stage_meta_files = []
-
-        stage_meta_tbls[stage] = [
-            table.replace(".json", "") for table in stage_meta_files
+        functions = [
+            f
+            for f in inspect.getmembers(engine, predicate=inspect.isfunction)
+            if f[0] == method
         ]
 
-    cfig_data = config["tables"]
-    cfig_tbls = list(config["tables"].keys())
+        assert len(functions) == 1, f"{class_name} class is missing {method} method"
 
-    defcust_tables = [
-        table
-        for table in cfig_tbls
-        if cfig_data[table]["transform_type"] in ["default", "custom"]
-    ]
-
-    derived_tables = [
-        table for table in cfig_tbls if cfig_data[table]["transform_type"] == "derived"
-    ]
-
-    initial_check = True
-    for stage in cfig_stgs.intersection({"raw", "raw-hist", "processed", "curated"}):
-        if set(defcust_tables) != set(stage_meta_tbls[stage]):
-            initial_check = False
-
-    derived_check = set(derived_tables) == set(stage_meta_tbls.get("derived", []))
-    final_check = initial_check and derived_check
-
-    if not final_check:
-        raise AttributeError("Config tables do not match metadata tables")
+        return v
 
 
-def _validate_db_config_etl(config: dict) -> None:
-    full_etl_config = deepcopy(config)
-    full_etl_config.pop("db_lint_options")
-    tables = full_etl_config["tables"].keys()
+class PipelineConfig(BaseModel):
+    db_name: str
+    etl: List[ETLStepConfig]
+    description: str
+    paths: Dict[str, str]
+    db_lint_options: Dict[str, Any]
+    shared_sql: Optional[Dict[str, List[str]]] = None
+    optional_arguments: Optional[Dict[str, Any]] = None
+    tables: Dict[str, TableConfig]
 
-    for table in tables:
-        try:
-            full_etl_config["tables"][table].pop("lint_options")
+    @root_validator(allow_reuse=True)
+    def check_shared_sql_exists(cls, values):
+        db_name, shared_sql = values.get("db_name"), values.get("shared_sql")
+        if shared_sql is not None:
+            shared_sql_names = list(chain(*[v for _, v in shared_sql.items()]))
+            shared_sql_path = os.path.join(sql_path, db_name, "shared")
 
-        except KeyError:
-            ...
+            assert os.path.exists(
+                shared_sql_path
+            ), "shared sql directory does not exist"
 
-    etl_pattern = "|".join([f"^{stage}$" for stage in etl_stages])
+            shared_sql_filenames = [Path(p).stem for p in os.listdir(shared_sql_path)]
 
-    etl_anyof = [{"required": [stage]} for stage in etl_stages]
+            missing_sql = [f for f in shared_sql_names if f not in shared_sql_filenames]
+            missing_sql_substr = ", ".join(missing_sql)
+            message = (
+                f"{missing_sql_substr} are missing in the database's shared sql folder"
+            )
 
-    schema = {
-        "type": "object",
-        "properties": {
-            "db_name": {"type": "string"},
-            "description": {"type": "string"},
-            "buckets": {
-                "type": "object",
-                "patternProperties": {etl_pattern: {"type": "string"}},
-                "unevaluatedProperties": False,
-                "anyOf": etl_anyof,
-            },
-            "optional_arguments": {"anyOf": [{"type": "null"}, {"type": "object"}]},
-            "tables": {
-                "type": "object",
-                "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                        "transform_type": {"enum": ["default", "custom", "derived"]},
-                        "etl_stages": {
-                            "type": "object",
-                            "patternProperties": {
-                                etl_pattern: {
-                                    "type": "object",
-                                    "properties": {
-                                        "file_format": {
-                                            "enum": ["parquet", "json", "csv"]
-                                        }
-                                    },
-                                }
-                            },
-                            "unevaluatedProperties": False,
-                            "anyOf": etl_anyof,
-                        },
-                    },
-                    "if": {"properties": {"transform_type": {"const": "derived"}}},
-                    "then": {
-                        "properties": {
-                            "input_data": {
-                                "type": "object",
-                                "additionalProperties": {
-                                    "type": "object",
-                                    "additionalProperties": {"type": "string"},
-                                },
-                            }
-                        },
-                        "required": ["input_data"],
-                    },
-                    "required": ["transform_type", "etl_stages"],
-                },
-            },
-        },
-    }
+            assert not missing_sql, message
 
-    try:
-        validate(instance=full_etl_config, schema=schema)
+        return values
 
-    except exceptions.ValidationError as e:
-        raise ValueError(f"Config etl schema validation error: {e}")
+    @validator("paths", allow_reuse=True)
+    def check_in_etl_stages(cls, v):
+        stage = [k for k, _ in v.items()][0]
+        assert stage in etl_stages, f"{stage} is not a valid ETL stage"
+        return v
+
+    @validator("shared_sql", allow_reuse=True)
+    def check_in_transform_types(cls, v):
+        transform_type = [k for k, _ in v.items()][0]
+        valid_type = transform_type in transform_types
+        error_message = f'{transform_type} is not one of {", ".join(transform_types)}'
+        assert valid_type, error_message
+        return v
+
+    @root_validator(pre=True, allow_reuse=True)
+    def check_derived_inputs(cls, values):
+        db_name, tables = values.get("db_name"), values.get("tables")
+
+        table_inputs = [
+            (name, table.get("input_data"))
+            for name, table in tables.items()
+            if table.get("input_data") is not None
+        ]
+
+        table_names = [
+            name for name, table in tables.items() if table.get("input_data") is None
+        ]
+
+        for table_name, table_input in table_inputs:
+            for input_db, input_table_dict in table_input.items():
+                if input_db == db_name:
+                    missing_tables = [
+                        tbl
+                        for tbl, _ in input_table_dict.items()
+                        if tbl not in table_names
+                    ]
+
+                    missing_tables_msg = (
+                        f"{table_name} inputs do not exist in config: "
+                        + ", ".join(missing_tables)
+                    )
+                    assert not missing_tables, missing_tables_msg
+
+                else:
+                    config_path = os.path.join(project_root, "configs")
+                    input_db_config_paths = [
+                        p for p in os.listdir(config_path) if Path(p).stem == input_db
+                    ]
+
+                    assert (
+                        len(input_db_config_paths) == 1
+                    ), f"Cannot find config for {input_db}"
+
+                    input_db_config_path = os.path.join(
+                        config_path, input_db_config_paths[0]
+                    )
+
+                    with open(input_db_config_path, "r") as f:
+                        input_db_config = yaml.safe_load(f)
+
+                    try:
+                        input_db_config = cls(**input_db_config).dict()
+                    except ValidationError as e:
+                        assert False, f"Invalid config for {input_db}: {e}"
+
+                    db_tables = input_db_config.get("tables")
+                    missing_tables = [
+                        tbl
+                        for tbl, _ in input_table_dict.items()
+                        if tbl not in db_tables
+                    ]
+                    assert (
+                        not missing_tables
+                    ), f"{', '.join(missing_tables)} not listed in {input_db} config"
+
+        return values
+
+    @root_validator(pre=True, allow_reuse=True)
+    def check_derived_sql(cls, values):
+        db_name, tables = values.get("db_name"), values.get("tables")
+
+        table_sql_info = [
+            (name, chain(*[sql for _, sql in table.get("sql").items()]))
+            for name, table in tables.items()
+            if table.get("sql") is not None and table.get("transform_type") == "derived"
+        ]
+
+        for table_name, table_sql in table_sql_info:
+            table_sql_root_path = os.path.join(sql_path, db_name, table_name)
+            missing_sql = [
+                sql
+                for sql in table_sql
+                if not os.path.exists(os.path.join(table_sql_root_path, f"{sql}.sql"))
+            ]
+            missing_sql_message = f"SQL for {table_name} is missing: " ", ".join(
+                missing_sql
+            )
+            assert not missing_sql, missing_sql_message
+
+        return values
+
+    @root_validator(allow_reuse=True)
+    def check_data_linter_config(cls, values):
+        full_lint_config = deepcopy(values.get("db_lint_options"))
+        etl_engines = [e.engine_name for e in values.get("etl")]
+        if full_lint_config is not None:
+            full_lint_config["tables"] = {}
+
+            for table_name, table in values.get("tables").items():
+                table_tf = table.transform_type
+
+                if table_tf != "derived":
+                    try:
+                        lint_opt = table.lint_options
+                        full_lint_config["tables"][table_name] = lint_opt
+
+                    except Exception:
+                        raise KeyError(f"{table} does not have lint options")
+
+            dummy_s3_paths = {
+                "land-base-path": "s3://testing-bucket/land/",
+                "fail-base-path": "s3://testing-bucket/fail/",
+                "pass-base-path": "s3://testing-bucket/pass/",
+                "log-base-path": "s3://testing-bucket/logs/",
+            }
+
+            full_lint_config = {**dummy_s3_paths, **full_lint_config}
+
+            validation.load_and_validate_config(full_lint_config)
+
+        elif "data_linter" in etl_engines:
+            raise MissingError(
+                "db_lint_options config is required to use data_linter engine"
+            )
+
+        return values
 
 
-def validate_config(config: dict) -> None:
-    try:
-        _validate_config_keys(config)
-        _validate_db_config_tables(config)
-        _validate_db_config_lint(config)
-        _validate_db_config_etl(config)
-    except Exception as e:
-        raise exceptions.ValidationError(f"DB config validation error:\n{e}")
-
-
-def read_db_config(db_name: str) -> dict:
+def read_pipeline_config(db_name: str) -> dict:
     try:
         with open(
             os.path.join(project_root, "configs", f"{db_name}.yml")
         ) as config_file:
-            db_tables = yaml.safe_load(config_file)
+            raw_pipeline_config = yaml.safe_load(config_file)
 
     except FileNotFoundError:
         raise ValueError(f"{db_name} config does not exist.")
 
-    validate_config(db_tables)
+    pipeline_config = PipelineConfig(**raw_pipeline_config)
 
-    return db_tables
+    return pipeline_config

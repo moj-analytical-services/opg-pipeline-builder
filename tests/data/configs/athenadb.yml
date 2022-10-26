@@ -1,5 +1,8 @@
 db_name: athenadb
 description: test db config
+etl:
+  - step: to_land
+    engine_name: data_linter
 paths:
   land: s3://alpha-dep-etl/examples/{{env}}/{{db}}/land
   raw: s3://alpha-dep-etl/examples/{{env}}/{{db}}/raw
@@ -35,7 +38,6 @@ tables:
       derived:
         file_format: parquet
     transform_type: derived
-    lint_options: *default_lint
     input_data:
       testdb:
         table1: curated

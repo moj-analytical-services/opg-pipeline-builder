@@ -6,7 +6,7 @@ from .utils.constants import (
     get_source_tbls,
     get_metadata_path,
 )
-from .validator import read_db_config
+from .validator import read_pipeline_config
 from mojap_metadata import Metadata
 from typing import Union, List, Dict, Tuple, Optional
 from copy import deepcopy
@@ -51,7 +51,7 @@ class Database:
         if db_name is None:
             db_name = get_source_db()
 
-        db_config = read_db_config(db_name)
+        db_config = read_pipeline_config(db_name).dict()
         self._name = db_name
 
         tables = list(db_config["tables"].keys())

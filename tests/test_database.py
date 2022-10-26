@@ -152,10 +152,8 @@ def test_db_config(db_fixt):
 
 
 def test_db_metadata_path(db_fixt):
-    from opg_pipeline_builder.utils.constants import project_root
-
     db, expected = db_fixt
-    full_expected_path = os.path.join(project_root, expected["metadata_path"])
+    full_expected_path = expected["metadata_path"]
     assert db.metadata_path == full_expected_path
 
 
@@ -440,13 +438,10 @@ def test_db_tbl_paths(tbl_fixt):
 
 
 def test_db_tbl_meta_paths(tbl_fixt):
-    from opg_pipeline_builder.utils.constants import project_root
-
     tbl, expected = tbl_fixt
     expected_meta_paths = expected["table_meta_paths"]
     full_meta_paths = {
-        stage: os.path.join(project_root, meta_path)
-        for stage, meta_path in expected_meta_paths.items()
+        stage: meta_path for stage, meta_path in expected_meta_paths.items()
     }
     assert tbl.table_meta_paths() == full_meta_paths
 
@@ -458,15 +453,8 @@ def test_db_tbl_input_data(tbl_fixt):
 
 
 def test_db_tbl_lint_config(tbl_fixt):
-    from opg_pipeline_builder.utils.constants import project_root
-
     tbl, expected = tbl_fixt
     expected_lint_config = expected["lint_config"]
-    if expected_lint_config:
-        expected_lint_config["metadata"] = os.path.join(
-            project_root, expected_lint_config["metadata"]
-        )
-
     assert tbl.lint_config() == expected_lint_config
 
 
@@ -509,8 +497,6 @@ def test_db_table(db_fixt):
 
 @pytest.mark.parametrize("specify_tables, spec", [(False, None), (True, 1), (True, -1)])
 def test_db_lint_config(db_fixt, specify_tables, spec):
-    from opg_pipeline_builder.utils.constants import project_root
-
     db, expected = db_fixt
     exp_lint_config = deepcopy(expected["lint_config"])
     tbls = expected["tables"]
@@ -527,7 +513,7 @@ def test_db_lint_config(db_fixt, specify_tables, spec):
         ]:
             tbl_lint = exp_lint_config["tables"][table]
             tbl_meta_pth = tbl_lint["metadata"]
-            tbl_lint["metadata"] = os.path.join(project_root, tbl_meta_pth)
+            tbl_lint["metadata"] = tbl_meta_pth
             spec_tables_config[table] = tbl_lint
 
     exp_lint_config["tables"] = spec_tables_config

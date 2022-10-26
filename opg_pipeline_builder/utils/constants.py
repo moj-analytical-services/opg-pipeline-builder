@@ -36,10 +36,10 @@ aws_loggers = {
 transform_types = ["default", "custom", "derived"]
 
 project_root = Path(__file__).absolute().parents[2]
-meta_data_base_path = f"{project_root}/meta_data"
-glue_jobs_path = f"{project_root}/glue_jobs"
-sql_path = f"{project_root}/sql"
-engines_path = f"{project_root}/engines"
+meta_data_base_path = "meta_data"
+glue_jobs_path = "glue_jobs"
+sql_path = "sql"
+engines_path = "engines"
 
 # Functions that retrieve environment variables
 

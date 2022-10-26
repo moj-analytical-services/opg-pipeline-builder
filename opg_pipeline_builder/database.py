@@ -1,6 +1,5 @@
 import os
 from .utils.constants import (
-    project_root,
     get_env,
     get_source_db,
     get_source_tbls,
@@ -371,7 +370,7 @@ class Database:
         db_config = self.config
         shsql_config = db_config.get("shared_sql", {})
 
-        sql_base_path = os.path.join(project_root, "sql", self.name, "shared")
+        sql_base_path = os.path.join("sql", self.name, "shared")
 
         init_tf_type = tf_types[0]
         shsql_intersect = shsql_config.get(init_tf_type, [])
@@ -671,7 +670,7 @@ class DatabaseTable:
         tbl_sql = tbl_config.get("sql", {})
         tbl_sql_type = tbl_sql.get(type, [])
 
-        sql_dir = os.path.join(project_root, "sql", self.db_name, self.name)
+        sql_dir = os.path.join("sql", self.db_name, self.name)
 
         sql_paths = [(tbl, os.path.join(sql_dir, f"{tbl}.sql")) for tbl in tbl_sql_type]
 

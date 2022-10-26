@@ -3,7 +3,7 @@ import os
 import boto3
 import glob
 from typing import Tuple, Union, List, Optional
-from .constants import project_root, aws_region
+from .constants import aws_region
 from concurrent.futures import ThreadPoolExecutor
 from dataengineeringutils3.s3 import (
     s3_path_to_bucket_key,
@@ -236,7 +236,7 @@ def list_configs() -> List[str]:
     Return:
         List[str]: List of databases with configs
     """
-    config_yml_files = glob.glob(os.path.join(project_root, "configs", "*yml"))
+    config_yml_files = glob.glob(os.path.join("configs", "*yml"))
 
     config_names = [Path(f).stem for f in config_yml_files]
 

@@ -14,7 +14,6 @@ from opg_pipeline_builder.utils.constants import (
     etl_stages,
     transform_types,
     sql_path,
-    project_root,
     etl_steps,
 )
 
@@ -195,9 +194,8 @@ class PipelineConfig(BaseModel):
                     assert not missing_tables, missing_tables_msg
 
                 else:
-                    config_path = os.path.join(project_root, "configs")
                     input_db_config_paths = [
-                        p for p in os.listdir(config_path) if Path(p).stem == input_db
+                        p for p in os.listdir("configs") if Path(p).stem == input_db
                     ]
 
                     assert (
@@ -205,7 +203,7 @@ class PipelineConfig(BaseModel):
                     ), f"Cannot find config for {input_db}"
 
                     input_db_config_path = os.path.join(
-                        config_path, input_db_config_paths[0]
+                        "configs", input_db_config_paths[0]
                     )
 
                     with open(input_db_config_path, "r") as f:
@@ -291,9 +289,7 @@ class PipelineConfig(BaseModel):
 
 def read_pipeline_config(db_name: str) -> dict:
     try:
-        with open(
-            os.path.join(project_root, "configs", f"{db_name}.yml")
-        ) as config_file:
+        with open(os.path.join("configs", f"{db_name}.yml")) as config_file:
             raw_pipeline_config = yaml.safe_load(config_file)
 
     except FileNotFoundError:

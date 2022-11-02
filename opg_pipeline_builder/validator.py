@@ -8,6 +8,7 @@ from copy import deepcopy
 from itertools import chain
 from croniter import croniter
 from data_linter import validation
+from pkg_resources import resource_filename
 from typing import Any, List, Dict, Optional
 from pydantic import BaseModel, MissingError, ValidationError, root_validator, validator
 from opg_pipeline_builder.utils.constants import (
@@ -81,11 +82,11 @@ class ETLStepConfig(BaseModel):
     def check_engine_exists(cls, v, values):
         method = values.get("transform_name", "run")
 
-        engine_spec = importlib.util.find_spec(
-            v, package="opg_pipeline_builder.transform_engines"
+        engine_spec = resource_filename(
+            "opg_pipeline_builder", f"transform_engines/{v}.py"
         )
 
-        if engine_spec is None:
+        if not engine_spec:
             module_path = f"engines.{v}"
             try:
                 engine_module = importlib.import_module(module_path)

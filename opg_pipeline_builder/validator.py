@@ -82,8 +82,8 @@ class ETLStepConfig(BaseModel):
     def check_engine_exists(cls, v, values):
         method = values.get("transform_name", "run")
 
-        engine_spec = resource_filename(
-            "opg_pipeline_builder", f"transform_engines/{v}.py"
+        engine_spec = os.path.exists(
+            resource_filename("opg_pipeline_builder", f"transform_engines/{v}.py")
         )
 
         if not engine_spec:

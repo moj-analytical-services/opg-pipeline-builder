@@ -516,7 +516,7 @@ class DatabaseTable:
 
     @property
     def optional_arguments(self) -> Union[Dict[str, Any], None]:
-        return self._config.get("tables").get(self.name).get("optional_arguments")
+        return self._config.get("optional_arguments")
 
     def transform_type(self) -> str:
         """Returns table transform type

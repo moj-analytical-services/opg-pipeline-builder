@@ -26,6 +26,7 @@ class TableConfig(BaseModel):
     sql: Optional[Dict[str, List[str]]] = None
     lint_options: Optional[Dict[str, Any]] = None
     input_data: Optional[Dict[str, Dict[str, str]]] = None
+    optional_arguments: Optional[Dict[str, Any]] = None
 
     @root_validator(pre=True, allow_reuse=True)
     def check_transform_type_consistency(cls, values):

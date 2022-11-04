@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Callable, Optional, List
 from .database import Database
 from .pipeline import Pipeline
@@ -5,8 +6,10 @@ from .utils.utils import do_nothing
 from .transforms import Transforms
 from .transform_engines.base import BaseTransformEngine
 from .utils.constants import etl_steps, etl_stages, get_source_db, get_source_tbls
+from .validator import read_pipeline_config
 from functools import partial
 from inspect import signature
+import importlib
 
 
 class PipelineBuilder:
@@ -66,6 +69,45 @@ class PipelineBuilder:
     def _validate(self):
         # TODO
         ...
+
+    @classmethod
+    def build_pipeline_from_config(cls, db_name: str):
+        pipeline_builder = cls(db_name=db_name)
+        pipeline_config = read_pipeline_config(db_name)
+        custom_engines_path = Path("engines")
+        custom_engines = [x.stem for x in custom_engines_path.glob("*.py")]
+
+        pipeline_etl = pipeline_config.etl
+        for step in pipeline_etl:
+            step_name = step.step
+            engine_name = step.engine_name
+            transform_name = step.transform_name
+            transform_kwargs = (
+                step.transform_kwargs if step.transform_kwargs is not None else {}
+            )
+
+            if engine_name in custom_engines:
+                engine = importlib.import_module(f"engines.{engine_name}")
+                engine_class_name = (
+                    "".join(
+                        [n[0].upper() + n[1:].lower() for n in engine_name.split("_")]
+                    )
+                    + "TransformEngine"
+                )
+                engine_class = getattr(engine, engine_class_name)
+                pipeline_builder = pipeline_builder.register_transform_engine(
+                    engine_name=engine_name, transform_engine=engine_class
+                )
+
+            pipeline_builder = pipeline_builder.add_etl_step(
+                etl_step_name=step_name
+            ).with_transform(
+                engine_name=engine_name,
+                transform_name=transform_name,
+                **transform_kwargs,
+            )
+
+        return pipeline_builder.build_pipeline()
 
 
 class ETLStepBuilder:

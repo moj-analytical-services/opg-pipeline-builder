@@ -107,7 +107,7 @@ def main():
     elif "ETL_STAGE_ENV" in os.environ:
         del os.environ["ETL_STAGE_ENV"]
 
-    os.environ.update(args.env)
+    os.environ.update(env_vars)
 
     pipeline = PipelineBuilder.build_pipeline_from_config(args.database)
 

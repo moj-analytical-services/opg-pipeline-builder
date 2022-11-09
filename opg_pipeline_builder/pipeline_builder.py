@@ -23,10 +23,13 @@ class PipelineBuilder:
 
     def __init__(
         self,
-        db_name: str = get_source_db(),
+        db_name: Optional[str] = None,
         db_transforms: Optional[Transforms] = None,
         debug: bool = False,
     ) -> None:
+        if db_name is None:
+            db_name = get_source_db()
+
         self._db_name = db_name
         self._debug = debug
         self._builder_specs = {}

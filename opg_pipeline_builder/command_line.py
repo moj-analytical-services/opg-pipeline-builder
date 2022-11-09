@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 
 from copy import deepcopy
@@ -152,4 +153,6 @@ def main():
 
 
 if __name__ == "__main__":
+    HERE = os.getcwd()
+    sys.path.insert(0, HERE)
     main()

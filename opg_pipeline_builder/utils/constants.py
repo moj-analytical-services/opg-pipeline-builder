@@ -29,10 +29,12 @@ aws_loggers = {
     "boto",
     "urllib3",
     "s3transfer",
+    "s3fs",
     "boto3",
     "botocore",
     "nose",
     "awswrangler",
+    "aiobotocore",
 }
 transform_types = ["default", "custom", "derived"]
 

@@ -43,7 +43,7 @@ class BaseTransformEngine(BaseModel):
         if debug:
             for name in logging.Logger.manager.loggerDict.keys():
                 if any([logger in name for logger in aws_loggers]):
-                    logging.getLogger(name).setLevel(logging.WARNING)
+                    logging.getLogger(name).setLevel(logging.CRITICAL)
 
         self._validate_method_kwargs()
 

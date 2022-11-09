@@ -59,6 +59,7 @@ def main():
     parser.add_argument("database", type=str, help="database name")
     parser.add_argument(
         "production-environment",
+        "production_environment",
         type=str,
         help="Production environment for the pipeline (e.g. dev, prod)",
     )

@@ -82,7 +82,7 @@ def main():
     parser.add_argument(
         "-dp", "--disable-prompts", type=bool, help="Option to disable user prompts"
     )
-
+    print(os.getcwd())
     args = parser.parse_args()
     print(
         f"{bcolors.BOLD}\tParsed arguments:{bcolors.ENDC}\n"
@@ -108,7 +108,7 @@ def main():
             f"{bcolors.BOLD}\tSetting SOURCE_TBLS_ENV:{bcolors.ENDC}\n"
             f"\t\t{bcolors.OKCYAN}{args.tables}{bcolors.ENDC}"
         )
-        env_vars["SOURCE_TBLS_ENV"] = args.tables
+        env_vars["SOURCE_TBLS_ENV"] = ";".join(args.tables)
     elif "SOURCE_TBLS_ENV" in os.environ:
         del os.environ["SOURCE_TBLS_ENV"]
 

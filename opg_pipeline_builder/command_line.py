@@ -103,7 +103,7 @@ def main():
 
     if args.step is not None:
         f"Setting ETL_STAGE_ENV: {args.step}"
-        env_vars["ETL_STAGE_ENV"] = args.tables
+        env_vars["ETL_STAGE_ENV"] = args.step
     elif "ETL_STAGE_ENV" in os.environ:
         del os.environ["ETL_STAGE_ENV"]
 

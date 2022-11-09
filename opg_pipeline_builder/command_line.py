@@ -56,6 +56,9 @@ class keyvalue(argparse.Action):
 
 
 def main():
+    HERE = os.getcwd()
+    sys.path.insert(0, HERE)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=str, help="database name")
     parser.add_argument(
@@ -153,6 +156,4 @@ def main():
 
 
 if __name__ == "__main__":
-    HERE = os.getcwd()
-    sys.path.insert(0, HERE)
     main()

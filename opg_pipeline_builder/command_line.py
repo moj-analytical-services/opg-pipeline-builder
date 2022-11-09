@@ -58,6 +58,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=str, help="database name")
     parser.add_argument(
+        "production-environment",
+        type=str,
+        help="Production environment for the pipeline (e.g. dev, prod)",
+    )
+    parser.add_argument(
         "-v",
         "--version",
         action="version",
@@ -91,6 +96,12 @@ def main():
         f"\t\t{bcolors.OKCYAN}{args.database}{bcolors.ENDC}"
     )
     env_vars["SOURCE_DB_ENV"] = args.database
+
+    print(
+        f"{bcolors.BOLD}\tSetting DEFAULT_DB_ENV:{bcolors.ENDC}\n"
+        f"\t\t{bcolors.OKCYAN}{args.production_environment}{bcolors.ENDC}"
+    )
+    env_vars["DEFAULT_DB_ENV"] = args.production_environment
 
     if args.tables is not None:
         print(

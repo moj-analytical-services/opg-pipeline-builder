@@ -349,7 +349,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         env = db.env
         databases = wr.catalog.databases(limit=db_search_limit)
 
-        tbl_prts = self._transform_partitions(tables, stages=stages)
+        tbl_prts = self.utils.transform_partitions(tables, stages=stages)
 
         ipt_stage = stages["input"]
         out_stage = stages["output"]
@@ -369,7 +369,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     ]
                 )
 
-                input_path, output_path, tf_type = self._tf_args(
+                input_path, output_path, tf_type = self.utils.tf_args(
                     table_name, stages=stages
                 )
 
@@ -470,7 +470,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
                     wr.catalog.delete_database(temp_input_db_name)
                     if ipt_stage != "raw-hist":
-                        self._cleanup_partitions(
+                        self.utils.cleanup_partitions(
                             base_data_path=input_path, partitions=prts
                         )
 
@@ -483,7 +483,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                         )
                     )
 
-                    self._cleanup_partitions(
+                    self.utils.cleanup_partitions(
                         base_data_path=output_path, partitions=prts
                     )
 
@@ -582,7 +582,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             ]
 
             existing_prts = set(
-                self._list_partitions(
+                self.utils.list_partitions(
                     table_name=tbl, stage="derived", extract_timestamp=True
                 )
             )

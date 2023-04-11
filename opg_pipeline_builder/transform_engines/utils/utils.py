@@ -36,7 +36,6 @@ class TransformEngineUtils(BaseModel):
         super().__init__(**data)
         self._db = data.get("db")
 
-    # Helper methods - all private
     def list_table_files(
         self,
         stage: str,

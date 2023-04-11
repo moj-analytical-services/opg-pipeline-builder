@@ -1,7 +1,9 @@
 import os
+import logging
 import awswrangler as wr
 
 from copy import deepcopy
+from functools import partial
 from data_linter import validation
 from typing import Optional, Union, List
 from jsonschema import validate, exceptions
@@ -15,6 +17,8 @@ from ..utils.utils import (
     s3_bulk_copy,
     get_modified_filepaths_from_s3_folder,
 )
+
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 class DataLinterTransformEngine(BaseTransformEngine):
@@ -31,6 +35,10 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     mp_args: Optional[Union[dict, None]] = None
     dag_timestamp: Optional[Union[int, None]] = get_dag_timestamp()
+
+    @staticmethod
+    def _callback(future: Future, worker: int):
+        _logger.info(f"Worker {worker} complete")
 
     @staticmethod
     def _validate_mp_args(mp_args: dict) -> None:
@@ -83,6 +91,13 @@ class DataLinterTransformEngine(BaseTransformEngine):
             if mp_enable == "local":
                 max_workers = os.cpu_count()
                 config_dc = deepcopy(config)
+
+                _logger.info(
+                    (
+                        f"Creating parallel run config files for {max_workers}"
+                        " (CPU count) workers"
+                    )
+                )
                 validation.para_run_init(max_workers, config_dc)
 
             elif mp_enable == "pod":
@@ -91,20 +106,28 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
                 if current_worker is None and close_status is False:
                     max_workers = mp_args["total_workers"]
+                    _logger.info(
+                        (
+                            f"Creating parallel run config files for {max_workers}"
+                            " (environment) workers"
+                        )
+                    )
                     validation.para_run_init(max_workers, config)
 
             else:
-                raise ValueError("Unkown mp_args error")
+                raise ValueError("Unknown mp_args error")
 
-    @staticmethod
-    def _run_linter(config, mp_args: dict) -> None:
+    @classmethod
+    def _run_linter(cls, config, mp_args: dict) -> None:
         if mp_args is None:
+            _logger.info("Running validation with no multiprocessing")
             validation.run_validation(config)
 
         elif mp_args["enable"] == "local":
             max_workers = os.cpu_count()
             workers = range(0, max_workers)
             config_dc = [deepcopy(config) for _ in workers]
+            _logger.info(f"Running validation with {max_workers} workers")
 
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 val_futures = [
@@ -117,14 +140,12 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 ]
 
                 for j, val_future in enumerate(val_futures):
-
-                    def callback_j(future: Future) -> None:
-                        print(f"Worker {j} complete")
-
+                    callback_j = partial(cls._callback, worker=j)
                     val_future.add_done_callback(callback_j)
 
         elif mp_args["enable"] == "pod":
             worker = mp_args.get("current_worker", None)
+            _logger.info(f"Running validation for worker {worker}")
             close_status = mp_args.get("close_status", False)
             if worker is not None and not close_status:
                 validation.para_run_validation(worker, config)
@@ -138,12 +159,14 @@ class DataLinterTransformEngine(BaseTransformEngine):
             mp_enable = mp_args["enable"]
             if mp_enable == "local":
                 config_dc = deepcopy(config)
+                _logger.info("Collecting statuses and moving files")
                 validation.para_collect_all_status(config_dc)
                 validation.para_collect_all_logs(config_dc)
 
             elif mp_enable == "pod":
                 close_status = mp_args.get("close_status")
                 if close_status:
+                    _logger.info("Collecting statuses and moving files")
                     validation.para_collect_all_status(config)
                     validation.para_collect_all_logs(config)
 
@@ -198,10 +221,15 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
                 tbl_copy_args = list(zip(tbl_tmp_files, tbl_perm_dag_files))
 
+                _logger.info(
+                    f"Copying files for table {tbl_name} from temporary directory"
+                )
                 _ = s3_bulk_copy(tbl_copy_args)
 
-                for tmp_file in tbl_tmp_files:
-                    wr.s3.delete_objects(tmp_file)
+                _logger.info(
+                    f"Deleting files in temporary directory for table {tbl_name}"
+                )
+                wr.s3.delete_objects(tbl_tmp_files)
 
     def run(self, tables: List[str], stage: str = "raw-hist") -> None:
         """Runs data_linter based on db config over the given tables
@@ -230,23 +258,28 @@ class DataLinterTransformEngine(BaseTransformEngine):
         dag_timestamp = self.dag_timestamp
 
         if mp_args is None:
+            _logger.info("Setting multiprocessing arguments from environment")
             mp_args = get_multiprocessing_settings()
 
         if dag_timestamp is None:
+            _logger.info("Setting run timestamp from environment")
             dag_timestamp = get_dag_timestamp()
 
+        _logger.info("Validating multiprocessing arguments")
         self._validate_mp_args(mp_args)
 
         tmp_staging = False
         if mp_args is not None:
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
+            _logger.info(f"Using temporary staging directory: {tmp_staging}")
 
         db = self.db
         primary_partition = db.primary_partition_name()
         db_config = db.lint_config(tables, meta_stage=stage, tmp_staging=tmp_staging)
         if db_config:
             if get_filepaths_from_s3_folder(db._land_path + "/"):
+                _logger.info("Running data linter")
                 self._start_linter(db_config, mp_args)
                 self._run_linter(db_config, mp_args)
                 self._close_linter(db_config, mp_args)
@@ -258,7 +291,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 )
 
             else:
-                print(f"No files for {db.name} in land to validate")
+                _logger.info(f"No files for {db.name} in land to validate")
 
         else:
-            print(f"{db.name} hasn't got linting options")
+            _logger.info(f"{db.name} hasn't got linting options")

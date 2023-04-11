@@ -9,7 +9,7 @@ from ..database import Database
 from ..utils.constants import get_source_db
 from .utils.utils import TransformEngineUtils
 
-logger = logging.getLogger(__name__)
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 class BaseTransformEngine(BaseModel):
@@ -21,20 +21,20 @@ class BaseTransformEngine(BaseModel):
 
     def __init__(self, db_name: Optional[str] = None, **kwargs):
         if db_name is None:
-            logger.debug("Setting database for engine from environment")
+            _logger.debug("Setting database for engine from environment")
             db_name = get_source_db()
-            logger.debug(f"Engine database environment variable set to {db_name}")
+            _logger.debug(f"Engine database environment variable set to {db_name}")
 
-        logger.debug("Creating database object for engine")
+        _logger.debug("Creating database object for engine")
         db = Database(db_name=db_name)
 
-        logger.debug("Creating utils object for engine")
+        _logger.debug("Creating utils object for engine")
         utils = TransformEngineUtils(db=db)
 
-        logger.debug(f"Creating engine with database {db.name}")
+        _logger.debug(f"Creating engine with database {db.name}")
         super().__init__(db=db, utils=utils, **kwargs)
 
-        logger.debug("Validating engine public method arguments")
+        _logger.debug("Validating engine public method arguments")
         self._validate_method_kwargs()
 
     @staticmethod

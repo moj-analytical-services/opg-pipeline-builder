@@ -1,5 +1,6 @@
 import os
 import boto3
+import logging
 import pydbtools as pydb
 import awswrangler as wr
 
@@ -19,6 +20,8 @@ from ..database import Database
 from .base import BaseTransformEngine
 from ..utils.utils import s3_bulk_copy, extract_mojap_timestamp
 from ..utils.schema_reader import SchemaReader
+
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 class AthenaTransformEngine(BaseTransformEngine):
@@ -166,7 +169,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     ):
         """Default table transformation
 
-        Takes an SQL query for a temporay table in Athena and unloads
+        Takes an SQL query for a temporary table in Athena and unloads
         the output to a temporary staging area in S3. The output is then
         checked against the provided metadata and then copied to the output
         path if the check passes. Otherwise, the data is deleted and an error
@@ -231,17 +234,17 @@ class AthenaTransformEngine(BaseTransformEngine):
                     wr.s3.delete_objects(temp_path)
 
                 else:
-                    print("Schema validation failed. Deleting temp files")
+                    _logger.info("Schema validation failed. Deleting temp files")
                     wr.s3.delete_objects(temp_path)
                     raise ValueError("Files do not match expected schema")
 
             else:
-                print("Failed to execute sql. Deleting temp folder")
+                _logger.info("Failed to execute sql. Deleting temp folder")
                 wr.s3.delete_objects(temp_path)
                 raise ValueError("Failed to execute unload")
 
         except Exception as e:
-            print(f"Failed to execute sql because of {e}. Deleting temp folder")
+            _logger.info(f"Failed to execute sql because of {e}. Deleting temp folder")
             wr.s3.delete_objects(temp_path)
             raise
 
@@ -321,7 +324,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
         """Use AWS Athena to perform data transformation
 
-        Implements SQL via AWS Athena to perform tranfromation.
+        Implements SQL via AWS Athena to perform transformation.
 
         Params
         ------
@@ -356,7 +359,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         inp_stage_lc = ipt_stage.replace("-", "_")
 
         for table_name, prts in tbl_prts.items():
-            print(f"Starting job for {table_name}")
+            _logger.info(f"Starting job for {table_name}")
             if prts:
                 tbl = db.table(table_name)
                 temp_input_db_name = "_".join(
@@ -475,7 +478,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                         )
 
                 except Exception as e:
-                    print(
+                    _logger.info(
                         (
                             "Failed to write data to curated.\n"
                             f"Error: {e}\n"
@@ -492,7 +495,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     raise
 
             else:
-                print(f"No partitions to process for {table_name}")
+                _logger.info(f"No partitions to process for {table_name}")
 
     def run_derived(
         self,
@@ -655,7 +658,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     )
 
                 except Exception as e:
-                    print(
+                    _logger.info(
                         (
                             "Failed to write data to derived.\n"
                             f"Error: {e}\n"

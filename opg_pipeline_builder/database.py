@@ -1,17 +1,13 @@
 import os
-from .utils.constants import (
-    project_root,
-    get_env,
-    get_source_db,
-    get_source_tbls,
-    get_metadata_path,
-)
-from .validator import read_db_config
-from mojap_metadata import Metadata
-from typing import Union, List, Dict, Tuple, Optional
 from copy import deepcopy
-from jinja2 import Template
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from croniter import croniter
+from jinja2 import Template
+from mojap_metadata import Metadata
+
+from .utils.constants import get_env, get_metadata_path, get_source_db, get_source_tbls
+from .validator import read_pipeline_config
 
 
 class Database:
@@ -51,7 +47,7 @@ class Database:
         if db_name is None:
             db_name = get_source_db()
 
-        db_config = read_db_config(db_name)
+        db_config = read_pipeline_config(db_name).dict()
         self._name = db_name
 
         tables = list(db_config["tables"].keys())
@@ -154,24 +150,21 @@ class Database:
     ) -> List[str]:
         """Private method for filtering tables given
         ETL stages used, and table transform types. Use
-        tables_to_use instead.
+        `tables_to_use` instead.
 
-        Parameters
-        ----------
-        table_list: List[str]
-            List of table names to validate/filter.
+        Parameters:
+            table_list (List[str]):
+                List of table names to validate/filter.
 
-        stages: Union[List[str], None]
-            List of ETL stages to filter tables on.
+            stages (Union[List[str], None]):
+                List of ETL stages to filter tables on.
 
-        tf_types: Union[List[str], None]
-            List of table transform types to filter
-            tables on.
+            tf_types (Union[List[str], None]):
+                List of table transform types to filter
+                tables on.
 
-        Return
-        ------
-        List[str]
-            Filtered list of table names.
+        Returns:
+            (List[str]): Filtered list of table names.
         """
         cp_table_list = deepcopy(table_list)
         valid_tables = []
@@ -191,34 +184,32 @@ class Database:
 
     def tables_to_use(
         self,
-        table_list: Union[List[str], None] = get_source_tbls(),
+        table_list: Union[List[str], None] = None,
         stages: Union[List[str], None] = None,
         tf_types: Union[List[str], None] = None,
     ) -> List[str]:
         """Method for filtering tables given
         ETL stages used, and table transform types.
 
-        Returns a list of filtered tables. If table_list
-        is set to None, the method will filter all tables
+        Returns a list of filtered tables. If `table_list`
+        is set to `None`, the method will filter all tables
 
-        Parameters
-        ----------
-        table_list: List[str]
-            List of table names to validate/filter.
+        Parameters:
+            table_list (List[str]):
+                List of table names to validate/filter.
 
-        stages: Union[List[str], None]
-            List of ETL stages to filter tables on.
+            stages (Union[List[str], None]):
+                List of ETL stages to filter tables on.
 
-        tf_types: Union[List[str], None]
-            List of table transform types to filter
-            tables on.
+            tf_types (Union[List[str], None]):
+                List of table transform types to filter
+                tables on.
 
-        Return
-        ------
-        List[str]
-            Filtered list of table names.
+        Returns:
+            (List[str]): Filtered list of table names.
         """
-        table_list = self.tables if table_list is None else table_list
+        if table_list is None:
+            table_list = self.tables if get_source_tbls() is None else get_source_tbls()
 
         up_tbl_list = self._validate_tables(table_list, stages, tf_types)
 
@@ -228,37 +219,36 @@ class Database:
 
     def lint_config(
         self,
-        tables: Union[List[str], None] = get_source_tbls(),
+        tables: Union[List[str], None] = None,
         meta_stage: str = "raw-hist",
         tmp_staging: bool = False,
     ) -> Union[Dict[str, Union[str, bool]], Dict[None, None]]:
         """Returns data linter config for the db
 
         Returns a data_linter config for the tables and stage
-        specified. If tmp_staging is set to True, passing files
+        specified. If `tmp_staging` is set to `True`, passing files
         will be placed in a temporary directory in S3.
 
-        Parameters
-        ----------
-        tables: Union[List[str], None]
-            List of tables to include in linter config.
+        Parameters:
+            tables (Union[List[str], None]):
+                List of tables to include in linter config.
 
-        meta_stage: str
-            ETL stage for meta to check the data against.
+            meta_stage (str):
+                ETL stage for meta to check the data against.
 
-        tmp_staging: bool
-            True or False for whether to write passing data
-            to a temporary directory in S3.
+            tmp_staging (bool):
+                True or False for whether to write passing data
+                to a temporary directory in S3.
 
-        Return
-        ------
-        dict
-            data_linter config dictionary
+        Returns:
+            (dict): data_linter config dictionary
         """
         if meta_stage not in ["raw", "raw-hist"]:
             raise ValueError("Stage must be one of raw or raw-hist")
 
-        tables = self.tables if tables is None else tables
+        if tables is None:
+            tables = self.tables if get_source_tbls() is None else get_source_tbls()
+
         log_suffix = tables[0] + "/" if len(tables) == 1 else ""
 
         base_path = self.raw_hist_path if meta_stage == "raw-hist" else self.raw_path
@@ -290,6 +280,14 @@ class Database:
         return lint_config
 
     def primary_partition_name(self) -> str:
+        """Returns the primary partition for the database
+
+        The primary partition name will be returned as specified
+        in `db_lint_options` in the pipeline config.
+
+        Returns:
+            (str): Primary partition name
+        """
         config = self._config
         db_lint_config = config["db_lint_options"]
         partition_name = db_lint_config["timestamp-partition-name"]
@@ -297,7 +295,7 @@ class Database:
 
     def transform_args(
         self,
-        tables: Union[List[str], None] = get_source_tbls(),
+        tables: Union[List[str], None] = None,
         tf_types: Union[List[str], None] = None,
         **stages,
     ) -> dict:
@@ -305,28 +303,25 @@ class Database:
 
         Returns a dictionary containing transformation parameters
         for the tables supplied. This will include input and output
-        data locations, transformation types (e.g. default, custom,
-        derived) etc.
+        data locations, transformation types (e.g. `default`, `custom`,
+        `derived`) etc.
 
-        Parameters
-        ----------
-        tables: Union[List[str], None]
-            Tables in database to return transform arguments for
+        Parameters:
+            tables (Union[List[str], None]):
+                Tables in database to return transform arguments for
 
-        tf_types: Union[List[str], None]
-            List of transformation types to filter tables on
+            tf_types (Union[List[str], None]):
+                List of transformation types to filter tables on
 
-        stages: dict
-            Dictionary of the form
-            {"table_name: {"input": .., "output": ..}, ...}
-            where input and output values should correspond to
-            an ETL stage (e.g. curated)
+            **stages (dict):
+                Dictionary of the form
+                `{"table_name: {"input": .., "output": ..}, ...}`
+                where input and output values should correspond to
+                an ETL stage (e.g. curated)
 
-        Return
-        ------
-        dict
-            Summary dictionary of all the transfomrations
-            to apply to the tables.
+        Returns:
+            (dict) Summary dictionary of all the transfomrations
+                   to apply to the tables.
         """
         inpt = [stages[k]["input"] for k in stages]
         outpt = [stages[k]["output"] for k in stages]
@@ -354,24 +349,18 @@ class Database:
         name and temp table sql path for sql shared accross the
         given transform types.
 
-        Parameters
-        ----------
-        tables: Union[List[str], None]
-            Tables in database to return transform arguments for.
+        Parameters:
+            tf_types (List[str]):
+                List of transformation types to filter sql files on.
 
-        tf_types: Union[List[str], None]
-            List of transformation types to filter sql files on.
-
-        Return
-        ------
-        List[Tuple[str, str]]
-            List of tuples consisting of the shared sql table
-            name and path.
+        Returns:
+            (List[Tuple[str, str]]): List of tuples consisting of the
+                                     shared sql table name and path.
         """
         db_config = self.config
         shsql_config = db_config.get("shared_sql", {})
 
-        sql_base_path = os.path.join(project_root, "sql", self.name, "shared")
+        sql_base_path = os.path.join("sql", self.name, "shared")
 
         init_tf_type = tf_types[0]
         shsql_intersect = shsql_config.get(init_tf_type, [])
@@ -499,7 +488,6 @@ class DatabaseTable:
             return NotImplemented
 
         else:
-
             db_name_check = other.db_name == self.db_name
             name_check = other.name == self.name
             config_check = other.config == self.config
@@ -521,6 +509,10 @@ class DatabaseTable:
     @property
     def db(self) -> Database:
         return self._db
+
+    @property
+    def optional_arguments(self) -> Union[Dict[str, Any], None]:
+        return self._config.get("optional_arguments")
 
     def transform_type(self) -> str:
         """Returns table transform type
@@ -671,7 +663,7 @@ class DatabaseTable:
         tbl_sql = tbl_config.get("sql", {})
         tbl_sql_type = tbl_sql.get(type, [])
 
-        sql_dir = os.path.join(project_root, "sql", self.db_name, self.name)
+        sql_dir = os.path.join("sql", self.db_name, self.name)
 
         sql_paths = [(tbl, os.path.join(sql_dir, f"{tbl}.sql")) for tbl in tbl_sql_type]
 

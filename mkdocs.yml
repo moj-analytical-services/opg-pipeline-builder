@@ -1,0 +1,17 @@
+site_name: pipeline-builder
+repo_url: https://github.com/moj-analytical-services/opg-pipeline-builder
+theme:
+  name: material
+nav:
+  - Home: "README.md"
+  - API:
+      - Pipeline: pipeline.md
+      - Database: database.md
+plugins:
+  - mkdocstrings:
+      custom_templates: templates
+      default_handler: python
+      handlers:
+        python:
+          options:
+            show_source: false

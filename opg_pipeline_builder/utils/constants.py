@@ -1,13 +1,14 @@
-import os
-import json
 import base64
+import json
+import os
 import re
-from pathlib import Path
-from typing import List, Union, Optional
-from datetime import datetime
-from dateutil.tz import tzutc
 from ast import literal_eval
 from binascii import Error
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional, Union
+
+from dateutil.tz import tzutc
 
 # Constants for pipelines
 aws_region = "eu-west-1"
@@ -29,17 +30,20 @@ aws_loggers = {
     "boto",
     "urllib3",
     "s3transfer",
+    "s3fs",
     "boto3",
-    "botocore" "nose",
+    "botocore",
+    "nose",
     "awswrangler",
+    "aiobotocore",
 }
 transform_types = ["default", "custom", "derived"]
 
 project_root = Path(__file__).absolute().parents[2]
-meta_data_base_path = f"{project_root}/meta_data"
-glue_jobs_path = f"{project_root}/glue_jobs"
-sql_path = f"{project_root}/sql"
-engines_path = f"{project_root}/engines"
+meta_data_base_path = "meta_data"
+glue_jobs_path = "glue_jobs"
+sql_path = "sql"
+engines_path = "engines"
 
 # Functions that retrieve environment variables
 

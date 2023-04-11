@@ -1,20 +1,22 @@
-import re
-import os
-import boto3
 import glob
-from typing import Tuple, Union, List, Optional
-from .constants import project_root, aws_region
+import os
+import re
 from concurrent.futures import ThreadPoolExecutor
-from dataengineeringutils3.s3 import (
-    s3_path_to_bucket_key,
-    bucket_key_to_s3_path,
-    _add_slash,
-)
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional, Tuple, Union
+
+import boto3
+from dataengineeringutils3.s3 import (
+    _add_slash,
+    bucket_key_to_s3_path,
+    s3_path_to_bucket_key,
+)
+from pyarrow import Table
 from pyarrow.fs import S3FileSystem
 from pyarrow.json import read_json
-from pyarrow import Table
+
+from .constants import aws_region
 
 
 def get_last_modified(obj: dict) -> int:
@@ -236,7 +238,7 @@ def list_configs() -> List[str]:
     Return:
         List[str]: List of databases with configs
     """
-    config_yml_files = glob.glob(os.path.join(project_root, "configs", "*yml"))
+    config_yml_files = glob.glob(os.path.join("configs", "*yml"))
 
     config_names = [Path(f).stem for f in config_yml_files]
 

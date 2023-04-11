@@ -1,12 +1,16 @@
-from typing import Callable, Optional, List
-from .database import Database
-from .pipeline import Pipeline
-from .utils.utils import do_nothing
-from .transforms import Transforms
-from .transform_engines.base import BaseTransformEngine
-from .utils.constants import etl_steps, etl_stages, get_source_db, get_source_tbls
+import importlib
 from functools import partial
 from inspect import signature
+from pathlib import Path
+from typing import Callable, List, Optional
+
+from .database import Database
+from .pipeline import Pipeline
+from .transform_engines.base import BaseTransformEngine
+from .transforms import Transforms
+from .utils.constants import etl_stages, etl_steps, get_source_db, get_source_tbls
+from .utils.utils import do_nothing
+from .validator import read_pipeline_config
 
 
 class PipelineBuilder:
@@ -20,11 +24,15 @@ class PipelineBuilder:
 
     def __init__(
         self,
-        db_name: str = get_source_db(),
+        db_name: Optional[str] = None,
         db_transforms: Optional[Transforms] = None,
         debug: bool = False,
     ) -> None:
+        if db_name is None:
+            db_name = get_source_db()
+
         self._db_name = db_name
+        self._debug = debug
         self._builder_specs = {}
 
         if db_transforms is not None:
@@ -33,7 +41,7 @@ class PipelineBuilder:
             else:
                 raise TypeError("db_transforms must be a Transforms object")
         else:
-            self._db_transforms = Transforms(db_name, debug=debug)
+            self._db_transforms = Transforms()
             self._db = Database(db_name)
 
     def _add_specs(self, etl_step, transform):
@@ -53,7 +61,9 @@ class PipelineBuilder:
     def add_etl_step(self, etl_step_name: str):
         if etl_step_name not in etl_steps:
             raise ValueError(f"{etl_step_name} isn't a valid ETL step.")
-        etl_builder = ETLStepBuilder(etl_step=etl_step_name, pipeline_builder=self)
+        etl_builder = ETLStepBuilder(
+            etl_step=etl_step_name, pipeline_builder=self, debug=self._debug
+        )
         return etl_builder
 
     def build_pipeline(self):
@@ -64,11 +74,56 @@ class PipelineBuilder:
         # TODO
         ...
 
+    @classmethod
+    def build_pipeline_from_config(cls, db_name: str):
+        pipeline_builder = cls(db_name=db_name)
+        pipeline_config = read_pipeline_config(db_name)
+        custom_engines_path = Path("engines")
+        custom_engines = [x.stem for x in custom_engines_path.glob("*.py")]
+
+        pipeline_etl = pipeline_config.etl
+        for step in pipeline_etl:
+            step_name = step.step
+            engine_name = step.engine_name
+            transform_name = step.transform_name
+            transform_kwargs = (
+                step.transform_kwargs if step.transform_kwargs is not None else {}
+            )
+
+            if engine_name in custom_engines:
+                engine = importlib.import_module(f"engines.{engine_name}")
+                engine_class_name = (
+                    "".join(
+                        [n[0].upper() + n[1:].lower() for n in engine_name.split("_")]
+                    )
+                    + "TransformEngine"
+                )
+                engine_class = getattr(engine, engine_class_name)
+                pipeline_builder = pipeline_builder.register_transform_engine(
+                    engine_name=engine_name, transform_engine=engine_class
+                )
+
+            pipeline_builder = pipeline_builder.add_etl_step(
+                etl_step_name=step_name
+            ).with_transform(
+                engine_name=engine_name,
+                transform_name=transform_name,
+                **transform_kwargs,
+            )
+
+        return pipeline_builder.build_pipeline()
+
 
 class ETLStepBuilder:
-    def __init__(self, etl_step: str, pipeline_builder: PipelineBuilder) -> None:
+    def __init__(
+        self,
+        etl_step: str,
+        pipeline_builder: PipelineBuilder,
+        debug: Optional[bool] = False,
+    ) -> None:
         self._pipeline_builder = pipeline_builder
         self._etl_step = etl_step
+        self._debug = debug
 
     def with_transform(
         self, engine_name: str, transform_name: Optional[str] = None, **transform_kwargs
@@ -76,12 +131,14 @@ class ETLStepBuilder:
         if transform_name is None:
             transform_name = "run"
 
+        db_name = self._pipeline_builder._db_name
+
         transforms = self._pipeline_builder._db_transforms
         engine = getattr(transforms, engine_name)
-        specified_transform = getattr(engine, transform_name)
-        augmented_transform = self._augment_transform(
-            specified_transform, **transform_kwargs
-        )
+        initialised_engine = engine(db_name=db_name, debug=self._debug)
+        parsed_engine = initialised_engine.parse_obj(transform_kwargs)
+        specified_transform = getattr(parsed_engine, transform_name)
+        augmented_transform = self._augment_transform(specified_transform)
 
         return self._pipeline_builder._add_specs(self._etl_step, augmented_transform)
 
@@ -89,7 +146,6 @@ class ETLStepBuilder:
         self,
         transform: Callable,
         transform_types: Optional[List[str]] = None,
-        **transform_kwargs,
     ):
         pipeline_builder = self._pipeline_builder
         db = pipeline_builder._db
@@ -129,21 +185,16 @@ class ETLStepBuilder:
         transform_parameters = signature(transform).parameters
 
         if "stage" in transform_parameters:
-            transform_kwargs = {"stage": tf_max_stage, **transform_kwargs}
+            step_kwargs = {"stage": tf_max_stage}
         elif "stages" in transform_parameters:
-            transform_kwargs = {
-                "stages": {"input": tf_min_stage, "output": tf_max_stage},
-                **transform_kwargs,
-            }
+            step_kwargs = {"stages": {"input": tf_min_stage, "output": tf_max_stage}}
 
         tables_to_use = db.tables_to_use(
             tables, stages=list(tf_stages_set), tf_types=transform_types
         )
 
         if tables_to_use:
-            partial_transform = partial(
-                transform, tables=tables_to_use, **transform_kwargs
-            )
+            partial_transform = partial(transform, tables=tables_to_use, **step_kwargs)
         else:
             partial_transform = do_nothing
 

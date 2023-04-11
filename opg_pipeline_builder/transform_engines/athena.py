@@ -1,27 +1,43 @@
+import logging
 import os
+from copy import deepcopy
+from typing import Dict, List, Optional, Union
+
+import awswrangler as wr
 import boto3
 import pydbtools as pydb
-import awswrangler as wr
-
-from copy import deepcopy
 from mojap_metadata import Metadata
-from typing import List, Union, Dict, Optional
 from mojap_metadata.converters.glue_converter import GlueConverter
 
+from ..database import Database
 from ..utils.constants import (
-    get_start_date,
+    etl_stages,
     get_end_date,
     get_full_db_name,
     get_source_tbls,
-    etl_stages,
+    get_start_date,
 )
-from ..database import Database
-from .base import BaseTransformEngine
-from ..utils.utils import s3_bulk_copy, extract_mojap_timestamp
 from ..utils.schema_reader import SchemaReader
+from ..utils.utils import extract_mojap_timestamp, s3_bulk_copy
+from .base import BaseTransformEngine
+
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 class AthenaTransformEngine(BaseTransformEngine):
+    """
+    sql_table_filter: Optional[bool] = False
+        Optional arg whether to use the given table's name to filter
+        shared sql tables rather than using the first result.
+
+    **jinja_args
+        Optional jinja args to pass onto the pydbtools SQL call.
+    """
+
+    sql_table_filter: Optional[bool] = False
+    db_search_limit: Optional[Union[int, None]] = None
+    jinja_args: Optional[Union[dict, None]] = None
+
     def _create_shared_tmp_tables(
         self, tf_types: List[str], snapshot_timestamps: str, **jinja_args
     ) -> None:
@@ -153,7 +169,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     ):
         """Default table transformation
 
-        Takes an SQL query for a temporay table in Athena and unloads
+        Takes an SQL query for a temporary table in Athena and unloads
         the output to a temporary staging area in S3. The output is then
         checked against the provided metadata and then copied to the output
         path if the check passes. Otherwise, the data is deleted and an error
@@ -218,17 +234,17 @@ class AthenaTransformEngine(BaseTransformEngine):
                     wr.s3.delete_objects(temp_path)
 
                 else:
-                    print("Schema validation failed. Deleting temp files")
+                    _logger.info("Schema validation failed. Deleting temp files")
                     wr.s3.delete_objects(temp_path)
                     raise ValueError("Files do not match expected schema")
 
             else:
-                print("Failed to execute sql. Deleting temp folder")
+                _logger.info("Failed to execute sql. Deleting temp folder")
                 wr.s3.delete_objects(temp_path)
                 raise ValueError("Failed to execute unload")
 
         except Exception as e:
-            print(f"Failed to execute sql because of {e}. Deleting temp folder")
+            _logger.info(f"Failed to execute sql because of {e}. Deleting temp folder")
             wr.s3.delete_objects(temp_path)
             raise
 
@@ -305,17 +321,10 @@ class AthenaTransformEngine(BaseTransformEngine):
                     tmp_db=tmp_db,
                 )
 
-    def run(
-        self,
-        stages: Dict[str, str],
-        tables: Union[List[str], None] = None,
-        sql_table_filter: Optional[bool] = False,
-        db_search_limit: Optional[int] = 10_000,
-        **jinja_args,
-    ):
+    def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
         """Use AWS Athena to perform data transformation
 
-        Implements SQL via AWS Athena to perform tranfromation.
+        Implements SQL via AWS Athena to perform transformation.
 
         Params
         ------
@@ -328,19 +337,14 @@ class AthenaTransformEngine(BaseTransformEngine):
             pass all db tables for processing. Note, tables not applicable to this
             step will be filtered out prior to transformation.
 
-        sql_table_filter: Optional[bool] = False
-            Optional arg whether to use the given table's name to filter
-            shared sql tables rather than using the first result.
-
-        **jinja_args
-            Optional jinja args to pass onto the pydbtools SQL call.
-
         Return
         ------
         None
         """
-        if tables is None:
-            tables = get_source_tbls()
+        sql_table_filter = self.sql_table_filter
+        db_search_limit = self.db_search_limit
+        jinja_args = {} if self.jinja_args is None else self.jinja_args
+        tables = get_source_tbls() if tables is None else tables
 
         db = self.db
         db_name = db.name
@@ -348,14 +352,14 @@ class AthenaTransformEngine(BaseTransformEngine):
         env = db.env
         databases = wr.catalog.databases(limit=db_search_limit)
 
-        tbl_prts = self._transform_partitions(tables, stages=stages)
+        tbl_prts = self.utils.transform_partitions(tables, stages=stages)
 
         ipt_stage = stages["input"]
         out_stage = stages["output"]
         inp_stage_lc = ipt_stage.replace("-", "_")
 
         for table_name, prts in tbl_prts.items():
-            print(f"Starting job for {table_name}")
+            _logger.info(f"Starting job for {table_name}")
             if prts:
                 tbl = db.table(table_name)
                 temp_input_db_name = "_".join(
@@ -368,7 +372,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     ]
                 )
 
-                input_path, output_path, tf_type = self._tf_args(
+                input_path, output_path, tf_type = self.utils.tf_args(
                     table_name, stages=stages
                 )
 
@@ -469,12 +473,12 @@ class AthenaTransformEngine(BaseTransformEngine):
 
                     wr.catalog.delete_database(temp_input_db_name)
                     if ipt_stage != "raw-hist":
-                        self._cleanup_partitions(
+                        self.utils.cleanup_partitions(
                             base_data_path=input_path, partitions=prts
                         )
 
                 except Exception as e:
-                    print(
+                    _logger.info(
                         (
                             "Failed to write data to curated.\n"
                             f"Error: {e}\n"
@@ -482,7 +486,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                         )
                     )
 
-                    self._cleanup_partitions(
+                    self.utils.cleanup_partitions(
                         base_data_path=output_path, partitions=prts
                     )
 
@@ -491,10 +495,13 @@ class AthenaTransformEngine(BaseTransformEngine):
                     raise
 
             else:
-                print(f"No partitions to process for {table_name}")
+                _logger.info(f"No partitions to process for {table_name}")
 
     def run_derived(
-        self, tables: List[str], stage: Optional[str] = "derived", **jinja_args
+        self,
+        tables: List[str],
+        stage: Optional[str] = "derived",
+        jinja_args: Optional[dict] = None,
     ):
         """Creates derived tables for db using Athena
 
@@ -512,10 +519,13 @@ class AthenaTransformEngine(BaseTransformEngine):
             List of table names.
 
         **jinja_args:
-            Jinja args to pass to pydbtool calls.
+            Jinja args to pass to pydbtools calls.
         """
         if stage != "derived":
             raise ValueError("Expecting derived ETL step for this transform")
+
+        if jinja_args is None:
+            jinja_args = {}
 
         db = self.db
         primary_partition = db.primary_partition_name()
@@ -575,7 +585,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             ]
 
             existing_prts = set(
-                self._list_partitions(
+                self.utils.list_partitions(
                     table_name=tbl, stage="derived", extract_timestamp=True
                 )
             )
@@ -648,7 +658,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     )
 
                 except Exception as e:
-                    print(
+                    _logger.info(
                         (
                             "Failed to write data to derived.\n"
                             f"Error: {e}\n"

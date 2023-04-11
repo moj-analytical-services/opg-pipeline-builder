@@ -7,8 +7,7 @@ class TestTransforms:
     def get_transforms(self):
         from opg_pipeline_builder.transforms import Transforms
 
-        tfs = Transforms(db_name=self.database_name)
-        return tfs
+        return Transforms()
 
     def setup_child_athena(self):
         from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
@@ -17,7 +16,7 @@ class TestTransforms:
             def dummy_method(self, tables: List[str], stages: Dict[str, str]):
                 ...
 
-        return ChildAthenaTransformEngine(db_name=self.database_name)
+        return ChildAthenaTransformEngine
 
     def setup_dummy_engine(self):
         from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
@@ -26,7 +25,7 @@ class TestTransforms:
             def run(self, tables: List[str], stages: Dict[str, str]):
                 print("hello")
 
-        return DummyTransformEngine(db_name=self.database_name)
+        return DummyTransformEngine
 
     def test_transforms_init(self):
         _ = self.get_transforms()

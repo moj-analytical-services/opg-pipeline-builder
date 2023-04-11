@@ -1,11 +1,9 @@
-from .transforms import Transforms
-from .database import Database
-from .utils.constants import (
-    etl_steps,
-    get_source_db,
-)
-from .utils.utils import do_nothing
 from typing import Callable, Optional
+
+from .database import Database
+from .transforms import Transforms
+from .utils.constants import etl_steps, get_source_db
+from .utils.utils import do_nothing
 
 
 class Pipeline:
@@ -64,7 +62,7 @@ class Pipeline:
             db_name = get_source_db()
 
         self._db = Database(db_name)
-        self._tf = Transforms(db_name=db_name, debug=debug)
+        self._tf = Transforms()
 
         missing_etl_steps = {
             step: None for step in etl_steps if step not in pipeline_etl_steps

@@ -112,12 +112,12 @@ class TestBaseEngineTransform:
             path_index = 1 if stage == "land" else 2
             for i, table in enumerate(["table1", "table2"]):
 
-                assert transform._list_table_files(stage, table) == [
+                assert transform.utils.list_table_files(stage, table) == [
                     f"s3://{getattr(self, stage_bucket)}/{p[path_index]}"
                     for p in setup[i]
                 ]
 
-                assert transform._list_table_files(
+                assert transform.utils.list_table_files(
                     stage, table, modified_before=mid_adj_timestamp
                 ) == [
                     [
@@ -126,7 +126,7 @@ class TestBaseEngineTransform:
                     ][0]
                 ]
 
-                assert transform._list_table_files(
+                assert transform.utils.list_table_files(
                     stage, table, modified_after=mid_adj_timestamp
                 ) == [
                     [
@@ -136,7 +136,7 @@ class TestBaseEngineTransform:
                 ]
 
                 assert (
-                    transform._list_table_files(
+                    transform.utils.list_table_files(
                         stage, table, modified_after=post_timestamp
                     )
                     == []
@@ -223,12 +223,12 @@ class TestBaseEngineTransform:
                     s3_client.upload_file(loc_path, getattr(self, stage), p)
 
         if expected:
-            assert set(transform._list_partitions("table1", "land")) == set(prts)
+            assert set(transform.utils.list_partitions("table1", "land")) == set(prts)
         else:
             with pytest.raises(ValueError):
-                transform._list_partitions("table1", "land")
+                transform.utils.list_partitions("table1", "land")
 
-        transform._cleanup_partitions(
+        transform.utils.cleanup_partitions(
             f"s3://{self.land_bucket}/dep/{env}/{db_name}/table1", prts
         )
         assert (
@@ -331,7 +331,7 @@ class TestBaseEngineTransform:
         input_stage = stages_map["input"]["name"]
         output_stage = stages_map["output"]["name"]
         assert (
-            transform._list_unprocessed_partitions(
+            transform.utils.list_unprocessed_partitions(
                 "table1", input_stage=input_stage, output_stage=output_stage
             )
             == expected
@@ -460,7 +460,7 @@ class TestBaseEngineTransform:
 
         stages_arg = {k: v["name"] for k, v in stages_map.items()}
 
-        assert transform._transform_partitions(tables, stages_arg) == expected
+        assert transform.utils.transform_partitions(tables, stages_arg) == expected
 
     @pytest.mark.parametrize(
         "table_name, stages, expected",
@@ -507,7 +507,7 @@ class TestBaseEngineTransform:
     )
     def test_tf_args(self, table_name, stages, expected):
         transform = self.get_transform()
-        assert transform._tf_args(table_name=table_name, stages=stages) == expected
+        assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected
 
     @mock_ssm
     @pytest.mark.parametrize("secret_key, value", [("dummy", "hjshfkheu27837")])
@@ -526,4 +526,4 @@ class TestBaseEngineTransform:
             Type="SecureString",
             Value=value,
         )
-        assert transform._get_secrets(secret_key) == value
+        assert transform.utils.get_secrets(secret_key) == value

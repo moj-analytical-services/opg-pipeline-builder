@@ -1,6 +1,7 @@
 import importlib
-from . import transform_engines
 from pkgutil import iter_modules
+
+from . import transform_engines
 
 
 class Transforms:
@@ -11,7 +12,7 @@ class Transforms:
         transform_name = proper + "TransformEngine"
         return transform_name
 
-    def __init__(self, db_name: str, debug: bool = False):
+    def __init__(self):
         engines = [e.name for e in iter_modules(transform_engines.__path__)]
         engine_names = [self._engine_name(e) for e in engines]
         engine_zip = zip(engines, engine_names)
@@ -20,7 +21,7 @@ class Transforms:
                 f".{e}", package=transform_engines.__package__
             )
             engine_class = getattr(engine, en)
-            setattr(self, e, engine_class(db_name=db_name, debug=debug))
+            setattr(self, e, engine_class)
 
     def __setattr__(self, key, value):
         base_engine = importlib.import_module(
@@ -34,12 +35,12 @@ class Transforms:
             )
             engine_class = getattr(engine, self._engine_name(key))
 
-            if isinstance(value, engine_class):
+            if issubclass(value, engine_class):
                 self.__dict__[key] = value
             else:
                 raise TypeError(f"Value must be a {engine_class.__name__} object.")
 
-        elif isinstance(value, base_engine_class):
+        elif issubclass(value, base_engine_class):
             self.__dict__[key] = value
 
         else:

@@ -192,7 +192,6 @@ def test_get_metadata_path():
     from opg_pipeline_builder.utils.constants import get_metadata_path
 
     assert get_metadata_path() == os.path.join(
-        os.getcwd(),
         "meta_data",
         os.environ["DEFAULT_DB_ENV"],
         os.environ["SOURCE_DB_ENV"],

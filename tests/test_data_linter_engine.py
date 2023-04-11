@@ -151,7 +151,7 @@ class TestDataLinterEngine:
                         "temp_staging", False
                     ):
                         prts = set(
-                            transform._list_partitions(
+                            transform.utils.list_partitions(
                                 table.name,
                                 stage=self.output_stage,
                                 extract_timestamp=True,

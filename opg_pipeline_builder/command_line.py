@@ -1,12 +1,12 @@
+import argparse
 import os
 import sys
-import argparse
-
 from copy import deepcopy
+
+from opg_pipeline_builder import __version__ as v
 from opg_pipeline_builder.pipeline import Pipeline
 from opg_pipeline_builder.pipeline_builder import PipelineBuilder
 from opg_pipeline_builder.utils.constants import etl_steps
-from opg_pipeline_builder import __version__ as v
 
 
 class bcolors:

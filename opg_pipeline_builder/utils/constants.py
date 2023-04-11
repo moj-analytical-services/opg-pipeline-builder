@@ -1,13 +1,14 @@
-import os
-import json
 import base64
+import json
+import os
 import re
-from pathlib import Path
-from typing import List, Union, Optional
-from datetime import datetime
-from dateutil.tz import tzutc
 from ast import literal_eval
 from binascii import Error
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional, Union
+
+from dateutil.tz import tzutc
 
 # Constants for pipelines
 aws_region = "eu-west-1"

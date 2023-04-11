@@ -1,12 +1,15 @@
-import boto3
-import awswrangler as wr
-
+import logging
 from typing import List
+
+import awswrangler as wr
+import boto3
 from botocore.exceptions import ClientError
 from mojap_metadata.converters.glue_converter import GlueConverter
 
-from .base import BaseTransformEngine
 from ..utils.constants import get_full_db_name
+from .base import BaseTransformEngine
+
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 class CatalogTransformEngine(BaseTransformEngine):
@@ -43,13 +46,13 @@ class CatalogTransformEngine(BaseTransformEngine):
                         "Name": db_name,
                     }
                 }
-                print(f"Creating initial {db_name} db")
+                _logger.info(f"Creating initial {db_name} db")
                 glue_client.create_database(**db_meta)
             else:
-                print("Unexpected error: %s" % e)
+                _logger.info("Unexpected error: %s" % e)
 
         for table in tables:
-            print(f"Updating {db_name}.{table}")
+            _logger.info(f"Updating {db_name}.{table}")
             db_table = db.table(table)
 
             stage_meta = db_table.get_table_metadata(stage)
@@ -76,6 +79,6 @@ class CatalogTransformEngine(BaseTransformEngine):
             glue_client.create_table(**spec)
             wr.athena.repair_table(table=table, database=db_name)
 
-            print(f"{db_name}.{table} updated")
+            _logger.info(f"{db_name}.{table} updated")
 
-        print(f"Finished updating {db_name}")
+        _logger.info(f"Finished updating {db_name}")

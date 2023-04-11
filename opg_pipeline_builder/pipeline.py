@@ -1,11 +1,9 @@
-from .transforms import Transforms
-from .database import Database
-from .utils.constants import (
-    etl_steps,
-    get_source_db,
-)
-from .utils.utils import do_nothing
 from typing import Callable, Optional
+
+from .database import Database
+from .transforms import Transforms
+from .utils.constants import etl_steps, get_source_db
+from .utils.utils import do_nothing
 
 
 class Pipeline:

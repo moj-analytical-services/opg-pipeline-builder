@@ -1,16 +1,13 @@
 import os
-from .utils.constants import (
-    get_env,
-    get_source_db,
-    get_source_tbls,
-    get_metadata_path,
-)
-from .validator import read_pipeline_config
-from mojap_metadata import Metadata
-from typing import Union, List, Dict, Tuple, Optional, Any
 from copy import deepcopy
-from jinja2 import Template
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from croniter import croniter
+from jinja2 import Template
+from mojap_metadata import Metadata
+
+from .utils.constants import get_env, get_metadata_path, get_source_db, get_source_tbls
+from .validator import read_pipeline_config
 
 
 class Database:
@@ -491,7 +488,6 @@ class DatabaseTable:
             return NotImplemented
 
         else:
-
             db_name_check = other.db_name == self.db_name
             name_check = other.name == self.name
             config_check = other.config == self.config

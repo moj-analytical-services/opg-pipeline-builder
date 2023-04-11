@@ -295,7 +295,11 @@ class TestAthenaTransformEngine:
             assert df_dict == orig_df_dict
             assert (
                 len(
-                    set(transform._list_partitions(table.name, stage=self.output_stage))
+                    set(
+                        transform.utils.list_partitions(
+                            table.name, stage=self.output_stage
+                        )
+                    )
                 )
                 == 1
             )
@@ -430,7 +434,8 @@ class TestAthenaTransformEngine:
                     df = pd.concat([df, file_df], ignore_index=True, sort=False)
 
             assert (
-                len(set(transform._list_partitions(table.name, stage="derived"))) == 1
+                len(set(transform.utils.list_partitions(table.name, stage="derived")))
+                == 1
             )
             assert set(df.animal) == {"chicken"}
 

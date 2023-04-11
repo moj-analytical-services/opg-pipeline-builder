@@ -1,16 +1,18 @@
 import os
 import re
-from typing import Union, List
-from .constants import aws_region
-from dataengineeringutils3.s3 import s3_path_to_bucket_key
 from copy import deepcopy
+from pathlib import Path
+from typing import List, Union
+
+from dataengineeringutils3.s3 import s3_path_to_bucket_key
 from mojap_metadata import Metadata
+from mojap_metadata.converters.arrow_converter import ArrowConverter
 from pyarrow import Schema
 from pyarrow.fs import S3FileSystem
-from pyarrow.parquet import read_schema
 from pyarrow.json import read_json
-from mojap_metadata.converters.arrow_converter import ArrowConverter
-from pathlib import Path
+from pyarrow.parquet import read_schema
+
+from .constants import aws_region
 
 
 class SchemaReader:

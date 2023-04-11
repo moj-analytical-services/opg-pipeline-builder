@@ -1,21 +1,22 @@
-import os
-import yaml
-import inspect
 import importlib
-
-from pathlib import Path
+import inspect
+import os
 from copy import deepcopy
 from itertools import chain
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
 from croniter import croniter
 from data_linter import validation
 from pkg_resources import resource_filename
-from typing import Any, List, Dict, Optional
 from pydantic import BaseModel, MissingError, ValidationError, root_validator, validator
+
 from opg_pipeline_builder.utils.constants import (
     etl_stages,
-    transform_types,
-    sql_path,
     etl_steps,
+    sql_path,
+    transform_types,
 )
 
 

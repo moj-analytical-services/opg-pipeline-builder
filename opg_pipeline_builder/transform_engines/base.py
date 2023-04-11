@@ -1,9 +1,8 @@
 import logging
-
+from inspect import getmembers, isfunction, signature
 from typing import Optional
-from pydantic import BaseModel
-from inspect import getmembers, signature, isfunction
 
+from pydantic import BaseModel
 
 from ..database import Database
 from ..utils.constants import get_source_db

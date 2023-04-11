@@ -1,24 +1,19 @@
-import os
 import logging
-import awswrangler as wr
-
+import os
 from copy import deepcopy
 from datetime import datetime
-from pydantic import BaseModel
+from typing import Dict, List, Optional, Tuple, Union
+
+import awswrangler as wr
 from dataengineeringutils3.s3 import _add_slash
+from pydantic import BaseModel
 from ssm_parameter_store import EC2ParameterStore
-from typing import Union, List, Dict, Optional, Tuple
 
 from ...database import Database
-from ...utils.constants import (
-    aws_region,
-    get_source_tbls,
-    get_start_date,
-    get_end_date,
-)
+from ...utils.constants import aws_region, get_end_date, get_source_tbls, get_start_date
 from ...utils.utils import (
-    extract_mojap_timestamp,
     extract_mojap_partition,
+    extract_mojap_timestamp,
     get_modified_filepaths_from_s3_folder,
 )
 

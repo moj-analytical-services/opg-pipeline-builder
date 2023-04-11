@@ -1,25 +1,25 @@
-import os
-import boto3
 import logging
-import pydbtools as pydb
-import awswrangler as wr
-
+import os
 from copy import deepcopy
+from typing import Dict, List, Optional, Union
+
+import awswrangler as wr
+import boto3
+import pydbtools as pydb
 from mojap_metadata import Metadata
-from typing import List, Union, Dict, Optional
 from mojap_metadata.converters.glue_converter import GlueConverter
 
+from ..database import Database
 from ..utils.constants import (
-    get_start_date,
+    etl_stages,
     get_end_date,
     get_full_db_name,
     get_source_tbls,
-    etl_stages,
+    get_start_date,
 )
-from ..database import Database
-from .base import BaseTransformEngine
-from ..utils.utils import s3_bulk_copy, extract_mojap_timestamp
 from ..utils.schema_reader import SchemaReader
+from ..utils.utils import extract_mojap_timestamp, s3_bulk_copy
+from .base import BaseTransformEngine
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
@@ -519,7 +519,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             List of table names.
 
         **jinja_args:
-            Jinja args to pass to pydbtool calls.
+            Jinja args to pass to pydbtools calls.
         """
         if stage != "derived":
             raise ValueError("Expecting derived ETL step for this transform")

@@ -1,24 +1,24 @@
 import os
 import re
+from copy import deepcopy
+from datetime import datetime
+from functools import partial
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+
+import awswrangler as wr
 import boto3
 import duckdb
+import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 import sqlglot
-import pandas as pd
-import awswrangler as wr
-import pyarrow.parquet as pq
-
-from pathlib import Path
-from copy import deepcopy
-from functools import partial
-from datetime import datetime
-from moto import mock_s3, mock_glue, mock_sts
 from arrow_pd_parser import reader, writer
-from tempfile import NamedTemporaryFile, TemporaryDirectory
-from opg_pipeline_builder.utils.constants import get_full_db_name
-from mojap_metadata.converters.glue_converter import GlueTable, GlueConverter
+from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
+from moto import mock_glue, mock_s3, mock_sts
 
-from tests.helpers import set_up_s3, mock_get_file
+from opg_pipeline_builder.utils.constants import get_full_db_name
+from tests.helpers import mock_get_file, set_up_s3
 
 
 class DummyAthenaResponse:
@@ -340,7 +340,7 @@ class TestAthenaTransformEngine:
         )
         monkeypatch.setattr(athena.pydb, "create_temp_table", mock_create_temp_table)
 
-        transform._create_tmp_table(table_name, snapshot_timestamps=str(prt))
+        transform._create_temporary_tables(table_name, snapshot_timestamps=str(prt))
 
         con.execute(f"SELECT * FROM {self.temp_table_name}")
 

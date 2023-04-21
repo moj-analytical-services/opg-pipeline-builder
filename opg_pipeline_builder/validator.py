@@ -177,9 +177,7 @@ class PipelineConfig(BaseModel):
             if table.get("input_data") is not None
         ]
 
-        table_names = [
-            name for name, table in tables.items() if table.get("input_data") is None
-        ]
+        table_names = [name for name in tables]
 
         for table_name, table_input in table_inputs:
             for input_db, input_table_dict in table_input.items():
@@ -246,7 +244,7 @@ class PipelineConfig(BaseModel):
                 for sql in table_sql
                 if not os.path.exists(os.path.join(table_sql_root_path, f"{sql}.sql"))
             ]
-            missing_sql_message = f"SQL for {table_name} is missing: " ", ".join(
+            missing_sql_message = f"SQL for {table_name} is missing: " + ", ".join(
                 missing_sql
             )
             assert not missing_sql, missing_sql_message

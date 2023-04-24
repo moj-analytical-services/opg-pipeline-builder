@@ -30,10 +30,14 @@ class Transforms:
         base_engine_class = getattr(base_engine, "BaseTransformEngine")
 
         if key in self.__dict__:
-            engine = importlib.import_module(
-                f".{key}", package=transform_engines.__package__
-            )
-            engine_class = getattr(engine, self._engine_name(key))
+            try:
+                engine = importlib.import_module(
+                    f".{key}", package=transform_engines.__package__
+                )
+                engine_class = getattr(engine, self._engine_name(key))
+
+            except ModuleNotFoundError:
+                engine_class = base_engine_class
 
             if issubclass(value, engine_class):
                 self.__dict__[key] = value

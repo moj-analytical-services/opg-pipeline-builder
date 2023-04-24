@@ -39,6 +39,7 @@ class TableConfig(BaseModel):
         if transform_type == "derived":
             assert lint_options is None, "Derived table should not have lint_options"
             assert input_data is not None, "Derived table should have input_data"
+
         else:
             assert (
                 lint_options is not None
@@ -46,7 +47,9 @@ class TableConfig(BaseModel):
             assert (
                 input_data is None
             ), f"{transform_type} table should not have input_data"
-            assert sql is None, f"{transform_type} table should not have sql"
+
+            if transform_type == "default":
+                assert sql is None, "default table should not have sql"
 
         return values
 

@@ -125,7 +125,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                         """
                     )
 
-    def _create_tmp_table(self, table_name: str, **jinja_args):
+    def _create_temporary_tables(self, table_name: str, **jinja_args):
         """Create temp tables for the given db table
 
         Creates temporary tables for the given table as specified
@@ -497,6 +497,165 @@ class AthenaTransformEngine(BaseTransformEngine):
             else:
                 _logger.info(f"No partitions to process for {table_name}")
 
+    def _new_derived_table_partitions(
+        self,
+        table_name: str,
+        transform_args: Dict,
+        cutoff_sql_clause: str,
+        primary_partition: str,
+    ):
+        ipt_args = transform_args["transforms"][table_name]["input"]
+        db_ipts = list(ipt_args.keys())
+        tbl_ipts = [list(ipt_args[ipt_db].keys()) for ipt_db in ipt_args]
+
+        db_tbls = sum(
+            [
+                list(zip([db_ipts[i]] * len(tbl_ipts[i]), tbl_ipts[i]))
+                for i in range(len(db_ipts))
+            ],
+            [],
+        )
+
+        db_tbl_tf_ipts = [
+            (db, tbl, Database(db).table(tbl).transform_type()) for db, tbl in db_tbls
+        ]
+
+        db_tbl_ipts = [
+            (db if tf != "derived" else f"{db}_derived", tbl)
+            for db, tbl, tf in db_tbl_tf_ipts
+        ]
+
+        existing_prts = set(
+            self.utils.list_partitions(
+                table_name=table_name, stage="derived", extract_timestamp=True
+            )
+        )
+
+        input_prts_sql = [
+            pydb.render_sql_template(
+                """
+                SELECT DISTINCT({{ primary_partition }}) as unique_prts
+                FROM {{ full_db_name }}}}.{{ table_name }}
+                WHERE {{ cutoff_clause }}
+                ORDER BY {{ primary_partition }} DESC
+                """,
+                {
+                    "full_db_name": get_full_db_name(db_name=ipt_db, env=self.db.env),
+                    "table_name": ipt_tbl,
+                    "cutoff_clause": cutoff_sql_clause,
+                    "primary_partition": primary_partition,
+                },
+            )
+            for ipt_db, ipt_tbl in db_tbl_ipts
+        ]
+
+        input_prts = [
+            pydb.read_sql_queries(ipt_sql)["unique_prts"] for ipt_sql in input_prts_sql
+        ]
+
+        common_prts = set(input_prts[0])
+        for prt_list in input_prts[1:]:
+            common_prts = common_prts.intersection(set(prt_list))
+
+        new_prts = [str(prt) for prt in common_prts if prt not in existing_prts]
+        new_prts.sort(reverse=True)
+
+        return new_prts
+
+    def _create_intermediate_tables_for_derived_table(
+        self,
+        table_name: str,
+        partitions: List[str],
+        jinja_args: Dict,
+    ):
+        prts_arg = ",".join(partitions)
+
+        table = self.db.table(table_name)
+        uses_shared_sql = table.table_uses_shared_sql()
+
+        if uses_shared_sql:
+            self._create_shared_tmp_tables(
+                tf_types=["derived"], snapshot_timestamps=prts_arg, **jinja_args
+            )
+
+        self._create_temporary_tables(
+            table_name=table_name, **{"snapshot_timestamps": prts_arg, **jinja_args}
+        )
+
+    def _create_final_derived_table(
+        self,
+        table_name: str,
+        primary_partition: str,
+        partitions: List[str],
+        transform_args: Dict,
+        jinja_args: Dict,
+    ) -> Metadata:
+        table = self.db.table(table_name)
+        prts_arg = ",".join(partitions)
+        _, sql_path = table.table_sql_paths("final")[0]
+
+        output_meta = table.get_table_metadata("derived")
+        output_meta.force_partition_order = "start"
+        output_path = transform_args["transforms"][table_name]["output"]["path"]
+
+        user_id, _ = pydb.utils.get_user_id_and_table_dir()
+        tmp_db = pydb.utils.get_database_name_from_userid(user_id)
+
+        new_jinja_args = {
+            "temporary_database": tmp_db,
+            "snapshot_timestamps": prts_arg,
+            "primary_partition": primary_partition,
+            **jinja_args,
+        }
+
+        sql = pydb.get_sql_from_file(sql_path, jinja_args=new_jinja_args)
+
+        try:
+            self._derived_transform(
+                sql,
+                output_path=output_path,
+                output_meta=output_meta,
+                tmp_db=tmp_db,
+            )
+
+            return output_meta, output_path
+
+        except Exception as e:
+            _logger.info(
+                (
+                    "Failed to write data to derived.\n"
+                    f"Error: {e}\n"
+                    "Deleting any half-written files.\n"
+                )
+            )
+
+            for prt in partitions:
+                prt_path = os.path.join(output_path, prt)
+                wr.s3.delete_objects(prt_path)
+
+            raise
+
+    def _refresh_and_repair_table(
+        self,
+        table_name: str,
+        database_name: str,
+        table_metadata: Metadata,
+        table_data_path: str,
+    ):
+        wr.catalog.delete_table_if_exists(database=database_name, table=table_name)
+
+        gc = GlueConverter()
+
+        spec = gc.generate_from_meta(
+            table_metadata,
+            database_name=database_name,
+            table_location=table_data_path,
+        )
+
+        glue_client = boto3.client("glue")
+        glue_client.create_table(**spec)
+        wr.athena.repair_table(table=table_name, database=database_name)
+
     def run_derived(
         self,
         tables: List[str],
@@ -562,128 +721,33 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         for tbl in tables_to_use:
-            ipt_args = tf_args["transforms"][tbl]["input"]
-            db_ipts = list(ipt_args.keys())
-            tbl_ipts = [list(ipt_args[ipt_db].keys()) for ipt_db in ipt_args]
-
-            db_tbls = sum(
-                [
-                    list(zip([db_ipts[i]] * len(tbl_ipts[i]), tbl_ipts[i]))
-                    for i in range(len(db_ipts))
-                ],
-                [],
+            new_prts = self._new_derived_table_partitions(
+                table_name=tbl,
+                transform_args=tf_args,
+                cutoff_sql_clause=cutoff_clause,
+                primary_partition=primary_partition,
             )
 
-            db_tbl_tf_ipts = [
-                (db, tbl, Database(db).table(tbl).transform_type())
-                for db, tbl in db_tbls
-            ]
+            if not new_prts:
+                continue
 
-            db_tbl_ipts = [
-                (db if tf != "derived" else f"{db}_derived", tbl)
-                for db, tbl, tf in db_tbl_tf_ipts
-            ]
-
-            existing_prts = set(
-                self.utils.list_partitions(
-                    table_name=tbl, stage="derived", extract_timestamp=True
-                )
+            self._create_intermediate_tables_for_derived_table(
+                table_name=tbl,
+                partitions=new_prts,
+                jinja_args=jinja_args,
             )
 
-            input_prts_sql = [
-                pydb.render_sql_template(
-                    """
-                    SELECT DISTINCT({{ primary_partition }}) as unique_prts
-                    FROM {{ full_db_name }}}}.{{ table_name }}
-                    WHERE {{ cutoff_clause }}
-                    ORDER BY {{ primary_partition }} DESC
-                    """,
-                    {
-                        "full_db_name": get_full_db_name(db_name=ipt_db, env=db.env),
-                        "table_name": ipt_tbl,
-                        "cutoff_clause": cutoff_clause,
-                        "primary_partition": primary_partition,
-                    },
-                )
-                for ipt_db, ipt_tbl in db_tbl_ipts
-            ]
+            output_meta, output_path = self._create_final_derived_table(
+                table_name=tbl,
+                primary_partition=primary_partition,
+                partitions=new_prts,
+                transform_args=tf_args,
+                jinja_args=jinja_args,
+            )
 
-            input_prts = [
-                pydb.read_sql_queries(ipt_sql)["unique_prts"]
-                for ipt_sql in input_prts_sql
-            ]
-
-            common_prts = set(input_prts[0])
-            for prt_list in input_prts[1:]:
-                common_prts = common_prts.intersection(set(prt_list))
-
-            new_prts = [str(prt) for prt in common_prts if prt not in existing_prts]
-            new_prts.sort(reverse=True)
-
-            if new_prts:
-                prts_arg = ",".join(new_prts)
-                self._create_shared_tmp_tables(
-                    tf_types=["derived"], snapshot_timestamps=prts_arg, **jinja_args
-                )
-
-                self._create_tmp_table(
-                    table_name=tbl, **{"snapshot_timestamps": prts_arg, **jinja_args}
-                )
-
-                table = db.table(tbl)
-                _, sql_path = table.table_sql_paths("final")[0]
-
-                output_meta = table.get_table_metadata("derived")
-                output_meta.force_partition_order = "start"
-                output_path = tf_args["transforms"][tbl]["output"]["path"]
-
-                user_id, _ = pydb.utils.get_user_id_and_table_dir()
-                tmp_db = pydb.utils.get_database_name_from_userid(user_id)
-
-                new_jinja_args = {
-                    "temporary_database": tmp_db,
-                    "snapshot_timestamps": prts_arg,
-                    "primary_partition": primary_partition,
-                    **jinja_args,
-                }
-
-                sql = pydb.get_sql_from_file(sql_path, jinja_args=new_jinja_args)
-
-                try:
-                    self._derived_transform(
-                        sql,
-                        output_path=output_path,
-                        output_meta=output_meta,
-                        tmp_db=tmp_db,
-                    )
-
-                except Exception as e:
-                    _logger.info(
-                        (
-                            "Failed to write data to derived.\n"
-                            f"Error: {e}\n"
-                            "Deleting any half-written files.\n"
-                        )
-                    )
-
-                    for prt in new_prts:
-                        prt_path = os.path.join(output_path, prt)
-                        wr.s3.delete_objects(prt_path)
-
-                    raise
-
-                wr.catalog.delete_table_if_exists(
-                    database=db_derived_name, table=output_meta.name
-                )
-
-                gc = GlueConverter()
-
-                spec = gc.generate_from_meta(
-                    output_meta,
-                    database_name=db_derived_name,
-                    table_location=output_path,
-                )
-
-                glue_client = boto3.client("glue")
-                glue_client.create_table(**spec)
-                wr.athena.repair_table(table=output_meta.name, database=db_derived_name)
+            self._refresh_and_repair_table(
+                table_name=output_meta.name,
+                database_name=db_derived_name,
+                table_metadata=output_meta,
+                table_data_path=output_path,
+            )

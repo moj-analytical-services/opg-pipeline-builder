@@ -777,7 +777,10 @@ class DatabaseTable:
                     else:
                         tbl_meta.update_column({"name": c, "type": cols_map[c]})
 
-                pq_args = {"metadata": tbl_meta.to_dict(), "expect_full_schema": False}
+                pq_args = {
+                    "metadata": tbl_meta.to_dict(),
+                    "parquet_expect_full_schema": False,
+                }
 
                 config["pandas-kwargs"] = {**pandas_kwargs, **pq_args}
 

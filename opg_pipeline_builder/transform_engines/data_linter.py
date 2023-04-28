@@ -231,6 +231,13 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 )
                 wr.s3.delete_objects(tbl_tmp_files)
 
+    def _get_database_linter_config(
+        self, tables: List[str], stage: str, temporary_staging: bool
+    ) -> dict:
+        return self.db.lint_config(
+            tables, meta_stage=stage, tmp_staging=temporary_staging
+        )
+
     def run(self, tables: List[str], stage: str = "raw-hist") -> None:
         """Runs data_linter based on db config over the given tables
 
@@ -276,7 +283,8 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
         db = self.db
         primary_partition = db.primary_partition_name()
-        db_config = db.lint_config(tables, meta_stage=stage, tmp_staging=tmp_staging)
+        db_config = self._get_database_linter_config(tables, stage, tmp_staging)
+
         if db_config:
             if get_filepaths_from_s3_folder(db._land_path + "/"):
                 _logger.info("Running data linter")

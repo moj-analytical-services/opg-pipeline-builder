@@ -527,7 +527,10 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         existing_prts = set(
             self.utils.list_partitions(
-                table_name=table_name, stage="derived", extract_timestamp=True
+                table_name=table_name,
+                stage="derived",
+                extract_timestamp=True,
+                disable_environment=True,
             )
         )
 

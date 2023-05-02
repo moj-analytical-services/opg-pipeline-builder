@@ -38,6 +38,7 @@ class TransformEngineUtils(BaseModel):
         modified_after: Optional[Union[datetime, None]] = None,
         modified_before: Optional[Union[datetime, None]] = None,
         additional_stages: Optional[Union[Dict[str, str], None]] = None,
+        disable_environment: Optional[bool] = False,
     ) -> List[str]:
         """Lists files in S3 for a given table
 
@@ -75,7 +76,7 @@ class TransformEngineUtils(BaseModel):
         if modified_after is None:
             modified_after = get_start_date()
 
-        if modified_before is None:
+        if modified_before is None and disable_environment is False:
             modified_before = get_end_date()
 
         table = self._db.table(table_name)

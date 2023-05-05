@@ -233,7 +233,7 @@ class TestAthenaTransformEngine:
         for prt in output_partitions:
             output_meta.remove_column(prt)
 
-        monkeypatch.setattr(athena, "SchemaReader", sr.SchemaReader)
+        # monkeypatch.setattr(athena, "SchemaReader", sr.SchemaReader)
         mock_unload_partial = partial(
             self.mock_unload, status=status, output_meta=output_meta
         )
@@ -371,7 +371,7 @@ class TestAthenaTransformEngine:
         for prt in output_partitions:
             output_meta.remove_column(prt)
 
-        monkeypatch.setattr(athena, "SchemaReader", sr.SchemaReader)
+        # monkeypatch.setattr(athena, "SchemaReader", sr.SchemaReader)
         mock_unload_partial = partial(
             self.mock_unload,
             status=status,

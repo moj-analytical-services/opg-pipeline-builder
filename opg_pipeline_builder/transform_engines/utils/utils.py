@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import awswrangler as wr
 from dataengineeringutils3.s3 import _add_slash
+from mojap_metadata import Metadata
 from pydantic import BaseModel
 from ssm_parameter_store import EC2ParameterStore
 
@@ -336,3 +337,29 @@ class TransformEngineUtils(BaseModel):
         for prt in partitions:
             prt_path = os.path.join(base_data_path, prt)
             wr.s3.delete_objects(_add_slash(prt_path))
+
+    @staticmethod
+    def get_common_columns(
+        input_metadata: Metadata,
+        output_metadata: Metadata,
+    ) -> List[str]:
+        input_columns = input_metadata.columns
+        output_columns = output_metadata.columns
+
+        input_column_names = [c["name"].lower() for c in input_columns]
+        output_column_names = [c["name"].lower() for c in output_columns]
+
+        input_column_types = {c["name"].lower(): c["type"] for c in input_columns}
+        output_column_types = {c["name"].lower(): c["type"] for c in output_columns}
+
+        common_columns = [
+            c
+            for c in output_column_names
+            if (c in input_column_names and c not in output_metadata.partitions)
+        ]
+
+        common_columns_with_same_types = [
+            c for c in common_columns if input_column_types[c] == output_column_types[c]
+        ]
+
+        return common_columns_with_same_types

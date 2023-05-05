@@ -1,27 +1,27 @@
 import logging
 import os
-from copy import deepcopy
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import awswrangler as wr
-import boto3
 import pydbtools as pydb
 from mojap_metadata import Metadata
-from mojap_metadata.converters.glue_converter import GlueConverter
 
 from ..database import Database
 from ..utils.constants import (
-    etl_stages,
     get_end_date,
     get_full_db_name,
+    get_source_db,
     get_source_tbls,
     get_start_date,
 )
-from ..utils.schema_reader import SchemaReader
-from ..utils.utils import extract_mojap_timestamp, s3_bulk_copy
+from ..utils.utils import extract_mojap_timestamp
 from .base import BaseTransformEngine
+from .transforms import athena as athena_transforms
+from .utils.athena import AthenaTransformEngineUtils
 
 _logger: logging.Logger = logging.getLogger(__name__)
+
+DEFAULT_ATHENA_TRANSFORM = "parquet"
 
 
 class AthenaTransformEngine(BaseTransformEngine):
@@ -37,25 +37,43 @@ class AthenaTransformEngine(BaseTransformEngine):
     sql_table_filter: Optional[bool] = False
     db_search_limit: Optional[Union[int, None]] = None
     jinja_args: Optional[Union[dict, None]] = None
+    transforms: Optional[Union[athena_transforms.AthenaTransformations, None]] = None
 
-    @staticmethod
-    def _check_table_is_not_empty(table_name: str):
-        count_template = pydb.render_sql_template(
-            "SELECT COUNT(*) as count FROM __temp__.{{ sql_tbl }}",
-            jinja_args={"sql_tbl": table_name},
-        )
+    def __init__(
+        self,
+        db_name: Optional[str] = None,
+        utils: Optional[AthenaTransformEngineUtils] = None,
+        transforms: Optional[athena_transforms.AthenaTransformations] = None,
+        transforms_type: Optional[Union[str, None]] = None,
+        **kwargs,
+    ):
+        if db_name is None:
+            _logger.debug("Setting database for engine from environment")
+            db_name = get_source_db()
+            _logger.debug(f"Engine database environment variable set to {db_name}")
 
-        tbl_check = pydb.read_sql_query(count_template)
+        db = Database(db_name=db_name)
+        utils = AthenaTransformEngineUtils(db=db) if utils is None else utils
 
-        if tbl_check["count"][0] == 0:
-            raise ValueError(f"No data exists in {table_name}")
+        super().__init__(db_name=db_name, utils=utils, **kwargs)
+
+        if transforms is None:
+            transforms_type = (
+                DEFAULT_ATHENA_TRANSFORM if transforms_type is None else transforms_type
+            )
+            formatted_transform_type = transforms_type[0].upper() + transforms_type[1:]
+            transforms_class_name = f"Athena{formatted_transform_type}Transformations"
+            transforms_class = getattr(athena_transforms, transforms_class_name)
+            transforms = transforms_class(utils=self.utils, db=self.db)
+
+        self.transforms = transforms
 
     def _default_jinja_args(
         self,
         snapshot_timestamps: Optional[Union[str, None]] = None,
         database_name: Optional[Union[str, None]] = None,
         environment: Optional[Union[str, None]] = None,
-    ):
+    ) -> Dict[str, str]:
         environment = self.db.env if environment is None else environment
 
         database_name = (
@@ -81,7 +99,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         temporary_table_name: str,
         expected_snapshots: List[str],
-    ):
+    ) -> Tuple[bool, bool]:
         primary_partition = self.db.primary_partition_name()
         try:
             check_prts_sql = pydb.render_sql_template(
@@ -186,7 +204,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     **jinja_args,
                 )
 
-                self._check_table_is_not_empty(table_name=sql_tbl)
+                self.utils.check_table_is_not_empty(table_name=sql_tbl)
 
     def _create_temporary_tables(self, table_name: str, **jinja_args):
         """Create temp tables for the given db table
@@ -220,164 +238,9 @@ class AthenaTransformEngine(BaseTransformEngine):
                 **jinja_args,
             )
 
-    def _default_transform(
-        self, sql: str, output_meta: Metadata, output_path: str, tmp_db: str
-    ):
-        """Default table transformation
-
-        Takes an SQL query for a temporary table in Athena and unloads
-        the output to a temporary staging area in S3. The output is then
-        checked against the provided metadata and then copied to the output
-        path if the check passes. Otherwise, the data is deleted and an error
-        is raised.
-
-        Params
-        ------
-        sql: str
-            SQL query to run against the temporary Athena database
-
-        output_meta: Metadata
-            Metadata for the data created from the SQL query
-
-        output_path: str
-            Location to place final results in S3
-
-        tmp_db: str
-            Name of the temporary database
-
-        Return
-        ------
-        None
-        """
-        try:
-            temp_path = output_path
-            for stage in etl_stages:
-                temp_path = temp_path.replace(stage, "temp")
-
-            response = wr.athena.unload(
-                sql=sql,
-                path=temp_path,
-                database=tmp_db,
-                file_format="parquet",
-                compression="snappy",
-                partitioned_by=output_meta.partitions,
-            )
-
-            if response.raw_payload["Status"]["State"] == "SUCCEEDED":
-                response_meta = [
-                    f"{response.output_location}.metadata",
-                    response.manifest_location,
-                ]
-                all_tmp_files = wr.s3.list_objects(temp_path)
-                tmp_files = [fp for fp in all_tmp_files if fp not in response_meta]
-
-                output_meta_dc = deepcopy(output_meta)
-                sr = SchemaReader()
-                schema_check = sr.check_schemas_match(
-                    tmp_files, output_meta_dc, ext="parquet"
-                )
-
-                if schema_check:
-                    perm_files = [
-                        f"{fo.replace(temp_path, output_path)}" + ".snappy.parquet"
-                        if fo.endswith(".snappy.parquet") is False
-                        else f"{fo.replace(temp_path, output_path)}"
-                        for fo in tmp_files
-                    ]
-
-                    copy_args = list(zip(tmp_files, perm_files))
-                    _ = s3_bulk_copy(copy_args)
-                    wr.s3.delete_objects(temp_path)
-
-                else:
-                    _logger.info("Schema validation failed. Deleting temp files")
-                    wr.s3.delete_objects(temp_path)
-                    raise ValueError("Files do not match expected schema")
-
-            else:
-                _logger.info("Failed to execute sql. Deleting temp folder")
-                wr.s3.delete_objects(temp_path)
-                raise ValueError("Failed to execute unload")
-
-        except Exception as e:
-            _logger.info(f"Failed to execute sql because of {e}. Deleting temp folder")
-            wr.s3.delete_objects(temp_path)
-            raise
-
-    def _custom_transform(
-        self, sql: str, output_meta: Metadata, output_path: str, tmp_db: str
-    ):
-        """Custom table transformation
-
-        Passes arguments to the table specific method (this is the name
-        of the table as specified in output meta) e.g. _tablename_transform
-
-        Params
-        ------
-        sql: str
-            SQL query to run against the temporary Athena database
-
-        output_meta: Metadata
-            Metadata for the data created from the SQL query
-
-        output_path: str
-            Location to place final results in S3
-
-        tmp_db: str
-            Name of the temporary database
-
-        Return
-        ------
-        None
-        """
-        table_name = output_meta.name
-        transform = getattr(self, f"_{table_name}_transform")
-        transform(sql, output_meta, output_path, tmp_db)
-
-    def _derived_transform(
-        self, sql: str, output_meta: Metadata, output_path: str, tmp_db: str
-    ):
-        """Derived table transformation
-
-        Transformation to apply to tables marked with 'derived' transformation
-        in database config. Will use a private method '_tablename_transform'
-        if it is available. This method will only run the SQL marked as
-        final in the db config.
-
-        Params
-        ------
-        sql: str
-            SQL query to run against the temporary Athena database
-
-        output_meta: Metadata
-            Metadata for the data created from the SQL query
-
-        output_path: str
-            Location to place final results in S3
-
-        tmp_db: str
-            Name of the temporary database
-
-        Return
-        ------
-        None
-        """
-        table_name = output_meta.name
-        try:
-            transform = getattr(self, f"_{table_name}_transform")
-            transform(sql, output_meta, output_path, tmp_db)
-        except AttributeError:
-            sql_info = self.db.table(table_name).table_sql_paths("final")
-            sql_tbl_name, _ = sql_info[0]
-            if len(sql_info) == 1 and sql_tbl_name == table_name:
-                self._default_transform(
-                    sql=sql,
-                    output_meta=output_meta,
-                    output_path=output_path,
-                    tmp_db=tmp_db,
-                )
-
-    def _temporary_database_name_for_load(self, table_name: str, input_stage: str):
+    def _temporary_database_name_for_load(
+        self, table_name: str, input_stage: str
+    ) -> str:
         input_stage_under = input_stage.replace("-", "_")
         return "_".join(
             [
@@ -389,7 +252,9 @@ class AthenaTransformEngine(BaseTransformEngine):
             ]
         )
 
-    def _prepare_input_metadata_for_load(self, table_name: str, input_stage: str):
+    def _prepare_input_metadata_for_load(
+        self, table_name: str, input_stage: str
+    ) -> Metadata:
         tbl = self.db.table(table_name)
 
         primary_partition = self.db.primary_partition_name()
@@ -422,33 +287,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         return input_meta
 
-    @staticmethod
-    def _get_common_columns(
-        input_metadata: Metadata,
-        output_metadata: Metadata,
-    ):
-        input_columns = input_metadata.columns
-        output_columns = output_metadata.columns
-
-        input_column_names = [c["name"].lower() for c in input_columns]
-        output_column_names = [c["name"].lower() for c in output_columns]
-
-        input_column_types = {c["name"].lower(): c["type"] for c in input_columns}
-        output_column_types = {c["name"].lower(): c["type"] for c in output_columns}
-
-        common_columns = [
-            c
-            for c in output_column_names
-            if (c in input_column_names and c not in output_metadata.partitions)
-        ]
-
-        common_columns_with_same_types = [
-            c for c in common_columns if input_column_types[c] == output_column_types[c]
-        ]
-
-        return common_columns_with_same_types
-
-    def _get_sql_partitions(self, partitions: List[str]):
+    def _get_sql_partitions(self, partitions: List[str]) -> str:
         prts_timestamps = [
             str(
                 extract_mojap_timestamp(
@@ -460,7 +299,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         prts_sql_clause = ",".join(prts_timestamps)
         return prts_sql_clause
 
-    def _get_sql_path(self, table_name: str, transformation_type: str):
+    def _get_sql_path(self, table_name: str, transformation_type: str) -> str:
         sql_paths = self.db.shared_sql_paths(tf_types=[transformation_type])
 
         if self.sql_table_filter:
@@ -480,8 +319,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         input_metadata: Metadata,
         output_metadata: Metadata,
         temporary_database_name: str,
-    ):
-        common_columns_with_same_types = self._get_common_columns(
+    ) -> str:
+        common_columns_with_same_types = self.utils.get_common_columns(
             input_metadata=input_metadata,
             output_metadata=output_metadata,
         )
@@ -517,7 +356,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         temporary_load_database_name: str,
         partitions: List[str],
     ):
-        transform = getattr(self, f"_{transformation_type}_transform")
+        transform = getattr(self.transforms, f"{transformation_type}_transform")
 
         try:
             transform(sql, output_metadata, output_path, temporary_load_database_name)
@@ -591,12 +430,12 @@ class AthenaTransformEngine(BaseTransformEngine):
                     table_name, stages=stages
                 )
 
-                self._recreate_database(
+                self.utils.recreate_database(
                     database_name=temp_input_db_name,
                     existing_databases=existing_databases,
                 )
 
-                self._refresh_and_repair_table(
+                self.utils.refresh_and_repair_table(
                     table_name=table_name,
                     database_name=temp_input_db_name,
                     table_metadata=input_meta,
@@ -634,7 +473,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         table_name: str,
         transform_args: Dict,
         primary_partition: str,
-    ):
+    ) -> List[str]:
         cutoff_sql_clause = self._create_derived_cutoff_sql_clause()
         ipt_args = transform_args["transforms"][table_name]["input"]
         db_ipts = list(ipt_args.keys())
@@ -746,11 +585,11 @@ class AthenaTransformEngine(BaseTransformEngine):
         sql = pydb.get_sql_from_file(sql_path, jinja_args=new_jinja_args)
 
         try:
-            self._derived_transform(
+            self.transforms.derived_transform(
                 sql,
                 output_path=output_path,
                 output_meta=output_meta,
-                tmp_db=tmp_db,
+                database_name=tmp_db,
             )
 
             return output_meta, output_path
@@ -770,42 +609,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def _recreate_database(
-        self,
-        database_name: str,
-        existing_databases: Optional[Union[List[str], None]] = None,
-    ):
-        if existing_databases is None:
-            databases_df = wr.catalog.databases(limit=self.db_search_limit)
-            existing_databases = databases_df.Database.to_list()
-
-        if database_name in existing_databases:
-            wr.catalog.delete_database(database_name)
-
-        wr.catalog.create_database(database_name)
-
-    @staticmethod
-    def _refresh_and_repair_table(
-        table_name: str,
-        database_name: str,
-        table_metadata: Metadata,
-        table_data_path: str,
-    ):
-        wr.catalog.delete_table_if_exists(database=database_name, table=table_name)
-
-        gc = GlueConverter()
-
-        spec = gc.generate_from_meta(
-            table_metadata,
-            database_name=database_name,
-            table_location=table_data_path,
-        )
-
-        glue_client = boto3.client("glue")
-        glue_client.create_table(**spec)
-        wr.athena.repair_table(table=table_name, database=database_name)
-
-    def _create_derived_cutoff_sql_clause(self):
+    def _create_derived_cutoff_sql_clause(self) -> str:
         primary_partition = self.db.primary_partition_name()
 
         cutoff_min = (
@@ -899,7 +703,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 jinja_args=jinja_args,
             )
 
-            self._refresh_and_repair_table(
+            self.utils.refresh_and_repair_table(
                 table_name=output_meta.name,
                 database_name=db_derived_name,
                 table_metadata=output_meta,

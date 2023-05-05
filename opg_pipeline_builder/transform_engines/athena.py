@@ -38,7 +38,101 @@ class AthenaTransformEngine(BaseTransformEngine):
     db_search_limit: Optional[Union[int, None]] = None
     jinja_args: Optional[Union[dict, None]] = None
 
-    def _create_shared_tmp_tables(
+    @staticmethod
+    def _check_table_is_not_empty(table_name: str):
+        count_template = pydb.render_sql_template(
+            "SELECT COUNT(*) as count FROM __temp__.{{ sql_tbl }}",
+            jinja_args={"sql_tbl": table_name},
+        )
+
+        tbl_check = pydb.read_sql_query(count_template)
+
+        if tbl_check["count"][0] == 0:
+            raise ValueError(f"No data exists in {table_name}")
+
+    def _default_jinja_args(
+        self,
+        snapshot_timestamps: Optional[Union[str, None]] = None,
+        database_name: Optional[Union[str, None]] = None,
+        environment: Optional[Union[str, None]] = None,
+    ):
+        environment = self.db.env if environment is None else environment
+
+        database_name = (
+            get_full_db_name(db_name=self.db.name, env=environment)
+            if database_name is None
+            else database_name
+        )
+
+        additional_jinja_args = {} if self.jinja_args is None else self.jinja_args
+
+        return {
+            "database_name": database_name,
+            "environment": environment,
+            "snapshot_timestamps": snapshot_timestamps
+            if snapshot_timestamps is not None
+            else "",
+            "github_tag": os.environ["GITHUB_TAG"],
+            "primary_partition": self.db.primary_partition_name(),
+            **additional_jinja_args,
+        }
+
+    def _check_shared_temporary_table_snapshots(
+        self,
+        temporary_table_name: str,
+        expected_snapshots: List[str],
+    ):
+        primary_partition = self.db.primary_partition_name()
+        try:
+            check_prts_sql = pydb.render_sql_template(
+                """
+                SELECT DISTINCT({{ primary_partition }}) as distinct_prts
+                FROM __temp__.{{ temporary_table_name }}
+                ORDER BY {{ primary_partition }} DESC
+                """,
+                {
+                    "temporary_table_name": temporary_table_name,
+                    "primary_partition": primary_partition,
+                },
+            )
+
+            check_prts = pydb.read_sql_queries(check_prts_sql)
+            check_prts_str = [str(prt) for prt in check_prts["distinct_prts"]]
+
+            delete_existing_temporary_table = sorted(check_prts_str) != sorted(
+                expected_snapshots
+            )
+
+            temporary_table_exists = True
+
+        except wr.exceptions.QueryFailed:
+            delete_existing_temporary_table = False
+            temporary_table_exists = False
+
+        return temporary_table_exists, delete_existing_temporary_table
+
+    def _create_temp_table(
+        self,
+        temp_table_name: str,
+        table_sql_filepath: str,
+        base_database_name: Optional[Union[str, None]],
+        environment: Optional[Union[str, None]] = None,
+        **additional_jinja_args,
+    ):
+        sql = pydb.get_sql_from_file(
+            table_sql_filepath,
+            jinja_args={
+                **self._default_jinja_args(
+                    database_name=base_database_name,
+                    environment=environment,
+                ),
+                **additional_jinja_args,
+            },
+        )
+
+        pydb.create_temp_table(sql, table_name=temp_table_name)
+
+    def _create_shared_temporary_tables(
         self, tf_types: List[str], snapshot_timestamps: str, **jinja_args
     ) -> None:
         """Create db shared temp tables
@@ -65,65 +159,34 @@ class AthenaTransformEngine(BaseTransformEngine):
         None
         """
         db = self.db
-        primary_partition = db.primary_partition_name()
-        db_name = get_full_db_name(db_name=db.name, env=db.env)
 
         shared_sql = db.shared_sql_paths(tf_types)
 
         for sql_tbl, sql_path in shared_sql:
-            try:
-                check_prts_sql = pydb.render_sql_template(
-                    """
-                    SELECT DISTINCT({{ primary_partition }}) as distinct_prts
-                    FROM __temp__.{{ sql_tbl }}
-                    ORDER BY {{ primary_partition }} DESC
-                    """,
-                    {"sql_tbl": sql_tbl, "primary_partition": primary_partition},
-                )
-                check_prts = pydb.read_sql_queries(check_prts_sql)
-                check_prts_str = [str(prt) for prt in check_prts["distinct_prts"]]
-                check_prts_str.sort(reverse=True)
-                check_prts_arg = ",".join(check_prts_str)
-                delete_table_check = check_prts_arg != snapshot_timestamps
-                tmp_tbl_exists = True
+            (
+                temporary_table_exists,
+                delete_temporary_table,
+            ) = self._check_shared_temporary_table_snapshots(
+                temporary_table_name=sql_tbl,
+                expected_snapshots=snapshot_timestamps,
+            )
 
-            except wr.exceptions.QueryFailed:
-                delete_table_check = False
-                tmp_tbl_exists = False
-
-            if delete_table_check:
+            if delete_temporary_table:
                 pydb.delete_table_and_data(database="__temp__", table=sql_tbl)
 
-            create_tmp_tbl_check = delete_table_check or tmp_tbl_exists is False
-            if create_tmp_tbl_check:
-                sql = pydb.get_sql_from_file(
-                    sql_path,
-                    jinja_args={
-                        "database_name": db_name,
-                        "environment": db.env,
-                        "snapshot_timestamps": snapshot_timestamps,
-                        "github_tag": os.environ["GITHUB_TAG"],
-                        "primary_partition": primary_partition,
-                        **jinja_args,
-                    },
+            create_temporary_table = (
+                delete_temporary_table or temporary_table_exists is False
+            )
+
+            if create_temporary_table:
+                self._create_temp_table(
+                    temp_table_name=sql_tbl,
+                    table_sql_filepath=sql_path,
+                    snapshot_timestamps=snapshot_timestamps,
+                    **jinja_args,
                 )
 
-                pydb.create_temp_table(sql, table_name=sql_tbl)
-
-                count_template = pydb.render_sql_template(
-                    "SELECT COUNT(*) as count FROM __temp__.{{ sql_tbl }}",
-                    jinja_args={"sql_tbl": sql_tbl},
-                )
-
-                tbl_check = pydb.read_sql_query(count_template)
-
-                if tbl_check["count"][0] == 0:
-                    raise ValueError(
-                        f"""
-                        No data exists in {sql_tbl} for
-                        snapshot {snapshot_timestamps}
-                        """
-                    )
+                self._check_table_is_not_empty(table_name=sql_tbl)
 
     def _create_temporary_tables(self, table_name: str, **jinja_args):
         """Create temp tables for the given db table
@@ -147,22 +210,15 @@ class AthenaTransformEngine(BaseTransformEngine):
         db = self.db
         db_name = db.name
         table = db.table(table_name)
-        primary_partition = db.primary_partition_name()
         tbl_tmp_sql = table.table_sql_paths(type="temp")
 
         for sql_tmp_tbl, sql_tpt in tbl_tmp_sql:
-            tbl_sql = pydb.get_sql_from_file(
-                sql_tpt,
-                jinja_args={
-                    "database_name": db_name,
-                    "environment": db.env,
-                    "github_tag": os.environ["GITHUB_TAG"],
-                    "primary_partition": primary_partition,
-                    **jinja_args,
-                },
+            self._create_temp_table(
+                temp_table_name=sql_tmp_tbl,
+                table_sql_filepath=sql_tpt,
+                base_database_name=db_name,
+                **jinja_args,
             )
-
-            pydb.create_temp_table(tbl_sql, table_name=sql_tmp_tbl)
 
     def _default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, tmp_db: str
@@ -321,6 +377,174 @@ class AthenaTransformEngine(BaseTransformEngine):
                     tmp_db=tmp_db,
                 )
 
+    def _temporary_database_name_for_load(self, table_name: str, input_stage: str):
+        input_stage_under = input_stage.replace("-", "_")
+        return "_".join(
+            [
+                "_temp",
+                self.db.name,
+                self.db.env,
+                table_name,
+                input_stage_under,
+            ]
+        )
+
+    def _prepare_input_metadata_for_load(self, table_name: str, input_stage: str):
+        tbl = self.db.table(table_name)
+
+        primary_partition = self.db.primary_partition_name()
+
+        if input_stage in ["raw", "raw-hist"]:
+            tbl_cast_args = tbl.get_cast_cols()
+
+            meta_cast_args = [
+                {"name": col, "type": dtype, "nullable": True}
+                for col, dtype, _ in tbl_cast_args
+            ]
+
+        else:
+            meta_cast_args = []
+
+        input_meta = tbl.get_table_metadata(
+            input_stage,
+            [
+                {
+                    "name": primary_partition,
+                    "type": "int64",
+                    "nullable": False,
+                    "type_category": "integer",
+                },
+                *meta_cast_args,
+            ],
+        )
+
+        input_meta.partitions = [primary_partition]
+
+        return input_meta
+
+    @staticmethod
+    def _get_common_columns(
+        input_metadata: Metadata,
+        output_metadata: Metadata,
+    ):
+        input_columns = input_metadata.columns
+        output_columns = output_metadata.columns
+
+        input_column_names = [c["name"].lower() for c in input_columns]
+        output_column_names = [c["name"].lower() for c in output_columns]
+
+        input_column_types = {c["name"].lower(): c["type"] for c in input_columns}
+        output_column_types = {c["name"].lower(): c["type"] for c in output_columns}
+
+        common_columns = [
+            c
+            for c in output_column_names
+            if (c in input_column_names and c not in output_metadata.partitions)
+        ]
+
+        common_columns_with_same_types = [
+            c for c in common_columns if input_column_types[c] == output_column_types[c]
+        ]
+
+        return common_columns_with_same_types
+
+    def _get_sql_partitions(self, partitions: List[str]):
+        prts_timestamps = [
+            str(
+                extract_mojap_timestamp(
+                    prt, timestamp_partition_name=self.db.primary_partition_name()
+                )
+            )
+            for prt in partitions
+        ]
+        prts_sql_clause = ",".join(prts_timestamps)
+        return prts_sql_clause
+
+    def _get_sql_path(self, table_name: str, transformation_type: str):
+        sql_paths = self.db.shared_sql_paths(tf_types=[transformation_type])
+
+        if self.sql_table_filter:
+            sql_table_args = [path for tbl, path in sql_paths if tbl in table_name]
+            sql_path = sql_table_args[0]
+
+        else:
+            _, sql_path = sql_paths[0]
+
+        return sql_path
+
+    def _get_sql(
+        self,
+        table_name: str,
+        partitions: List[str],
+        transformation_type: str,
+        input_metadata: Metadata,
+        output_metadata: Metadata,
+        temporary_database_name: str,
+    ):
+        common_columns_with_same_types = self._get_common_columns(
+            input_metadata=input_metadata,
+            output_metadata=output_metadata,
+        )
+
+        sql_columns = ",\n".join(common_columns_with_same_types)
+
+        sql_partitions = self._get_sql_partitions(partitions=partitions)
+
+        sql_path = self._get_sql_path(table_name, transformation_type)
+
+        sql = pydb.get_sql_from_file(
+            sql_path,
+            {
+                **self._default_jinja_args(
+                    snapshot_timestamps=sql_partitions,
+                    database_name=temporary_database_name,
+                ),
+                "table_name": table_name,
+                "sql_columns": sql_columns,
+            },
+        )
+
+        return sql
+
+    def _execute_load(
+        self,
+        sql: str,
+        transformation_type: str,
+        input_stage: str,
+        input_path: str,
+        output_metadata: Metadata,
+        output_path: str,
+        temporary_load_database_name: str,
+        partitions: List[str],
+    ):
+        transform = getattr(self, f"_{transformation_type}_transform")
+
+        try:
+            transform(sql, output_metadata, output_path, temporary_load_database_name)
+
+            wr.catalog.delete_database(temporary_load_database_name)
+            if input_stage != "raw-hist":
+                self.utils.cleanup_partitions(
+                    base_data_path=input_path, partitions=partitions
+                )
+
+        except Exception as e:
+            _logger.info(
+                (
+                    "Failed to write data to curated.\n"
+                    f"Error: {e}\n"
+                    "Deleting any half-written files.\n"
+                )
+            )
+
+            self.utils.cleanup_partitions(
+                base_data_path=output_path, partitions=partitions
+            )
+
+            wr.catalog.delete_database(temporary_load_database_name)
+
+            raise
+
     def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
         """Use AWS Athena to perform data transformation
 
@@ -341,158 +565,66 @@ class AthenaTransformEngine(BaseTransformEngine):
         ------
         None
         """
-        sql_table_filter = self.sql_table_filter
-        db_search_limit = self.db_search_limit
-        jinja_args = {} if self.jinja_args is None else self.jinja_args
         tables = get_source_tbls() if tables is None else tables
 
         db = self.db
-        db_name = db.name
-        primary_partition = db.primary_partition_name()
-        env = db.env
-        databases = wr.catalog.databases(limit=db_search_limit)
+        databases = wr.catalog.databases(limit=self.db_search_limit)
+        existing_databases = databases.Database.to_list()
 
         tbl_prts = self.utils.transform_partitions(tables, stages=stages)
 
         ipt_stage = stages["input"]
         out_stage = stages["output"]
-        inp_stage_lc = ipt_stage.replace("-", "_")
 
         for table_name, prts in tbl_prts.items():
             _logger.info(f"Starting job for {table_name}")
             if prts:
-                tbl = db.table(table_name)
-                temp_input_db_name = "_".join(
-                    [
-                        "_temp",
-                        db_name,
-                        env,
-                        table_name,
-                        inp_stage_lc,
-                    ]
+                temp_input_db_name = self._temporary_database_name_for_load(
+                    table_name, ipt_stage
+                )
+
+                input_meta = self._prepare_input_metadata_for_load(
+                    table_name, ipt_stage
                 )
 
                 input_path, output_path, tf_type = self.utils.tf_args(
                     table_name, stages=stages
                 )
 
-                if ipt_stage in ["raw", "raw-hist"]:
-                    tbl_cast_args = tbl.get_cast_cols()
-
-                    meta_cast_args = [
-                        {"name": col, "type": dtype, "nullable": True}
-                        for col, dtype, _ in tbl_cast_args
-                    ]
-
-                else:
-                    meta_cast_args = []
-
-                input_meta = tbl.get_table_metadata(
-                    ipt_stage,
-                    [
-                        {
-                            "name": primary_partition,
-                            "type": "int64",
-                            "nullable": False,
-                            "type_category": "integer",
-                        },
-                        *meta_cast_args,
-                    ],
-                )
-
-                input_meta.partitions = [primary_partition]
-
-                if temp_input_db_name in databases.Database.to_list():
-                    wr.catalog.delete_database(temp_input_db_name)
-
-                wr.catalog.create_database(temp_input_db_name)
-
-                gc = GlueConverter()
-                spec = gc.generate_from_meta(
-                    input_meta,
+                self._recreate_database(
                     database_name=temp_input_db_name,
-                    table_location=input_path,
+                    existing_databases=existing_databases,
                 )
 
-                glue_client = boto3.client("glue")
-                glue_client.create_table(**spec)
-                wr.athena.repair_table(table=table_name, database=temp_input_db_name)
+                self._refresh_and_repair_table(
+                    table_name=table_name,
+                    database_name=temp_input_db_name,
+                    table_metadata=input_meta,
+                    table_data_path=input_path,
+                )
 
-                output_meta = tbl.get_table_metadata(out_stage)
+                output_meta = db.table(table_name).get_table_metadata(out_stage)
                 output_meta.force_partition_order = "start"
 
-                output_cols = [c["name"].lower() for c in output_meta.columns]
-                input_cols = [c["name"].lower() for c in input_meta.columns]
-                inandout_cols = [
-                    c
-                    for c in output_cols
-                    if (c in input_cols and c not in output_meta.partitions)
-                ]
-
-                sql_columns = ", ".join(inandout_cols)
-
-                etl_version = os.environ["GITHUB_TAG"]
-
-                prts_timestamps = [
-                    str(
-                        extract_mojap_timestamp(
-                            prt, timestamp_partition_name=primary_partition
-                        )
-                    )
-                    for prt in prts
-                ]
-                prts_sql_clause = ",".join(prts_timestamps)
-
-                sql_paths = db.shared_sql_paths(tf_types=[tf_type])
-                if sql_table_filter:
-                    sql_table_args = [
-                        path for tbl, path in sql_paths if tbl in table_name
-                    ]
-                    sql_path = sql_table_args[0]
-                else:
-                    _, sql_path = sql_paths[0]
-
-                sql = pydb.get_sql_from_file(
-                    sql_path,
-                    {
-                        "database_name": temp_input_db_name,
-                        "environment": db.env,
-                        "table_name": table_name,
-                        "github_tag": etl_version,
-                        "sql_columns": sql_columns,
-                        "snapshot_timestamps": prts_sql_clause,
-                        "primary_partition": primary_partition,
-                        **jinja_args,
-                    },
+                sql = self._get_sql(
+                    table_name=table_name,
+                    partitions=prts,
+                    transformation_type=tf_type,
+                    input_metadata=input_meta,
+                    output_metadata=output_meta,
+                    temporary_database_name=temp_input_db_name,
                 )
 
-                transform = getattr(self, f"_{tf_type}_transform")
-
-                try:
-                    transform(sql, output_meta, output_path, temp_input_db_name)
-
-                    wr.catalog.delete_database(temp_input_db_name)
-                    if ipt_stage != "raw-hist":
-                        self.utils.cleanup_partitions(
-                            base_data_path=input_path, partitions=prts
-                        )
-
-                except Exception as e:
-                    _logger.info(
-                        (
-                            "Failed to write data to curated.\n"
-                            f"Error: {e}\n"
-                            "Deleting any half-written files.\n"
-                        )
-                    )
-
-                    self.utils.cleanup_partitions(
-                        base_data_path=output_path, partitions=prts
-                    )
-
-                    wr.catalog.delete_database(temp_input_db_name)
-
-                    raise
+                self._execute_load(
+                    sql=sql,
+                    transformation_type=tf_type,
+                    input_stage=ipt_stage,
+                    input_path=input_path,
+                    output_metadata=output_meta,
+                    output_path=output_path,
+                    temporary_load_database_name=temp_input_db_name,
+                    partitions=prts,
+                )
 
             else:
                 _logger.info(f"No partitions to process for {table_name}")
@@ -501,9 +633,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         table_name: str,
         transform_args: Dict,
-        cutoff_sql_clause: str,
         primary_partition: str,
     ):
+        cutoff_sql_clause = self._create_derived_cutoff_sql_clause()
         ipt_args = transform_args["transforms"][table_name]["input"]
         db_ipts = list(ipt_args.keys())
         tbl_ipts = [list(ipt_args[ipt_db].keys()) for ipt_db in ipt_args]
@@ -577,8 +709,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         uses_shared_sql = table.table_uses_shared_sql()
 
         if uses_shared_sql:
-            self._create_shared_tmp_tables(
-                tf_types=["derived"], snapshot_timestamps=prts_arg, **jinja_args
+            self._create_shared_temporary_tables(
+                tf_types=["derived"], snapshot_timestamps=partitions, **jinja_args
             )
 
         self._create_temporary_tables(
@@ -638,8 +770,22 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def _refresh_and_repair_table(
+    def _recreate_database(
         self,
+        database_name: str,
+        existing_databases: Optional[Union[List[str], None]] = None,
+    ):
+        if existing_databases is None:
+            databases_df = wr.catalog.databases(limit=self.db_search_limit)
+            existing_databases = databases_df.Database.to_list()
+
+        if database_name in existing_databases:
+            wr.catalog.delete_database(database_name)
+
+        wr.catalog.create_database(database_name)
+
+    @staticmethod
+    def _refresh_and_repair_table(
         table_name: str,
         database_name: str,
         table_metadata: Metadata,
@@ -658,6 +804,27 @@ class AthenaTransformEngine(BaseTransformEngine):
         glue_client = boto3.client("glue")
         glue_client.create_table(**spec)
         wr.athena.repair_table(table=table_name, database=database_name)
+
+    def _create_derived_cutoff_sql_clause(self):
+        primary_partition = self.db.primary_partition_name()
+
+        cutoff_min = (
+            int(get_start_date().timestamp()) if get_start_date() is not None else 0
+        )
+        cutoff_max = (
+            int(get_end_date().timestamp()) if get_end_date() is not None else None
+        )
+
+        max_cutoff_clause = f"{primary_partition} <= {cutoff_max}"
+        min_cutoff_clause = f"{primary_partition} >= {cutoff_min}"
+
+        cutoff_clause = (
+            min_cutoff_clause
+            if cutoff_max is None
+            else (min_cutoff_clause + " AND " + max_cutoff_clause)
+        )
+
+        return cutoff_clause
 
     def run_derived(
         self,
@@ -696,22 +863,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             tables, stages=["derived"], tf_types=["derived"]
         )
 
-        cutoff_min = (
-            int(get_start_date().timestamp()) if get_start_date() is not None else 0
-        )
-        cutoff_max = (
-            int(get_end_date().timestamp()) if get_end_date() is not None else None
-        )
-
-        max_cutoff_clause = f"{primary_partition} <= {cutoff_max}"
-        min_cutoff_clause = f"{primary_partition} >= {cutoff_min}"
-        cutoff_clause = (
-            min_cutoff_clause
-            if cutoff_max is None
-            else (min_cutoff_clause + " AND " + max_cutoff_clause)
-        )
-
-        databases = wr.catalog.databases(limit=10_000)
+        databases = wr.catalog.databases(self.db_search_limit)
         if db_derived_name not in databases.Database.to_list():
             wr.catalog.create_database(
                 db_derived_name, description=f"Derived {db.name} tables"
@@ -727,7 +879,6 @@ class AthenaTransformEngine(BaseTransformEngine):
             new_prts = self._new_derived_table_partitions(
                 table_name=tbl,
                 transform_args=tf_args,
-                cutoff_sql_clause=cutoff_clause,
                 primary_partition=primary_partition,
             )
 

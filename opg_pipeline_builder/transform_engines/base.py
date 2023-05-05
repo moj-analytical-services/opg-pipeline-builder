@@ -18,7 +18,12 @@ class BaseTransformEngine(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    def __init__(self, db_name: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        db_name: Optional[str] = None,
+        utils: Optional[TransformEngineUtils] = None,
+        **kwargs,
+    ):
         if db_name is None:
             _logger.debug("Setting database for engine from environment")
             db_name = get_source_db()
@@ -28,7 +33,7 @@ class BaseTransformEngine(BaseModel):
         db = Database(db_name=db_name)
 
         _logger.debug("Creating utils object for engine")
-        utils = TransformEngineUtils(db=db)
+        utils = TransformEngineUtils(db=db) if utils is None else utils
 
         _logger.debug(f"Creating engine with database {db.name}")
         super().__init__(db=db, utils=utils, **kwargs)

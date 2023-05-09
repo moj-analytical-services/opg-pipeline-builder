@@ -765,7 +765,11 @@ class DatabaseTable:
             config = deepcopy(table_lint_config["lint_options"])
 
             pandas_kwargs = config.get("pandas-kwargs", None)
-            if pandas_kwargs is not None and "expect_full_schema" in pandas_kwargs:
+            if (
+                pandas_kwargs is not None
+                and "parquet_expect_full_schema" in pandas_kwargs
+            ):
+                _ = pandas_kwargs.drop("parquet_expect_full_schema")
                 cols_to_cast = config["columns_to_cast"]
                 cols_cast_types = config["columns_cast_types"]
                 cols_map = dict(zip(cols_to_cast, cols_cast_types))

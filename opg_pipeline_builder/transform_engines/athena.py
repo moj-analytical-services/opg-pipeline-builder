@@ -600,7 +600,6 @@ class AthenaTransformEngine(BaseTransformEngine):
         }
 
         sql = pydb.get_sql_from_file(sql_path, jinja_args=new_jinja_args)
-        _logger.info(f"SQL for final table: {sql}")
 
         try:
             self.transforms.derived_transform(

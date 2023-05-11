@@ -237,7 +237,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         tbl_tmp_sql = table.table_sql_paths(type="temp")
 
         for sql_tmp_tbl, sql_tpt in tbl_tmp_sql:
-            _logger.info(f"Creating {table_name} intermediate table")
+            _logger.info(f"Creating {sql_tmp_tbl} intermediate table for {table_name}")
             self._create_temp_table(
                 temp_table_name=sql_tmp_tbl,
                 table_sql_filepath=sql_tpt,
@@ -600,6 +600,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         }
 
         sql = pydb.get_sql_from_file(sql_path, jinja_args=new_jinja_args)
+        _logger.info(f"SQL for final table: {sql}")
 
         try:
             self.transforms.derived_transform(

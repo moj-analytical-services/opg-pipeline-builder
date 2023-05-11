@@ -56,6 +56,7 @@ class AthenaParquetTransformations(AthenaTransformations):
             for stage in etl_stages:
                 temp_path = temp_path.replace(stage, "temp")
 
+            _logger.info(sql)
             response = wr.athena.unload(
                 sql=sql,
                 path=temp_path,

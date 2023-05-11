@@ -190,6 +190,10 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             if delete_temporary_table:
+                _logger.info(
+                    f"Deleting existing shared intermediate temp table {sql_tbl}"
+                    + " and its data"
+                )
                 pydb.delete_table_and_data(database="__temp__", table=sql_tbl)
 
             create_temporary_table = (
@@ -197,6 +201,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             if create_temporary_table:
+                _logger.info(f"Creating shared intermediate temp table {sql_tbl}")
                 self._create_temp_table(
                     temp_table_name=sql_tbl,
                     table_sql_filepath=sql_path,
@@ -204,6 +209,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     **jinja_args,
                 )
 
+                _logger.info(f"Validating shared intermediate temp table {sql_tbl}")
                 self.utils.check_table_is_not_empty(table_name=sql_tbl)
 
     def _create_temporary_tables(self, table_name: str, **jinja_args):
@@ -231,6 +237,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         tbl_tmp_sql = table.table_sql_paths(type="temp")
 
         for sql_tmp_tbl, sql_tpt in tbl_tmp_sql:
+            _logger.info(f"Creating {table_name} intermediate table")
             self._create_temp_table(
                 temp_table_name=sql_tmp_tbl,
                 table_sql_filepath=sql_tpt,

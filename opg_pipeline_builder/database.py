@@ -672,7 +672,7 @@ class DatabaseTable:
     def table_uses_shared_sql(self):
         tbl_config = self.config
         tbl_sql = tbl_config.get("sql", {})
-        return len(tbl_sql.get("shared", [])) > 0
+        return tbl_sql.get("shared", False)
 
     def input_data(self) -> Union[Dict[str, Dict[str, str]], None]:
         """Returns the table's input dataset paths

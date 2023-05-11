@@ -205,7 +205,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 self._create_temp_table(
                     temp_table_name=sql_tbl,
                     table_sql_filepath=sql_path,
-                    snapshot_timestamps=snapshot_timestamps,
+                    snapshot_timestamps=", ".join(snapshot_timestamps),
                     **jinja_args,
                 )
 

@@ -592,9 +592,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         tmp_db = pydb.utils.get_database_name_from_userid(user_id)
 
         new_jinja_args = {
+            **self._default_jinja_args(
+                snapshot_timestamps=prts_arg,
+            ),
             "temporary_database": tmp_db,
-            "snapshot_timestamps": prts_arg,
-            "primary_partition": primary_partition,
             **jinja_args,
         }
 

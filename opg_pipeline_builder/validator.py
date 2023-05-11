@@ -4,7 +4,7 @@ import os
 from copy import deepcopy
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 from croniter import croniter
@@ -24,7 +24,7 @@ class TableConfig(BaseModel):
     etl_stages: Dict[str, Dict[str, str]]
     transform_type: str
     frequency: str
-    sql: Optional[Dict[str, List[str]]] = None
+    sql: Optional[Dict[str, Union[List[str], bool]]] = None
     lint_options: Optional[Dict[str, Any]] = None
     input_data: Optional[Dict[str, Dict[str, str]]] = None
     optional_arguments: Optional[Dict[str, Any]] = None
@@ -235,7 +235,16 @@ class PipelineConfig(BaseModel):
         db_name, tables = values.get("db_name"), values.get("tables")
 
         table_sql_info = [
-            (name, chain(*[sql for _, sql in table.get("sql").items()]))
+            (
+                name,
+                chain(
+                    *[
+                        sql
+                        for _, sql in table.get("sql").items()
+                        if isinstance(sql, list)
+                    ]
+                ),
+            )
             for name, table in tables.items()
             if table.get("sql") is not None and table.get("transform_type") == "derived"
         ]

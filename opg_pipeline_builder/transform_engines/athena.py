@@ -133,7 +133,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         temp_table_name: str,
         table_sql_filepath: str,
-        base_database_name: Optional[Union[str, None]],
+        base_database_name: Optional[Union[str, None]] = None,
         environment: Optional[Union[str, None]] = None,
         **additional_jinja_args,
     ):

@@ -292,6 +292,10 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         input_meta.partitions = [primary_partition]
 
+        for column in input_meta.columns:
+            if column["type"] == "null":
+                input_meta.remove_column(column["name"])
+
         return input_meta
 
     def _get_sql_partitions(self, partitions: List[str]) -> str:

@@ -734,6 +734,45 @@ class DatabaseTable:
 
         return all_data_paths
 
+    @staticmethod
+    def _convert_pandas_kwargs_in_config(
+        config: Dict[str, Any],
+        metadata_path: Optional[str] = "",
+    ) -> Dict[str, Any]:
+        pandas_kwargs = config.get("pandas-kwargs", None)
+
+        converted_kwargs = {}
+        if pandas_kwargs is not None:
+            if "parquet_expect_full_schema" in pandas_kwargs:
+                _ = pandas_kwargs.pop("parquet_expect_full_schema")
+                cols_to_cast = config["columns_to_cast"]
+                cols_cast_types = config["columns_cast_types"]
+                cols_map = dict(zip(cols_to_cast, cols_cast_types))
+                tbl_meta = Metadata.from_json(metadata_path)
+
+                for c in tbl_meta.column_names:
+                    if c not in cols_to_cast:
+                        tbl_meta.remove_column(c)
+                    else:
+                        tbl_meta.update_column({"name": c, "type": cols_map[c]})
+
+                converted_kwargs["metadata"] = tbl_meta.to_dict()
+                converted_kwargs["parquet_expect_full_schema"] = False
+
+            if (
+                "ignore_unnamed_columns" in pandas_kwargs
+                and "usecols" not in pandas_kwargs
+            ):
+                ignore_unnamed_flag = pandas_kwargs.get("ignore_unnamed_columns", False)
+                if ignore_unnamed_flag:
+                    _ = pandas_kwargs.pop("ignore_unnamed_columns")
+
+                    converted_kwargs["usecols"] = lambda c: not c.startswith("Unnamed:")
+
+            config["pandas-kwargs"] = {**pandas_kwargs, **converted_kwargs}
+
+        return config
+
     def lint_config(
         self, meta_stage: str = "raw-hist"
     ) -> Union[Dict[str, Union[str, bool]], Dict[None, None]]:
@@ -762,35 +801,16 @@ class DatabaseTable:
             table_meta = self.table_meta_paths()
             table_meta_stage = table_meta[meta_stage]
 
-            config = deepcopy(table_lint_config["lint_options"])
+            original_config = deepcopy(table_lint_config["lint_options"])
 
-            pandas_kwargs = config.get("pandas-kwargs", None)
-            if (
-                pandas_kwargs is not None
-                and "parquet_expect_full_schema" in pandas_kwargs
-            ):
-                _ = pandas_kwargs.pop("parquet_expect_full_schema")
-                cols_to_cast = config["columns_to_cast"]
-                cols_cast_types = config["columns_cast_types"]
-                cols_map = dict(zip(cols_to_cast, cols_cast_types))
-                tbl_meta = Metadata.from_json(table_meta_stage)
-
-                for c in tbl_meta.column_names:
-                    if c not in cols_to_cast:
-                        tbl_meta.remove_column(c)
-                    else:
-                        tbl_meta.update_column({"name": c, "type": cols_map[c]})
-
-                pq_args = {
-                    "metadata": tbl_meta.to_dict(),
-                    "parquet_expect_full_schema": False,
-                }
-
-                config["pandas-kwargs"] = {**pandas_kwargs, **pq_args}
+            updated_config = self._convert_pandas_kwargs_in_config(
+                config=original_config,
+                metadata_path=table_meta_stage,
+            )
 
             config = {
                 k: v
-                for k, v in config.items()
+                for k, v in updated_config.items()
                 if k
                 not in [
                     "columns_to_cast",

@@ -56,6 +56,7 @@ class AthenaParquetTransformations(AthenaTransformations):
             for stage in etl_stages:
                 temp_path = temp_path.replace(stage, "temp")
 
+            _logger.info("Performing unload")
             response = wr.athena.unload(
                 sql=sql,
                 path=temp_path,
@@ -75,11 +76,13 @@ class AthenaParquetTransformations(AthenaTransformations):
 
                 output_meta_dc = deepcopy(output_meta)
                 sr = SchemaReader()
+                _logger.info("Validating schema of output")
                 schema_check = sr.check_schemas_match(
                     tmp_files, output_meta_dc, ext="parquet"
                 )
 
                 if schema_check:
+                    _logger.info("Moving output expected location")
                     perm_files = [
                         f"{fo.replace(temp_path, output_path)}" + ".snappy.parquet"
                         if fo.endswith(".snappy.parquet") is False

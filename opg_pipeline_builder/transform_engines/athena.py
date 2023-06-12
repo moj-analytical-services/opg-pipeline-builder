@@ -133,7 +133,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         temp_table_name: str,
         table_sql_filepath: str,
-        base_database_name: Optional[Union[str, None]],
+        base_database_name: Optional[Union[str, None]] = None,
         environment: Optional[Union[str, None]] = None,
         **additional_jinja_args,
     ):
@@ -190,6 +190,10 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             if delete_temporary_table:
+                _logger.info(
+                    f"Deleting existing shared intermediate temp table {sql_tbl}"
+                    + " and its data"
+                )
                 pydb.delete_table_and_data(database="__temp__", table=sql_tbl)
 
             create_temporary_table = (
@@ -197,13 +201,15 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             if create_temporary_table:
+                _logger.info(f"Creating shared intermediate temp table {sql_tbl}")
                 self._create_temp_table(
                     temp_table_name=sql_tbl,
                     table_sql_filepath=sql_path,
-                    snapshot_timestamps=snapshot_timestamps,
+                    snapshot_timestamps=", ".join(snapshot_timestamps),
                     **jinja_args,
                 )
 
+                _logger.info(f"Validating shared intermediate temp table {sql_tbl}")
                 self.utils.check_table_is_not_empty(table_name=sql_tbl)
 
     def _create_temporary_tables(self, table_name: str, **jinja_args):
@@ -231,6 +237,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         tbl_tmp_sql = table.table_sql_paths(type="temp")
 
         for sql_tmp_tbl, sql_tpt in tbl_tmp_sql:
+            _logger.info(f"Creating {sql_tmp_tbl} intermediate table for {table_name}")
             self._create_temp_table(
                 temp_table_name=sql_tmp_tbl,
                 table_sql_filepath=sql_tpt,
@@ -284,6 +291,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         input_meta.partitions = [primary_partition]
+
+        for column in input_meta.columns:
+            if column["type"] == "null":
+                input_meta.remove_column(column["name"])
 
         return input_meta
 
@@ -422,6 +433,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     table_name, ipt_stage
                 )
 
+                _logger.info(f"Preparing input metadata for {table_name} load")
                 input_meta = self._prepare_input_metadata_for_load(
                     table_name, ipt_stage
                 )
@@ -430,11 +442,15 @@ class AthenaTransformEngine(BaseTransformEngine):
                     table_name, stages=stages
                 )
 
+                _logger.info(
+                    f"Creating / recreating temporary database for {table_name} load"
+                )
                 self.utils.recreate_database(
                     database_name=temp_input_db_name,
                     existing_databases=existing_databases,
                 )
 
+                _logger.info(f"Re-freshing and repairing temporary {table_name} table")
                 self.utils.refresh_and_repair_table(
                     table_name=table_name,
                     database_name=temp_input_db_name,
@@ -445,6 +461,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 output_meta = db.table(table_name).get_table_metadata(out_stage)
                 output_meta.force_partition_order = "start"
 
+                _logger.info(f"Generating SQL for {table_name} load")
                 sql = self._get_sql(
                     table_name=table_name,
                     partitions=prts,
@@ -454,6 +471,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     temporary_database_name=temp_input_db_name,
                 )
 
+                _logger.info(f"Executing SQL load for {table_name}")
                 self._execute_load(
                     sql=sql,
                     transformation_type=tf_type,
@@ -464,6 +482,8 @@ class AthenaTransformEngine(BaseTransformEngine):
                     temporary_load_database_name=temp_input_db_name,
                     partitions=prts,
                 )
+
+                _logger.info(f"Load complete for {table_name}")
 
             else:
                 _logger.info(f"No partitions to process for {table_name}")
@@ -509,7 +529,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             pydb.render_sql_template(
                 """
                 SELECT DISTINCT({{ primary_partition }}) as unique_prts
-                FROM {{ full_db_name }}}}.{{ table_name }}
+                FROM {{ full_db_name }}.{{ table_name }}
                 WHERE {{ cutoff_clause }}
                 ORDER BY {{ primary_partition }} DESC
                 """,
@@ -576,9 +596,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         tmp_db = pydb.utils.get_database_name_from_userid(user_id)
 
         new_jinja_args = {
+            **self._default_jinja_args(
+                snapshot_timestamps=prts_arg,
+            ),
             "temporary_database": tmp_db,
-            "snapshot_timestamps": prts_arg,
-            "primary_partition": primary_partition,
             **jinja_args,
         }
 
@@ -669,9 +690,14 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         databases = wr.catalog.databases(self.db_search_limit)
         if db_derived_name not in databases.Database.to_list():
+            _logger.info(
+                f"Derived database {db_derived_name} doesn't exist. "
+                + "Creating database..."
+            )
             wr.catalog.create_database(
                 db_derived_name, description=f"Derived {db.name} tables"
             )
+            _logger.info(f"Derived database {db_derived_name} created")
 
         tf_args = db.transform_args(
             tables_to_use,
@@ -680,6 +706,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         for tbl in tables_to_use:
+            _logger.info(f"Starting derived table job for {tbl}")
+
+            _logger.info(f"Fetching new input data partitions for {tbl}")
             new_prts = self._new_derived_table_partitions(
                 table_name=tbl,
                 transform_args=tf_args,
@@ -687,14 +716,17 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             if not new_prts:
+                _logger.info(f"No new input partitions for {tbl}")
                 continue
 
+            _logger.info(f"Creating intermediate temporary tables for {tbl}")
             self._create_intermediate_tables_for_derived_table(
                 table_name=tbl,
                 partitions=new_prts,
                 jinja_args=jinja_args,
             )
 
+            _logger.info(f"Creating final derived table {tbl}")
             output_meta, output_path = self._create_final_derived_table(
                 table_name=tbl,
                 primary_partition=primary_partition,
@@ -703,9 +735,12 @@ class AthenaTransformEngine(BaseTransformEngine):
                 jinja_args=jinja_args,
             )
 
+            _logger.info(f"Refreshing and repairing {tbl}")
             self.utils.refresh_and_repair_table(
                 table_name=output_meta.name,
                 database_name=db_derived_name,
                 table_metadata=output_meta,
                 table_data_path=output_path,
             )
+
+            _logger.info(f"Finished derived table job for {tbl}")

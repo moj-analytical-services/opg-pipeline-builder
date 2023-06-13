@@ -22,7 +22,7 @@ pydantic = "^1.10.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.2"
-moto = "^3.1.6"
+moto = ">=3.1.6"
 pyparsing = "^3.0.9"
 pytest-cov = "^3.0.0"
 duckdb = "^0.5.1"

@@ -759,16 +759,6 @@ class DatabaseTable:
                 converted_kwargs["metadata"] = tbl_meta.to_dict()
                 converted_kwargs["parquet_expect_full_schema"] = False
 
-            if (
-                "ignore_unnamed_columns" in pandas_kwargs
-                and "usecols" not in pandas_kwargs
-            ):
-                ignore_unnamed_flag = pandas_kwargs.get("ignore_unnamed_columns", False)
-                if ignore_unnamed_flag:
-                    _ = pandas_kwargs.pop("ignore_unnamed_columns")
-
-                    converted_kwargs["usecols"] = lambda c: not c.startswith("Unnamed:")
-
             config["pandas-kwargs"] = {**pandas_kwargs, **converted_kwargs}
 
         return config

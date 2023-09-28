@@ -409,8 +409,4 @@ def test_transform(
         else:
             expected_df[colname] = expected_df[colname].astype(lower_coltype)
 
-    log.info(expected_df)
-    log.info(expected_df.dtypes)
-    log.info(df)
-    log.info(df.dtypes)
     assert expected_df.equals(df)

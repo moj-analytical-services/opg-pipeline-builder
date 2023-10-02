@@ -163,7 +163,6 @@ class PandasTransformations(BaseTransformations):
     def default_transform(self, df, partition, input_meta, output_meta):
         df = self.input_transform_methods(df, input_meta)
         df = self.output_transform_methods(df, partition, output_meta)
-        _logger.info(df.head())
         return df
 
     def custom_transform(self, df, table_name, partition, input_meta, output_meta):

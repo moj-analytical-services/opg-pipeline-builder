@@ -1,12 +1,15 @@
 import io
-import boto3
-from contextlib import contextmanager
-from dataengineeringutils3.s3 import s3_path_to_bucket_key
 import os
-import shutil
 import pathlib
+import shutil
+from contextlib import contextmanager
+from copy import deepcopy
 from tempfile import NamedTemporaryFile
 
+import awswrangler as wr
+import boto3
+import pandas as pd
+from dataengineeringutils3.s3 import s3_path_to_bucket_key
 
 land_bucket = "mojap-land"
 raw_hist_bucket = "mojap-raw-hist"
@@ -74,3 +77,39 @@ def set_up_s3(mocked_s3):
             Bucket=b,
             CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
         )
+
+
+def mock_writer_write(df, output_path, *args, **kwargs):
+    ext = pathlib.Path(output_path).suffix
+    if ext == ".csv":
+        wr.s3.to_csv(df, output_path, index=False)
+    elif ext in [".parquet", ".snappy.parquet"]:
+        wr.s3.to_parquet(df, output_path, index=False)
+    else:
+        raise NotImplementedError("Please add new writer")
+
+
+def mock_reader_read(path, metadata, *args, **kwargs):
+    ext = pathlib.Path(path).suffix
+    with NamedTemporaryFile(suffix=ext) as tmp:
+        wr.s3.download(path, tmp.name)
+        if ext == ".csv":
+            df = pd.read_csv(tmp.name)
+        elif ext in [".parquet", ".snappy.parquet"]:
+            df = pd.read_parquet(tmp.name)
+        else:
+            raise NotImplementedError("Please add new writer")
+
+        for column in metadata.columns:
+            if column["type"].startswith("date") or column["type"].startswith("time"):
+                df[column["name"]] = df[column["name"]].astype("string")
+
+        data_types = deepcopy(df.dtypes)
+        for colname, coltype in data_types.items():
+            lower_coltype = str(coltype).lower()
+            if lower_coltype == "object":
+                df[colname] = df[colname].astype("string")
+            else:
+                df[colname] = df[colname].astype(lower_coltype)
+
+    return [df] if "chunksize" in kwargs else df

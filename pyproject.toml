@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "opg-pipeline-builder"
-version = "0.1.0"
+version = "0.2.0"
 description = ""
 authors = ["gwionap <gwion.aprhobat@justice.gov.uk>"]
 
@@ -19,6 +19,8 @@ gluejobutils = "^3.2.0"
 etl-manager = "^7.5.2"
 ssm-parameter-store = "^19.11.0"
 pydantic = "^1.10.2"
+fsspec = ">=2022.10.0"
+s3fs = ">=2022.10.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.2"

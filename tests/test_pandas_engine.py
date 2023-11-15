@@ -147,7 +147,7 @@ def test_add_attributes_from_config(
 
         single_column = new_column.copy()
         for _ in range(expected_df.shape[0] - 1):
-            new_column = new_column.append(single_column)
+            new_column = pd.concat([new_column, single_column], ignore_index=True)
 
         new_column = new_column.reset_index()
 
@@ -290,7 +290,7 @@ def test_output_transform_methods(
     if new_columns is not None:
         single_row = new_columns.copy()
         for _ in range(expected_df.shape[0] - 1):
-            new_columns = new_columns.append(single_row)
+            new_columns = pd.concat([new_columns, single_row], ignore_index=True)
 
         new_columns = new_columns.reset_index()
 

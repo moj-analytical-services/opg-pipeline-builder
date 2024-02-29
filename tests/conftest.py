@@ -159,6 +159,7 @@ class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
         self.content = MagicMock(aiohttp.StreamReader)
         self.content.read = read
         self.response = response
+        self._loop = None
 
     @property
     def raw_headers(self) -> Any:

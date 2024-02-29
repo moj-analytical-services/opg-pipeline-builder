@@ -353,10 +353,15 @@ class TestAthenaTransformEngine:
     @mock_glue
     @pytest.mark.parametrize("status", [True, False])
     def test_run_derived(self, s3, monkeypatch, status):
+        import pydbtools.utils as pydb_utils
+
         import opg_pipeline_builder.utils.schema_reader as sr
         from opg_pipeline_builder.utils.constants import etl_stages
 
         monkeypatch.setattr(sr, "S3FileSystem", mock_get_file)
+        monkeypatch.setattr(
+            pydb_utils, "get_database_name_from_userid", lambda _: "__temp__"
+        )
         con = duckdb.connect(database="__temp_derived__")  # noqa: F841
 
         athena, timestamp = self.setup_data(s3, stage="output")

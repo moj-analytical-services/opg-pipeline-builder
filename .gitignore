@@ -18,11 +18,6 @@ scratch/*
 
 *.[cC][sS][vV]
 
-!test/data/dummy_data/dummy_data1.csv
-!test/data/dummy_data/dummy_data2.csv
-!test/data/dummy_data/dummy_data3.csv
-!test/data/dummy_data/dummy_data4.csv
-
 # Excel files (including macros and templates) #
 ################################################
 

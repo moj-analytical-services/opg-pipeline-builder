@@ -31,4 +31,4 @@ jobs:
             --no-interaction --no-ansi
       - name: Run Tests
         run: |
-          pytest tests/ -vv
+          python -m pytest tests/ -vv

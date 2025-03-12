@@ -1,11 +1,11 @@
-import os
-import json
-import pytest
 import base64
-import awswrangler as wr
-
-from dataengineeringutils3.s3 import s3_path_to_bucket_key
+import json
+import os
 from pathlib import Path
+
+import awswrangler as wr
+import pytest
+from dataengineeringutils3.s3 import s3_path_to_bucket_key
 
 from tests.helpers import mock_get_file
 
@@ -98,9 +98,7 @@ class TestDataLinterEngine:
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
 
-        from opg_pipeline_builder.utils.constants import (
-            project_root,
-        )
+        from opg_pipeline_builder.utils.constants import project_root
         from opg_pipeline_builder.utils.utils import remove_lint_filestamp
 
         linter = self.get_linter()
@@ -170,4 +168,4 @@ class TestDataLinterEngine:
         ]
         original_filenames = [Path(f).stem for f in os.listdir(self.land_data_path)]
 
-        assert filenames == original_filenames
+        assert sorted(filenames) == sorted(original_filenames)

@@ -1,6 +1,9 @@
-from functools import partial
 import re
 from datetime import datetime
+from functools import partial
+from logging import getLogger
+
+log = getLogger()
 
 
 class TestPipelineBuilder:
@@ -9,7 +12,8 @@ class TestPipelineBuilder:
     @classmethod
     def check_methods_match(cls, *methods):
         method_strs = [str(m) for m in methods]
-        cleaned_strs = [re.sub(" object at [a-z0-9]{14}", "", m) for m in method_strs]
+        cleaned_strs = [re.sub(" object at [a-z0-9]{10,}", "", m) for m in method_strs]
+        log.info(set(cleaned_strs))
         return len(set(cleaned_strs)) == 1
 
     def test_pipeline_builder(self):

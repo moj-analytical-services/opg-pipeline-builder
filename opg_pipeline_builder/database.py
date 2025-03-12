@@ -601,7 +601,7 @@ class DatabaseTable:
         etl_lt = self.etl_stages()
 
         etl_path_fun_names = [
-            f"""{fun_name.replace("-","_")}_path""" for fun_name in etl_lt
+            f"""{fun_name.replace("-", "_")}_path""" for fun_name in etl_lt
         ]
 
         etl_functions = [getattr(db, fun_name) for fun_name in etl_path_fun_names]
@@ -611,9 +611,11 @@ class DatabaseTable:
         table_paths = {
             stage: os.path.join(
                 path,
-                table_name
-                if stage not in ["raw", "raw-hist"]
-                else f"pass/{table_name}",
+                (
+                    table_name
+                    if stage not in ["raw", "raw-hist"]
+                    else f"pass/{table_name}"
+                ),
             )
             for stage, path in stage_paths
         }

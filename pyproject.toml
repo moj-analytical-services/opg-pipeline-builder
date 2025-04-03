@@ -24,14 +24,14 @@ s3fs = ">=2022.10.0"
 setuptools = ">=76.0.0"
 arrow-pd-parser = "<=2.0.0"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^7.2"
 moto = ">=3.1.6,<5.0.0"
 pyparsing = "^3.0.9"
 pytest-cov = "^3.0.0"
 duckdb = ">=0.5.1"
 sqlglot = "^6.2.3"
-pre-commit = "^2.20.0"
+pre-commit = "^4.2.0"
 detect-secrets = "^1.4.0"
 mkdocs-material = "^8.5.6"
 mkdocstrings = "^0.19.0"

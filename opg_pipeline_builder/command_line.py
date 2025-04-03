@@ -21,13 +21,13 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
-def run_pipeline_step(pipeline: Pipeline, step: str):
+def run_pipeline_step(pipeline: Pipeline, step: str) -> None:
     etl_step_fn = getattr(pipeline, step)
     print(
         f"{bcolors.BOLD}\tRunning ETL step:{bcolors.ENDC}\n"
         f"{bcolors.OKBLUE}\t\t{etl_step_fn}{bcolors.ENDC}"
     )
-    _ = etl_step_fn()
+    etl_step_fn()
     print(f"{bcolors.BOLD}\tFinished running ETL step{bcolors.ENDC}")
 
 
@@ -55,7 +55,7 @@ class keyvalue(argparse.Action):
             getattr(namespace, self.dest)[key] = value
 
 
-def main():
+def main() -> None:
     HERE = os.getcwd()
     sys.path.insert(0, HERE)
 
@@ -117,7 +117,7 @@ def main():
         del os.environ["SOURCE_TBLS_ENV"]
 
     if args.step is not None:
-        f"Setting ETL_STAGE_ENV: {args.step}"
+        print(f"Setting ETL_STAGE_ENV: {args.step}")
         env_vars["ETL_STAGE_ENV"] = args.step
     elif "ETL_STAGE_ENV" in os.environ:
         del os.environ["ETL_STAGE_ENV"]

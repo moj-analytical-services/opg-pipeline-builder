@@ -4,7 +4,7 @@ import os
 from copy import deepcopy
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 import yaml
 from croniter import croniter
@@ -21,13 +21,13 @@ from opg_pipeline_builder.utils.constants import (
 
 
 class TableConfig(BaseModel):
-    etl_stages: Dict[str, Dict[str, str]]
+    etl_stages: dict[str, dict[str, str]]
     transform_type: str
     frequency: str
-    sql: Optional[Dict[str, Union[List[str], bool]]] = None
-    lint_options: Optional[Dict[str, Any]] = None
-    input_data: Optional[Dict[str, Dict[str, str]]] = None
-    optional_arguments: Optional[Dict[str, Any]] = None
+    sql: Optional[dict[str, list[str] | bool]] = None
+    lint_options: Optional[dict[str, Any]] = None
+    input_data: Optional[dict[str, dict[str, str]]] = None
+    optional_arguments: Optional[dict[str, Any]] = None
 
     @root_validator(pre=True, allow_reuse=True)
     def check_transform_type_consistency(cls, values):
@@ -54,18 +54,18 @@ class TableConfig(BaseModel):
         return values
 
     @validator("frequency", allow_reuse=True)
-    def check_valid_cron(cls, v):
+    def check_valid_cron(cls, v: str):
         assert croniter.is_valid(v), f"{v} isn't a valid cron expression"
         return v
 
     @validator("etl_stages", allow_reuse=True)
-    def check_valid_etl_stages(cls, v):
+    def check_valid_etl_stages(cls, v: dict[str, dict[str, str]]):
         inv_stages = [k for k, _ in v.items() if k not in etl_stages]
         assert not inv_stages, f"ETL stages must be one of {', '.join(etl_stages)}"
         return v
 
     @validator("transform_type", allow_reuse=True)
-    def check_transform_type(cls, v):
+    def check_transform_type(cls, v: str):
         assert (
             v in transform_types
         ), f"Transform type should be one of {', '.join(transform_types)}"
@@ -76,15 +76,15 @@ class ETLStepConfig(BaseModel):
     step: str
     engine_name: str
     transform_name: Optional[str] = None
-    transform_kwargs: Optional[Dict[str, object]] = None
+    transform_kwargs: Optional[dict[str, object]] = None
 
     @validator("step", allow_reuse=True)
-    def check_in_etl_steps(cls, v):
+    def check_in_etl_steps(cls, v: str):
         assert v in etl_steps, f"{v} not one of the following: {', '.join(etl_steps)}"
         return v
 
     @validator("engine_name", allow_reuse=True)
-    def check_engine_exists(cls, v, values):
+    def check_engine_exists(cls, v: str, values):
         method = values.get("transform_name", "run")
 
         engine_spec = os.path.exists(
@@ -125,13 +125,13 @@ class ETLStepConfig(BaseModel):
 
 class PipelineConfig(BaseModel):
     db_name: str
-    etl: List[ETLStepConfig]
+    etl: list[ETLStepConfig]
     description: str
-    paths: Dict[str, str]
-    db_lint_options: Dict[str, Any]
-    shared_sql: Optional[Dict[str, List[str]]] = None
-    optional_arguments: Optional[Dict[str, Any]] = None
-    tables: Dict[str, TableConfig]
+    paths: dict[str, str]
+    db_lint_options: dict[str, Any]
+    shared_sql: Optional[dict[str, list[str]]] = None
+    optional_arguments: Optional[dict[str, Any]] = None
+    tables: dict[str, TableConfig]
 
     @root_validator(allow_reuse=True)
     def check_shared_sql_exists(cls, values):
@@ -157,13 +157,13 @@ class PipelineConfig(BaseModel):
         return values
 
     @validator("paths", allow_reuse=True)
-    def check_in_etl_stages(cls, v):
+    def check_in_etl_stages(cls, v: dict[str, str]):
         stage = [k for k, _ in v.items()][0]
         assert stage in etl_stages, f"{stage} is not a valid ETL stage"
         return v
 
     @validator("shared_sql", allow_reuse=True)
-    def check_in_transform_types(cls, v):
+    def check_in_transform_types(cls, v: Optional[dict[str, list[str]]]):
         transform_type = [k for k, _ in v.items()][0]
         valid_type = transform_type in transform_types
         error_message = f'{transform_type} is not one of {", ".join(transform_types)}'
@@ -300,7 +300,7 @@ class PipelineConfig(BaseModel):
         return values
 
 
-def read_pipeline_config(db_name: str) -> dict:
+def read_pipeline_config(db_name: str) -> PipelineConfig:
     try:
         with open(os.path.join("configs", f"{db_name}.yml")) as config_file:
             raw_pipeline_config = yaml.safe_load(config_file)

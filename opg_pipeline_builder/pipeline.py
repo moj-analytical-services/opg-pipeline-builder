@@ -76,7 +76,7 @@ class Pipeline:
 
             etl_attr_val = do_nothing if etl_step_func is None else etl_step_func
 
-            _ = setattr(self, f"_{etl_step}", etl_attr_val)
+            setattr(self, f"_{etl_step}", etl_attr_val)
 
     def __setattr__(self, key: str, value: Callable):
         if key.startswith("_") and (key[1:] in etl_steps or key in {"_db", "_tf"}):

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 from functools import partial
 from inspect import signature
@@ -44,7 +46,7 @@ class PipelineBuilder:
             self._db_transforms = Transforms()
             self._db = Database(db_name)
 
-    def _add_specs(self, etl_step, transform):
+    def _add_specs(self, etl_step, transform) -> PipelineBuilder:
         current_specs = self._builder_specs
         new_specs = {etl_step: transform, **current_specs}
         self._builder_specs = new_specs
@@ -54,11 +56,11 @@ class PipelineBuilder:
         self, engine_name: str, transform_engine: BaseTransformEngine
     ):
         transforms = self._db_transforms
-        _ = setattr(transforms, engine_name, transform_engine)
+        setattr(transforms, engine_name, transform_engine)
         self._db_transforms = transforms
         return self
 
-    def add_etl_step(self, etl_step_name: str):
+    def add_etl_step(self, etl_step_name: str) -> ETLStepBuilder:
         if etl_step_name not in etl_steps:
             raise ValueError(f"{etl_step_name} isn't a valid ETL step.")
         etl_builder = ETLStepBuilder(
@@ -67,7 +69,7 @@ class PipelineBuilder:
         return etl_builder
 
     def build_pipeline(self):
-        _ = self._validate()
+        self._validate()
         return Pipeline(db_name=self._db_name, **self._builder_specs)
 
     def _validate(self):
@@ -75,7 +77,7 @@ class PipelineBuilder:
         ...
 
     @classmethod
-    def build_pipeline_from_config(cls, db_name: str):
+    def build_pipeline_from_config(cls, db_name: str) -> Pipeline:
         pipeline_builder = cls(db_name=db_name)
         pipeline_config = read_pipeline_config(db_name)
         custom_engines_path = Path("engines")
@@ -167,7 +169,7 @@ class ETLStepBuilder:
             for stage in etl_stages_mod
             if stage in etl_step
         ]
-        _ = tf_stages.sort(key=lambda x: x[0])
+        tf_stages.sort(key=lambda x: x[0])
         tf_stages_set = set([stage for _, stage in tf_stages])
         tf_min_stage = tf_stages[0][1]
         tf_max_stage = tf_stages[-1][1]
@@ -185,7 +187,7 @@ class ETLStepBuilder:
         transform_parameters = signature(transform).parameters
 
         if "stage" in transform_parameters:
-            step_kwargs = {"stage": tf_max_stage}
+            step_kwargs: dict[str, str | dict[str, str]] = {"stage": tf_max_stage}
         elif "stages" in transform_parameters:
             step_kwargs = {"stages": {"input": tf_min_stage, "output": tf_max_stage}}
 

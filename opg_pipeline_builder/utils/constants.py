@@ -6,7 +6,7 @@ from ast import literal_eval
 from binascii import Error
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Optional
 
 from dateutil.tz import tzutc
 
@@ -85,7 +85,7 @@ def get_source_db() -> str:
     return source_env
 
 
-def get_source_tbls() -> Union[List[str], None]:
+def get_source_tbls() -> list[str | None]:
     """Retrieves source database
 
     Retrieved source database tables to use
@@ -94,8 +94,8 @@ def get_source_tbls() -> Union[List[str], None]:
 
     Return
     ------
-    Union[List[str], None]
-        List of tables
+    list[str | None]
+        list of tables
     """
     try:
         source_tables = os.environ["SOURCE_TBLS_ENV"].split(";")
@@ -123,7 +123,7 @@ def get_etl_stage() -> str:
     return etl_stage
 
 
-def get_multiprocessing_settings() -> Union[dict, None]:
+def get_multiprocessing_settings() -> dict[Any, Any] | None:
     """Retrieves data_linter multiprocessing settings
 
     Retrieves base64 encoded dictionary from MULTI_PROC_ENV
@@ -132,7 +132,7 @@ def get_multiprocessing_settings() -> Union[dict, None]:
 
     Return
     ------
-    Union[dict, None]
+    dict[Any, Any] | None
         Multiprocessing settings as dictionary. See
         opg_etl.utils.lint_utils for validation of the
         resulting object.
@@ -157,7 +157,7 @@ def get_multiprocessing_settings() -> Union[dict, None]:
     return mp_settings
 
 
-def get_start_date() -> Union[datetime, None]:
+def get_start_date() -> datetime | None:
     """Retrieves start date for pipeline
 
     Retrieves START_DATE environment variable. Converts
@@ -168,7 +168,7 @@ def get_start_date() -> Union[datetime, None]:
 
     Return
     ------
-    Union[datetime, None]
+    datetime | None
         Datetime for files to process
     """
     try:
@@ -182,7 +182,7 @@ def get_start_date() -> Union[datetime, None]:
     return start_dt
 
 
-def get_end_date() -> Union[datetime, None]:
+def get_end_date() -> datetime | None:
     """Retrieves end date for pipeline
 
     Retrieves END_DATE environment variable. Converts
@@ -193,7 +193,7 @@ def get_end_date() -> Union[datetime, None]:
 
     Return
     ------
-    Union[datetime, None]
+    datetime | None
         Datetime for files to process
     """
     try:
@@ -230,7 +230,7 @@ def get_use_glue() -> bool:
     return glue_enable
 
 
-def get_no_glue_workers() -> Union[int, None]:
+def get_no_glue_workers() -> int | None:
     """Retrieves no. of glue workers to use
 
     Retrieves NO_GLUE_WORKERS environment variable.
@@ -240,7 +240,7 @@ def get_no_glue_workers() -> Union[int, None]:
 
     Return
     ------
-    Union[int, None]
+    int | None
         No. of glue job workers to use
     """
     try:
@@ -330,7 +330,7 @@ def get_metadata_path(db_name: Optional[str] = None, env: Optional[str] = None) 
     return mp
 
 
-def get_chunk_size() -> Union[int, bool]:
+def get_chunk_size() -> int | bool:
     """Returns chunk size for high memory tables
 
     Returns chunk size option environment variable
@@ -339,7 +339,7 @@ def get_chunk_size() -> Union[int, bool]:
 
     Return
     ------
-    Union[int, bool]
+    int | bool
         Either integer referring to number of records
         in each chunk, or boolean to use default chunking.
     """
@@ -358,7 +358,7 @@ def get_chunk_size() -> Union[int, bool]:
     return chunk
 
 
-def get_dag_timestamp() -> Union[int, None]:
+def get_dag_timestamp() -> int | None:
     """Returns DAG run timestamp
 
     Returns timestamp for when DAG was executed. This will
@@ -369,7 +369,7 @@ def get_dag_timestamp() -> Union[int, None]:
 
     Return
     ------
-    Union[int, None]
+    int | None
         Timestamp int for DAG run or None, if not applicable
     """
     mp_args = get_multiprocessing_settings()

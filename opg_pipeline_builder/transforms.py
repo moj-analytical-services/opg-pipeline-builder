@@ -6,7 +6,7 @@ from . import transform_engines
 
 class Transforms:
     @staticmethod
-    def _engine_name(base_name: str):
+    def _engine_name(base_name: str) -> str:
         split_name = base_name.split("_")
         proper = "".join([e[0].upper() + e[1:] for e in split_name])
         transform_name = proper + "TransformEngine"

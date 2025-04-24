@@ -167,7 +167,7 @@ class PandasTransformations(BaseTransformations):
 
     def custom_transform(self, df, table_name, partition, input_meta, output_meta):
         try:
-            transform = getattr(self, f"_{table_name}_transform")
+            transform = getattr(self, f"{table_name}_transform")
             df = transform(df, partition, input_meta, output_meta)
         except AttributeError:
             df = self.default_transform(df, partition, input_meta, output_meta)

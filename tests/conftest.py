@@ -131,6 +131,7 @@ class MockAWSResponse(aiobotocore.awsrequest.AioAWSResponse):
     def __init__(self, response: botocore.awsrequest.AWSResponse):
         self._moto_response = response
         self.status_code = response.status_code
+        self.headers = response.headers
         self.raw = MockHttpClientResponse(response)
 
     # adapt async methods to use moto's response
@@ -159,6 +160,7 @@ class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
         self.content = MagicMock(aiohttp.StreamReader)
         self.content.read = read
         self.response = response
+        self._loop = None
 
     @property
     def raw_headers(self) -> Any:

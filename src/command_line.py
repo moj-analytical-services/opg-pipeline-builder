@@ -155,5 +155,15 @@ def main():
     print(f"{bcolors.BOLD}\tFinished running pipeline! \U0001f389")
 
 
+def entrypoint(database: str, step: str) -> None:
+
+    pipeline = PipelineBuilder.build_pipeline_from_config(database)
+
+    if step == "all":
+        run_full_pipeline(pipeline)
+    else:
+        run_pipeline_step(pipeline, step)
+
+
 if __name__ == "__main__":
     main()

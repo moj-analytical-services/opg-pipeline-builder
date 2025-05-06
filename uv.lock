@@ -1037,6 +1037,7 @@ name = "opg-pipeline-builder"
 version = "0.3.1"
 source = { editable = "." }
 dependencies = [
+    { name = "aiobotocore" },
     { name = "awswrangler" },
     { name = "boto3" },
     { name = "croniter" },
@@ -1071,6 +1072,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiobotocore", specifier = ">=2.22.0" },
     { name = "awswrangler", specifier = ">=3.11.0" },
     { name = "boto3", specifier = "==1.37.2" },
     { name = "croniter", specifier = ">=6.0.0" },

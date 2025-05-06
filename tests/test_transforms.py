@@ -1,16 +1,16 @@
-from typing import List, Dict
+from typing import Dict, List
 
 
 class TestTransforms:
     database_name = "testdb"
 
     def get_transforms(self):
-        from opg_pipeline_builder.transforms import Transforms
+        from src.transforms import Transforms
 
         return Transforms()
 
     def setup_child_athena(self):
-        from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
+        from src.transform_engines.athena import AthenaTransformEngine
 
         class ChildAthenaTransformEngine(AthenaTransformEngine):
             def dummy_method(self, tables: List[str], stages: Dict[str, str]):
@@ -19,7 +19,7 @@ class TestTransforms:
         return ChildAthenaTransformEngine
 
     def setup_dummy_engine(self):
-        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
+        from src.transform_engines.base import BaseTransformEngine
 
         class DummyTransformEngine(BaseTransformEngine):
             def run(self, tables: List[str], stages: Dict[str, str]):

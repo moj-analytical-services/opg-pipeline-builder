@@ -19,7 +19,7 @@ class TestDataLinterEngine:
     data_ext = ".csv"
 
     def get_linter(self):
-        import opg_pipeline_builder.transform_engines.data_linter as linter
+        import src.transform_engines.data_linter as linter
 
         return linter
 
@@ -98,8 +98,8 @@ class TestDataLinterEngine:
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
 
-        from opg_pipeline_builder.utils.constants import project_root
-        from opg_pipeline_builder.utils.utils import remove_lint_filestamp
+        from src.utils.constants import project_root
+        from src.utils.utils import remove_lint_filestamp
 
         linter = self.get_linter()
         transform = linter.DataLinterTransformEngine(self.db_name)
@@ -139,7 +139,7 @@ class TestDataLinterEngine:
                 if dag_interval_end is not None:
                     os.environ["DAG_INTERVAL_END"] = dag_interval_end
 
-                from opg_pipeline_builder.utils.constants import get_dag_timestamp
+                from src.utils.constants import get_dag_timestamp
 
                 transform.run(tables=[table.name], stage=self.output_stage)
 

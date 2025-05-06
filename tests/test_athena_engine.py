@@ -17,7 +17,7 @@ from arrow_pd_parser import reader, writer
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_glue, mock_s3, mock_sts
 
-from opg_pipeline_builder.utils.constants import get_full_db_name
+from src.utils.constants import get_full_db_name
 from tests.helpers import mock_get_file, set_up_s3
 
 
@@ -40,7 +40,7 @@ class TestAthenaTransformEngine:
     temp_table_animal = "chicken"
 
     def import_athena(self):
-        import opg_pipeline_builder.transform_engines.athena as athena
+        import src.transform_engines.athena as athena
 
         return athena
 
@@ -59,10 +59,7 @@ class TestAthenaTransformEngine:
         alt_database=None,
         **kwargs,
     ):
-        from opg_pipeline_builder.utils.utils import (
-            extract_mojap_partition,
-            extract_mojap_timestamp,
-        )
+        from src.utils.utils import extract_mojap_partition, extract_mojap_timestamp
 
         athena = self.import_athena()
         transform = athena.AthenaTransformEngine(self.db_name)
@@ -177,7 +174,7 @@ class TestAthenaTransformEngine:
         con.execute(augmented_sql)
 
     def setup_data(self, s3, stage="input"):
-        from opg_pipeline_builder.utils.constants import project_root
+        from src.utils.constants import project_root
 
         athena = self.import_athena()
         transform = athena.AthenaTransformEngine(self.db_name)
@@ -217,8 +214,8 @@ class TestAthenaTransformEngine:
     @mock_glue
     @pytest.mark.parametrize("status", [True, False])
     def test_run(self, s3, monkeypatch, status):
-        import opg_pipeline_builder.utils.schema_reader as sr
-        from opg_pipeline_builder.utils.constants import etl_stages
+        import src.utils.schema_reader as sr
+        from src.utils.constants import etl_stages
 
         monkeypatch.setattr(sr, "S3FileSystem", mock_get_file)
 
@@ -355,8 +352,8 @@ class TestAthenaTransformEngine:
     def test_run_derived(self, s3, monkeypatch, status):
         import pydbtools.utils as pydb_utils
 
-        import opg_pipeline_builder.utils.schema_reader as sr
-        from opg_pipeline_builder.utils.constants import etl_stages
+        import src.utils.schema_reader as sr
+        from src.utils.constants import etl_stages
 
         monkeypatch.setattr(sr, "S3FileSystem", mock_get_file)
         monkeypatch.setattr(

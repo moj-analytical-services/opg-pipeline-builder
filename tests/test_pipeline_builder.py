@@ -1,6 +1,6 @@
 import toml
 
-from opg_pipeline_builder import __version__
+from src import __version__
 
 
 def test_pyproject_toml_matches_version():

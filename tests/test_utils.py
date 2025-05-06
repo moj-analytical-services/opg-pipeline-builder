@@ -1,10 +1,12 @@
 import os
-import pytest
 import pathlib
 import time
 from datetime import timedelta
 from pathlib import Path
-from tests.helpers import set_up_s3, mock_get_file, dummy_bucket
+
+import pytest
+
+from tests.helpers import dummy_bucket, mock_get_file, set_up_s3
 
 
 @pytest.fixture()
@@ -23,7 +25,7 @@ def upload_setup(request):
 
 @pytest.mark.parametrize("upload_setup", [(["dummy_data1.csv"], "orig")], indirect=True)
 def test_s3_copy(upload_setup, s3_client):
-    from opg_pipeline_builder.utils.utils import s3_copy
+    from src.utils.utils import s3_copy
 
     bucket = "somebucket"
 
@@ -65,7 +67,7 @@ def test_s3_copy(upload_setup, s3_client):
     indirect=True,
 )
 def test_s3_bulk_copy(upload_setup, s3_client):
-    from opg_pipeline_builder.utils.utils import s3_bulk_copy
+    from src.utils.utils import s3_bulk_copy
 
     bucket = "somebucket"
 
@@ -118,7 +120,7 @@ def test_s3_bulk_copy(upload_setup, s3_client):
     ],
 )
 def test_remove_lint_timestamp(test_input, expected):
-    from opg_pipeline_builder.utils.utils import remove_lint_filestamp
+    from src.utils.utils import remove_lint_filestamp
 
     file_ext = "".join(pathlib.Path(test_input).suffixes)
     if expected == "Filename is not in the expected format.":
@@ -160,7 +162,7 @@ def test_remove_lint_timestamp(test_input, expected):
     ],
 )
 def test_extract_mojap_partition(test_input, timestamp_partition_name, expected):
-    from opg_pipeline_builder.utils.utils import extract_mojap_partition
+    from src.utils.utils import extract_mojap_partition
 
     if expected == "Filepath does not contain the expected MoJ AP Hive partition":
         with pytest.raises(
@@ -191,7 +193,7 @@ def test_extract_mojap_partition(test_input, timestamp_partition_name, expected)
     ],
 )
 def test_extract_mojap_timestamp(partition, timestamp_partition_name, expected):
-    from opg_pipeline_builder.utils.utils import extract_mojap_timestamp
+    from src.utils.utils import extract_mojap_timestamp
 
     if timestamp_partition_name is None:
         timestamp_partition_name = "mojap_file_land_timestamp"
@@ -211,7 +213,7 @@ def test_extract_mojap_timestamp(partition, timestamp_partition_name, expected):
     "upload_setup", [(["dummy_data1.csv", "dummy_data2.csv"], "orig")], indirect=True
 )
 def test_get_modified_filepaths_from_s3_folder(upload_setup, s3_client):
-    from opg_pipeline_builder.utils.utils import get_modified_filepaths_from_s3_folder
+    from src.utils.utils import get_modified_filepaths_from_s3_folder
 
     bucket = "mytestbucket"
 
@@ -275,7 +277,7 @@ def test_get_modified_filepaths_from_s3_folder(upload_setup, s3_client):
 
 
 def test_list_configs():
-    from opg_pipeline_builder.utils.utils import list_configs
+    from src.utils.utils import list_configs
 
     assert list_configs() == [Path(f).stem for f in os.listdir("tests/data/configs")]
 
@@ -312,7 +314,7 @@ def test_list_configs():
 def test_check_s3_for_existing_timestamp_file(
     existing_data, new_file, one_a_day, expected
 ):
-    from opg_pipeline_builder.utils.utils import check_s3_for_existing_timestamp_file
+    from src.utils.utils import check_s3_for_existing_timestamp_file
 
     if expected is None:
         with pytest.raises(ValueError):
@@ -325,10 +327,10 @@ def test_check_s3_for_existing_timestamp_file(
 
 
 @pytest.mark.parametrize(
-    "json_path", [("tests/data/meta_data/testdb/curated/table1.json")]
+    "json_path", ["tests/data/meta_data/testdb/curated/table1.json"]
 )
 def test_pa_read_json_from_s3(s3, monkeypatch, json_path):
-    import opg_pipeline_builder.utils.utils as pbutils
+    import src.utils.utils as pbutils
 
     monkeypatch.setattr(pbutils, "S3FileSystem", mock_get_file)
     set_up_s3(s3)

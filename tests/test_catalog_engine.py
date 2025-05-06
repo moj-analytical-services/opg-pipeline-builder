@@ -1,7 +1,6 @@
 import boto3
-
-from moto import mock_glue, mock_athena
-from mojap_metadata.converters.glue_converter import GlueTable, GlueConverter
+from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
+from moto import mock_athena, mock_glue
 
 
 class TestCatalogTransformEngine:
@@ -12,8 +11,8 @@ class TestCatalogTransformEngine:
     @mock_glue
     @mock_athena
     def test_run(self, monkeypatch):
-        import opg_pipeline_builder.transform_engines.catalog as catalog
-        from opg_pipeline_builder.utils.constants import get_full_db_name
+        import src.transform_engines.catalog as catalog
+        from src.utils.constants import get_full_db_name
 
         db_name = "testdb"
         table_names = ["table1", "table2"]

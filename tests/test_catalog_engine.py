@@ -5,14 +5,14 @@ from moto import mock_athena, mock_glue
 
 class TestCatalogTransformEngine:
     @staticmethod
-    def do_nothing(*args, **kwargs):
-        ...
+    def do_nothing(*args, **kwargs): ...
 
     @mock_glue
     @mock_athena
     def test_run(self, monkeypatch):
         import src.transform_engines.catalog as catalog
-        from src.utils.constants import get_full_db_name
+
+        from opg_pipeline_builder.utils.constants import get_full_db_name
 
         db_name = "testdb"
         table_names = ["table1", "table2"]

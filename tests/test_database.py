@@ -7,7 +7,7 @@ from mojap_metadata import Metadata
 
 @pytest.mark.parametrize("db_name, expected", [("testdb", True)])
 def test_database_init(db_name, expected):
-    from src.database import Database
+    from opg_pipeline_builder.database import Database
 
     if expected:
         Database(db_name=db_name)
@@ -121,7 +121,7 @@ def test_database_init(db_name, expected):
 )
 def db_fixt(request):
     db_name, expected = request.param
-    from src.database import Database
+    from opg_pipeline_builder.database import Database
 
     db = Database(db_name=db_name)
 
@@ -144,7 +144,7 @@ def test_db_tables(db_fixt):
 
 
 def test_db_config(db_fixt):
-    from src.validator import read_pipeline_config
+    from opg_pipeline_builder.validator import read_pipeline_config
 
     db, _ = db_fixt
     pipeline_config = read_pipeline_config(db.name)
@@ -192,7 +192,7 @@ def test_db_curated_path(db_fixt):
     [("testdb.table1", True), ("testdb.table2", True), ("testdb.table3", True)],
 )
 def test_db_tables_init(db_table, expected):
-    from src.database import Database, DatabaseTable
+    from opg_pipeline_builder.database import Database, DatabaseTable
 
     db_name, tbl_name = db_table.split(".")
     db = Database(db_name)
@@ -357,7 +357,7 @@ def test_db_primary_partition(db_fixt):
     ]
 )
 def tbl_fixt(request):
-    from src.database import Database, DatabaseTable
+    from opg_pipeline_builder.database import Database, DatabaseTable
 
     db_table, expected = request.param
     db_name, tbl_name = db_table.split(".")
@@ -368,7 +368,7 @@ def tbl_fixt(request):
 
 @pytest.fixture
 def db_config(tbl_fixt):
-    from src.validator import read_pipeline_config
+    from opg_pipeline_builder.validator import read_pipeline_config
 
     _, expected = tbl_fixt
     db_config = read_pipeline_config(expected["db_name"])
@@ -488,7 +488,7 @@ def test_db_tbl_get_table_path(tbl_fixt):
 
 
 def test_db_table(db_fixt):
-    from src.database import DatabaseTable
+    from opg_pipeline_builder.database import DatabaseTable
 
     db, expected = db_fixt
     tables = expected["tables"]

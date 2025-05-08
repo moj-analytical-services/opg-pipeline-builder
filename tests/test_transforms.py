@@ -5,21 +5,20 @@ class TestTransforms:
     database_name = "testdb"
 
     def get_transforms(self):
-        from src.transforms import Transforms
+        from opg_pipeline_builder.transforms import Transforms
 
         return Transforms()
 
     def setup_child_athena(self):
-        from src.transform_engines.athena import AthenaTransformEngine
+        from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
 
         class ChildAthenaTransformEngine(AthenaTransformEngine):
-            def dummy_method(self, tables: List[str], stages: Dict[str, str]):
-                ...
+            def dummy_method(self, tables: List[str], stages: Dict[str, str]): ...
 
         return ChildAthenaTransformEngine
 
     def setup_dummy_engine(self):
-        from src.transform_engines.base import BaseTransformEngine
+        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 
         class DummyTransformEngine(BaseTransformEngine):
             def run(self, tables: List[str], stages: Dict[str, str]):

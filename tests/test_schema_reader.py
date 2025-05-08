@@ -10,7 +10,8 @@ from tests.helpers import dummy_bucket, mock_get_file, set_up_s3
 
 class TestSchemaReader:
     import src.utils.schema_reader as srutils
-    from src.utils.constants import aws_region
+
+    from opg_pipeline_builder.utils.constants import aws_region
 
     sr_utils = srutils
     aws_region = aws_region

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [project]
 name = "opg_pipeline_builder"
@@ -43,12 +43,6 @@ dev = [
     "safety>=3.2.9",
     "sqlglot>=26.16.4",
 ]
-
-[tool.hatch]
-sources = ["src"]
-
-[tool.hatch.build]
-packages = ["opg_pipeline_builder"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src"

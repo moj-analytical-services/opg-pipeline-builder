@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opg-pipeline-builder"
+name = "opg_pipeline_builder"
 version = "0.3.1"
 description = "Provides common re-usable components for building OPG data pipelines"
 readme = "README.md"

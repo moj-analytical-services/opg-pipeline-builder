@@ -3,10 +3,11 @@ import os
 import sys
 from copy import deepcopy
 
-from src import __version__ as v
 from src.pipeline import Pipeline
 from src.pipeline_builder import PipelineBuilder
 from src.utils.constants import etl_steps
+
+from src import __version__ as v
 
 
 class bcolors:
@@ -156,7 +157,6 @@ def main():
 
 
 def entrypoint(database: str, step: str) -> None:
-
     pipeline = PipelineBuilder.build_pipeline_from_config(database)
 
     if step == "all":

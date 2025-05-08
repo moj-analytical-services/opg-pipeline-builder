@@ -343,5 +343,4 @@ def pa_read_json_from_s3(s3_path: str) -> Table:
     return json_pa_data
 
 
-def do_nothing(*args, **kwargs):
-    ...
+def do_nothing(*args, **kwargs): ...

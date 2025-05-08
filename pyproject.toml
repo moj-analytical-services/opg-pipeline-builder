@@ -44,6 +44,9 @@ dev = [
     "sqlglot>=26.16.4",
 ]
 
+[tool.hatch]
+sources = ["src"]
+
 [tool.hatch.build]
 packages = ["opg_pipeline_builder"]
 

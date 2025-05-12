@@ -200,31 +200,26 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
             for tbl_name in config["tables"]:
                 tbl_tmp_path = os.path.join(pass_tmp_path, tbl_name)
-
                 tbl_tmp_files = get_modified_filepaths_from_s3_folder(tbl_tmp_path)
 
-                tbl_moj_prts = [
+                old_prt = [
                     extract_mojap_partition(
                         f, timestamp_partition_name=timestamp_partition_name
                     )
                     for f in tbl_tmp_files
-                ]
+                ][0]
 
                 new_prt = f"{timestamp_partition_name}={dag_timestamp}"
 
-                tbl_perm_files = [f.replace("temp/", "") for f in tbl_tmp_files]
-
-                tbl_perm_dag_files = [
-                    f.replace(old_prt, new_prt)
-                    for f, old_prt in zip(tbl_perm_files, tbl_moj_prts)
-                ]
-
-                tbl_copy_args = list(zip(tbl_tmp_files, tbl_perm_dag_files))
+                tbl_perm_files = tbl_tmp_files[0].replace("temp/", "")
+                tbl_perm_dag_files = tbl_perm_files.replace(old_prt, new_prt)
+                target_path = tbl_perm_dag_files.rsplit("/", 1)[0]
 
                 _logger.info(
                     f"Copying files for table {tbl_name} from temporary directory"
                 )
-                _ = wr.s3.copy_objects(tbl_copy_args)
+                
+                wr.s3.copy_objects(tbl_tmp_files, tbl_tmp_path, str(target_path))
 
                 _logger.info(
                     f"Deleting files in temporary directory for table {tbl_name}"

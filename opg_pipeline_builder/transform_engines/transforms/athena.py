@@ -85,10 +85,17 @@ class AthenaParquetTransformations(AthenaTransformations):
                     _logger.info("Moving output expected location")
 
                     filename_replace = {
-                        file.rsplit("/", 1)[0]: file.rsplit("/", 1)[0].split(".")[0] + ".snappy.parquet" for file in tmp_files
+                        file.rsplit("/", 1)[0]: file.rsplit("/", 1)[0].split(".")[0]
+                        + ".snappy.parquet"
+                        for file in tmp_files
                     }
 
-                    wr.s3.copy_objects(tmp_files, temp_path, output_path, replace_filenames=filename_replace)
+                    wr.s3.copy_objects(
+                        tmp_files,
+                        temp_path,
+                        output_path,
+                        replace_filenames=filename_replace,
+                    )
                     wr.s3.delete_objects(temp_path)
 
                 else:

@@ -14,7 +14,6 @@ from ..utils.constants import get_dag_timestamp, get_multiprocessing_settings
 from ..utils.utils import (
     extract_mojap_partition,
     get_modified_filepaths_from_s3_folder,
-    s3_bulk_copy,
 )
 from .base import BaseTransformEngine
 

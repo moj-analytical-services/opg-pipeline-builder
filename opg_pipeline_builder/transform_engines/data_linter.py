@@ -224,7 +224,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 _logger.info(
                     f"Copying files for table {tbl_name} from temporary directory"
                 )
-                _ = s3_bulk_copy(tbl_copy_args)
+                _ = wr.s3.copy_objects(tbl_copy_args)
 
                 _logger.info(
                     f"Deleting files in temporary directory for table {tbl_name}"

@@ -1047,6 +1047,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydbtools" },
     { name = "s3fs" },
+    { name = "ssm-parameter-store" },
 ]
 
 [package.dev-dependencies]
@@ -1082,6 +1083,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.4" },
     { name = "pydbtools", specifier = ">=5.6.4" },
     { name = "s3fs", specifier = "==2025.3.2" },
+    { name = "ssm-parameter-store", specifier = ">=19.11.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1730,6 +1732,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e5/40/edede8dd6977b0d3da179a342c198ed100dd2aba4be081861ee5911e4da4/sqlparse-0.5.3.tar.gz", hash = "sha256:09f67787f56a0b16ecdbde1bfc7f5d9c3371ca683cfeaa8e6ff60b4807ec9272", size = 84999 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/5c/bfd6bd0bf979426d405cc6e71eceb8701b148b16c21d2dc3c261efc61c7b/sqlparse-0.5.3-py3-none-any.whl", hash = "sha256:cf2196ed3418f3ba5de6af7e82c694a9fbdbfecccdfc72e281548517081f16ca", size = 44415 },
+]
+
+[[package]]
+name = "ssm-parameter-store"
+version = "19.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/9d/7e065fc277de94124923b5dcce5586874fb37bb7fcf4e5119244cd0ccebd/ssm-parameter-store-19.11.0.tar.gz", hash = "sha256:29988d1e9ed95f3b2790a20d14950519a05cf3b44cea0c31586cd648f86474cc", size = 8355 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/ca/d91d9363cc6032d9c034657073eb5033e2d6fe586e43659cc7c0f6c492b5/ssm_parameter_store-19.11.0-py2.py3-none-any.whl", hash = "sha256:a4ca3d31594ce8e9e7914d44b6f4607e45bebd79a44bb9c1ffe25d06db9ccb9f", size = 5882 },
 ]
 
 [[package]]

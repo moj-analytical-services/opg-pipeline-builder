@@ -201,12 +201,17 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 tbl_tmp_path = os.path.join(pass_tmp_path, tbl_name)
                 tbl_tmp_files = get_modified_filepaths_from_s3_folder(tbl_tmp_path)
 
-                old_prt = [
+                old_prts = [
                     extract_mojap_partition(
                         f, timestamp_partition_name=timestamp_partition_name
                     )
                     for f in tbl_tmp_files
-                ][0]
+                ]
+
+                old_prt = old_prts[0]
+
+                if len(set(old_prts)) > 1:
+                    raise ValueError(f"Process is designed to only run on a single partition of raw data. More than one partition was found. Partitions: {','.join(old_prts)}")
 
                 new_prt = f"{timestamp_partition_name}={dag_timestamp}"
 

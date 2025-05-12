@@ -7,7 +7,7 @@ import awswrangler as wr
 import pytest
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 
-from tests.helpers import mock_get_file
+from tests.conftest import mock_get_file
 
 
 class TestDataLinterEngine:

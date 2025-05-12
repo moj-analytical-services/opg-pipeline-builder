@@ -15,10 +15,10 @@ import pytest
 import sqlglot
 from arrow_pd_parser import reader, writer
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
-from moto import mock_glue, mock_s3, mock_sts
+from moto import mock_aws
 
 from opg_pipeline_builder.utils.constants import get_full_db_name
-from tests.helpers import mock_get_file, set_up_s3
+from tests.conftest import mock_get_file, set_up_s3
 
 
 class DummyAthenaResponse:
@@ -212,8 +212,8 @@ class TestAthenaTransformEngine:
 
         return athena, timestamp
 
-    @mock_s3
-    @mock_glue
+    @mock_aws
+    @mock_aws
     @pytest.mark.parametrize("status", [True, False])
     def test_run(self, s3, monkeypatch, status):
         import src.utils.schema_reader as sr
@@ -349,8 +349,8 @@ class TestAthenaTransformEngine:
 
         assert tmp_df.animal.unique() == self.temp_table_animal
 
-    @mock_sts
-    @mock_glue
+    @mock_aws
+    @mock_aws
     @pytest.mark.parametrize("status", [True, False])
     def test_run_derived(self, s3, monkeypatch, status):
         import pydbtools.utils as pydb_utils

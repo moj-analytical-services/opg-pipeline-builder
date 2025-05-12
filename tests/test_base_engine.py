@@ -5,9 +5,9 @@ from itertools import chain
 
 import boto3
 import pytest
-from moto import mock_ssm
+from moto import mock_aws
 
-from tests.helpers import dep_bucket, land_bucket, raw_hist_bucket, set_up_s3
+from tests.conftest import dep_bucket, land_bucket, raw_hist_bucket, set_up_s3
 
 
 class TestBaseEngineTransform:
@@ -508,7 +508,7 @@ class TestBaseEngineTransform:
         transform = self.get_transform()
         assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected
 
-    @mock_ssm
+    @mock_aws
     @pytest.mark.parametrize("secret_key, value", [("dummy", "hjshfkheu27837")])
     def test_get_secrets(self, secret_key, value):
         transform = self.get_transform()

@@ -5,12 +5,11 @@ import pytest
 from arrow_pd_parser import writer
 from mojap_metadata import Metadata
 
-from tests.helpers import dummy_bucket, mock_get_file, set_up_s3
+from tests.conftest import dummy_bucket, mock_get_file, set_up_s3
 
 
 class TestSchemaReader:
-    import src.utils.schema_reader as srutils
-
+    from opg_pipeline_builder.utils import schema_reader as srutils
     from opg_pipeline_builder.utils.constants import aws_region
 
     sr_utils = srutils

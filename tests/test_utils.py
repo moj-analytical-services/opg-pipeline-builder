@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.helpers import dummy_bucket, mock_get_file, set_up_s3
+from tests.conftest import dummy_bucket, mock_get_file, set_up_s3
 
 
 @pytest.fixture()

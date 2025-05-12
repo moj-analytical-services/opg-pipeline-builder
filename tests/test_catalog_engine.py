@@ -1,14 +1,14 @@
 import boto3
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
-from moto import mock_athena, mock_glue
+from moto import mock_aws
 
 
 class TestCatalogTransformEngine:
     @staticmethod
     def do_nothing(*args, **kwargs): ...
 
-    @mock_glue
-    @mock_athena
+    @mock_aws
+    @mock_aws
     def test_run(self, monkeypatch):
         import src.transform_engines.catalog as catalog
 

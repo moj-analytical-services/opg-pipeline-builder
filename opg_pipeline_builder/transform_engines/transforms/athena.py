@@ -7,7 +7,6 @@ from mojap_metadata import Metadata
 
 from ...utils.constants import etl_stages
 from ...utils.schema_reader import SchemaReader
-from ...utils.utils import s3_bulk_copy
 from .base import BaseTransformations
 
 _logger: logging.Logger = logging.getLogger(__name__)

@@ -216,8 +216,7 @@ class TestAthenaTransformEngine:
     @mock_aws
     @pytest.mark.parametrize("status", [True, False])
     def test_run(self, s3, monkeypatch, status):
-        import src.utils.schema_reader as sr
-
+        import opg_pipeline_builder.utils.schema_reader as sr
         from opg_pipeline_builder.utils.constants import etl_stages
 
         monkeypatch.setattr(sr, "S3FileSystem", mock_get_file)
@@ -354,8 +353,8 @@ class TestAthenaTransformEngine:
     @pytest.mark.parametrize("status", [True, False])
     def test_run_derived(self, s3, monkeypatch, status):
         import pydbtools.utils as pydb_utils
-        import src.utils.schema_reader as sr
 
+        import opg_pipeline_builder.utils.schema_reader as sr
         from opg_pipeline_builder.utils.constants import etl_stages
 
         monkeypatch.setattr(sr, "S3FileSystem", mock_get_file)

@@ -1,5 +1,9 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
 [project]
-name = "opg-pipeline-builder"
+name = "opg_pipeline_builder"
 version = "0.3.1"
 description = "Provides common re-usable components for building OPG data pipelines"
 readme = "README.md"
@@ -40,7 +44,6 @@ dev = [
     "safety>=3.2.9",
     "sqlglot>=26.16.4",
 ]
-
 
 [tool.pytest.ini_options]
 addopts = "--cov=src"

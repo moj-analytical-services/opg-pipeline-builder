@@ -3,10 +3,10 @@ import os
 import sys
 from copy import deepcopy
 
+from opg_pipeline_builder.pipeline import Pipeline
+from opg_pipeline_builder.pipeline_builder import PipelineBuilder
+from opg_pipeline_builder.utils.constants import etl_steps
 from src import __version__ as v
-from src.pipeline import Pipeline
-from src.pipeline_builder import PipelineBuilder
-from src.utils.constants import etl_steps
 
 
 class bcolors:
@@ -153,6 +153,15 @@ def main():
         run_pipeline_step(pipeline, args.step)
 
     print(f"{bcolors.BOLD}\tFinished running pipeline! \U0001f389")
+
+
+def entrypoint(database: str, step: str) -> None:
+    pipeline = PipelineBuilder.build_pipeline_from_config(database)
+
+    if step == "all":
+        run_full_pipeline(pipeline)
+    else:
+        run_pipeline_step(pipeline, step)
 
 
 if __name__ == "__main__":

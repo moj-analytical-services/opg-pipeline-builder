@@ -12,7 +12,12 @@ from data_linter import validation
 from pkg_resources import resource_filename
 from pydantic import BaseModel, MissingError, ValidationError, root_validator, validator
 
-from src.utils.constants import etl_stages, etl_steps, sql_path, transform_types
+from opg_pipeline_builder.utils.constants import (
+    etl_stages,
+    etl_steps,
+    sql_path,
+    transform_types,
+)
 
 
 class TableConfig(BaseModel):

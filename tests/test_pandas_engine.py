@@ -23,7 +23,7 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/testdb/raw-hist/table1.json"
 
 @pytest.fixture
 def pandas_engine_class():
-    from src.transform_engines.pandas import PandasTransformEngine
+    from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
 
     yield PandasTransformEngine
 

@@ -17,8 +17,8 @@ class TestPipelineBuilder:
         return len(set(cleaned_strs)) == 1
 
     def test_pipeline_builder(self):
-        from opg_pipeline_builder.pipeline_builder import PipelineBuilder
-        from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
+        from src.pipeline_builder import PipelineBuilder
+        from src.transform_engines.athena import AthenaTransformEngine
 
         dag_timestamp = int(datetime.utcnow().timestamp())
         pipeline_builder = PipelineBuilder(db_name=self.database_name)

@@ -29,37 +29,40 @@ class TableConfig(BaseModel):
     input_data: Optional[Dict[str, Dict[str, str]]] = None
     optional_arguments: Optional[Dict[str, Any]] = None
 
-    @model_validator(mode="before")
-    def check_transform_type_consistency(cls) -> "TableConfig":
-        if cls.transform_type == "derived":
+    @model_validator(mode="after")
+    def check_transform_type_consistency(self) -> "TableConfig":
+        if self.transform_type == "derived":
             assert (
-                cls.lint_options is None
-            ), "Derived table should not have cls.lint_options"
+                self.lint_options is None
+            ), "Derived table should not have self.lint_options"
             assert (
-                cls.input_data is not None
-            ), "Derived table should have cls.input_data"
+                self.input_data is not None
+            ), "Derived table should have self.input_data"
 
         else:
             assert (
-                cls.lint_options is not None
-            ), f"{cls.transform_type} table should have lint_options"
+                self.lint_options is not None
+            ), f"{self.transform_type} table should have lint_options"
             assert (
-                cls.input_data is None
-            ), f"{cls.transform_type} table should not have input_data"
+                self.input_data is None
+            ), f"{self.transform_type} table should not have input_data"
 
-            if cls.transform_type == "default":
-                assert cls.sql is None, "default table should not have sql"
+            if self.transform_type == "default":
+                assert self.sql is None, "default table should not have sql"
 
-        return cls
+        return self
 
     @field_validator("frequency")
-    def check_valid_cron(self, v: str) -> str:
-        assert croniter.is_valid(v), f"{v} isn't a valid cron expression"
+    @classmethod
+    def check_valid_cron(cls, v: str) -> str:
+        if not croniter.is_valid(v):
+            raise ValueError(f"{v} isn't a valid cron expression")
         return v
 
     @field_validator("etl_stages")
+    @classmethod
     def check_valid_etl_stages(
-        self,
+        cls,
         v: dict[str, dict[str, str]],
     ) -> dict[str, dict[str, str]]:
         inv_stages = [k for k, _ in v.items() if k not in etl_stages]
@@ -67,7 +70,8 @@ class TableConfig(BaseModel):
         return v
 
     @field_validator("transform_type")
-    def check_transform_type(self, v: str) -> str:
+    @classmethod
+    def check_transform_type(cls, v: str) -> str:
         assert (
             v in transform_types
         ), f"Transform type should be one of {', '.join(transform_types)}"
@@ -81,33 +85,34 @@ class ETLStepConfig(BaseModel):
     transform_kwargs: Optional[Dict[str, object]] = None
 
     @field_validator("step")
-    def check_in_etl_steps(self, v: str) -> str:
+    @classmethod
+    def check_in_etl_steps(cls, v: str) -> str:
         assert v in etl_steps, f"{v} not one of the following: {', '.join(etl_steps)}"
         return v
 
-    @model_validator(mode="before")
-    def check_engine_exists(cls) -> "ETLStepConfig":
+    @model_validator(mode="after")
+    def check_engine_exists(self) -> "ETLStepConfig":
         engine_spec = os.path.exists(
             resource_filename(
-                "opg_pipeline_builder", f"transform_engines/{cls.engine_name}.py"
+                "opg_pipeline_builder", f"transform_engines/{self.engine_name}.py"
             )
         )
 
         if not engine_spec:
-            module_path = f"engines.{cls.engine_name}"
+            module_path = f"engines.{self.engine_name}"
             try:
                 engine_module = importlib.import_module(module_path)
             except ModuleNotFoundError:
                 raise ModuleNotFoundError(
-                    f"Cannot find transform engine {cls.engine_name}"
+                    f"Cannot find transform engine {self.engine_name}"
                 )
         else:
             engine_module = importlib.import_module(
-                f"opg_pipeline_builder.transform_engines.{cls.engine_name}"
+                f"opg_pipeline_builder.transform_engines.{self.engine_name}"
             )
 
         class_name = (
-            "".join([n[0].upper() + n[1:].lower() for n in cls.engine_name.split("_")])
+            "".join([n[0].upper() + n[1:].lower() for n in self.engine_name.split("_")])
             + "TransformEngine"
         )
 
@@ -115,20 +120,20 @@ class ETLStepConfig(BaseModel):
             engine = getattr(engine_module, class_name)
         except AttributeError:
             raise AttributeError(
-                f"Engine {cls.engine_name} should contain a {class_name} class."
+                f"Engine {self.engine_name} should contain a {class_name} class."
             )
 
         functions = [
             f
             for f in inspect.getmembers(engine, predicate=inspect.isfunction)
-            if f[0] == cls.transform_name
+            if f[0] == self.transform_name
         ]
 
         assert (
             len(functions) == 1
-        ), f"{class_name} class is missing {cls.transform_name} method"
+        ), f"{class_name} class is missing {self.transform_name} method"
 
-        return cls
+        return self
 
 
 class PipelineConfig(BaseModel):
@@ -142,10 +147,10 @@ class PipelineConfig(BaseModel):
     tables: Dict[str, TableConfig]
 
     @model_validator(mode="after")
-    def check_shared_sql_exists(cls) -> "PipelineConfig":
-        if cls.shared_sql is not None:
-            shared_sql_names = list(chain(*[v for _, v in cls.shared_sql.items()]))
-            shared_sql_path = os.path.join(sql_path, cls.db_name, "shared")
+    def check_shared_sql_exists(self) -> "PipelineConfig":
+        if self.shared_sql is not None:
+            shared_sql_names = list(chain(*[v for _, v in self.shared_sql.items()]))
+            shared_sql_path = os.path.join(sql_path, self.db_name, "shared")
 
             assert os.path.exists(
                 shared_sql_path
@@ -161,35 +166,37 @@ class PipelineConfig(BaseModel):
 
             assert not missing_sql, message
 
-        return cls
+        return self
 
     @field_validator("paths")
-    def check_in_etl_stages(self, v: dict[str, str]) -> dict[str, str]:
+    @classmethod
+    def check_in_etl_stages(cls, v: dict[str, str]) -> dict[str, str]:
         stage = [k for k, _ in v.items()][0]
         assert stage in etl_stages, f"{stage} is not a valid ETL stage"
         return v
 
     @field_validator("shared_sql")
-    def check_in_transform_types(self, v: dict[str, list[str]]) -> dict[str, list[str]]:
+    @classmethod
+    def check_in_transform_types(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
         transform_type = [k for k, _ in v.items()][0]
         valid_type = transform_type in transform_types
         error_message = f'{transform_type} is not one of {", ".join(transform_types)}'
         assert valid_type, error_message
         return v
 
-    @model_validator(mode="before")
-    def check_derived_inputs(cls) -> "PipelineConfig":
+    @model_validator(mode="after")
+    def check_derived_inputs(self) -> "PipelineConfig":
         table_inputs = [
             (name, table.input_data)
-            for name, table in cls.tables.items()
+            for name, table in self.tables.items()
             if table.input_data is not None
         ]
 
-        table_names = [name for name in cls.tables]
+        table_names = [name for name in self.tables]
 
         for table_name, table_input in table_inputs:
             for input_db, input_table_dict in table_input.items():
-                if input_db == cls.db_name:
+                if input_db == self.db_name:
                     missing_tables = [
                         tbl
                         for tbl, _ in input_table_dict.items()
@@ -219,7 +226,7 @@ class PipelineConfig(BaseModel):
                         input_db_config = yaml.safe_load(f)
 
                     try:
-                        input_db_config = cls(**input_db_config).dict()
+                        input_db_config = self(**input_db_config).dict()
                     except ValidationError as e:
                         assert False, f"Invalid config for {input_db}: {e}"
 
@@ -233,21 +240,21 @@ class PipelineConfig(BaseModel):
                         not missing_tables
                     ), f"{', '.join(missing_tables)} not listed in {input_db} config"
 
-        return cls
+        return self
 
-    @model_validator(mode="before")
-    def check_derived_sql(cls) -> "PipelineConfig":
+    @model_validator(mode="after")
+    def check_derived_sql(self) -> "PipelineConfig":
         table_sql_info = [
             (
                 name,
                 chain(*[sql for _, sql in table.sql.items() if isinstance(sql, list)]),
             )
-            for name, table in cls.tables.items()
+            for name, table in self.tables.items()
             if table.sql is not None and table.transform_type == "derived"
         ]
 
         for table_name, table_sql in table_sql_info:
-            table_sql_root_path = os.path.join(sql_path, cls.db_name, table_name)
+            table_sql_root_path = os.path.join(sql_path, self.db_name, table_name)
             missing_sql = [
                 sql
                 for sql in table_sql
@@ -258,16 +265,16 @@ class PipelineConfig(BaseModel):
             )
             assert not missing_sql, missing_sql_message
 
-        return cls
+        return self
 
     @model_validator(mode="after")
-    def check_data_linter_config(cls) -> "PipelineConfig":
-        full_lint_config = deepcopy(cls.db_lint_options)
-        etl_engines = [e.engine_name for e in cls.etl]
+    def check_data_linter_config(self) -> "PipelineConfig":
+        full_lint_config = deepcopy(self.db_lint_options)
+        etl_engines = [e.engine_name for e in self.etl]
         if full_lint_config is not None:
             full_lint_config["tables"] = {}
 
-            for table_name, table in cls.tables.items():
+            for table_name, table in self.tables.items():
                 table_tf = table.transform_type
 
                 if table_tf != "derived":
@@ -294,7 +301,7 @@ class PipelineConfig(BaseModel):
                 "db_lint_options config is required to use data_linter engine"
             )
 
-        return cls
+        return self
 
 
 def read_pipeline_config(db_name: str) -> PipelineConfig:

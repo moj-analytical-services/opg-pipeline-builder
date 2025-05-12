@@ -83,15 +83,12 @@ class AthenaParquetTransformations(AthenaTransformations):
 
                 if schema_check:
                     _logger.info("Moving output expected location")
-                    perm_files = [
-                        f"{fo.replace(temp_path, output_path)}" + ".snappy.parquet"
-                        if fo.endswith(".snappy.parquet") is False
-                        else f"{fo.replace(temp_path, output_path)}"
-                        for fo in tmp_files
-                    ]
 
-                    copy_args = list(zip(tmp_files, perm_files))
-                    _ = s3_bulk_copy(copy_args)
+                    filename_replace = {
+                        file.rsplit("/", 1)[0]: file.rsplit("/", 1)[0].split(".")[0] + ".snappy.parquet" for file in tmp_files
+                    }
+
+                    wr.s3.copy_objects(tmp_files, temp_path, output_path, replace_filenames=filename_replace)
                     wr.s3.delete_objects(temp_path)
 
                 else:

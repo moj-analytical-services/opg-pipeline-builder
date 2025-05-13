@@ -229,7 +229,7 @@ class PipelineConfig(BaseModel):
                         input_db_config = yaml.safe_load(f)
 
                     try:
-                        input_db_config = self(**input_db_config).dict()
+                        input_db_config = PipelineConfig(**input_db_config).dict()
                     except ValidationError as e:
                         assert False, f"Invalid config for {input_db}: {e}"
 

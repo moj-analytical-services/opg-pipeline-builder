@@ -92,6 +92,9 @@ class ETLStepConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_engine_exists(self) -> "ETLStepConfig":
+        if not self.transform_name:
+            self.transform_name = "run"
+
         engine_spec = os.path.exists(
             resource_filename(
                 "opg_pipeline_builder", f"transform_engines/{self.engine_name}.py"

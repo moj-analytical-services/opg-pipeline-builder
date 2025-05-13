@@ -10,6 +10,7 @@ scratch/*
 .coverage
 .tests_configs
 .linter_configs
+.python-version
 
 ## General files to remove based on https://github.com/ukgovdatascience/dotfiles
 

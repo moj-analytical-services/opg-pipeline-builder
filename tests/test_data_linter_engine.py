@@ -2,6 +2,7 @@ import base64
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import awswrangler as wr
 import pytest
@@ -19,7 +20,7 @@ class TestDataLinterEngine:
     data_ext = ".csv"
 
     def get_linter(self):
-        import src.transform_engines.data_linter as linter
+        import opg_pipeline_builder.transform_engines.data_linter as linter
 
         return linter
 
@@ -93,7 +94,14 @@ class TestDataLinterEngine:
             ),
         ],
     )
-    def test_run(self, mps_list, dag_run_id, dag_interval_end, monkeypatch, s3):
+    def test_run(
+        self,
+        mps_list: list[dict[str, str | int | bool]],
+        dag_run_id: str,
+        dag_interval_end: str,
+        monkeypatch: Any,
+        s3: Any,
+    ) -> None:
         import pyarrow.fs as fs
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
@@ -119,7 +127,8 @@ class TestDataLinterEngine:
                 CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
             )
 
-        dummy_data_paths = os.listdir(os.path.join(project_root, self.land_data_path))
+        dummy_data_path = Path("tests") / self.land_data_path
+        dummy_data_paths = os.listdir(dummy_data_path)
 
         for i, path in enumerate(dummy_data_paths):
             s3.meta.client.upload_file(

@@ -176,8 +176,6 @@ class TestAthenaTransformEngine:
         con.execute(augmented_sql)
 
     def setup_data(self, s3, stage="input"):
-        from opg_pipeline_builder.utils.constants import project_root
-
         athena = self.import_athena()
         transform = athena.AthenaTransformEngine(self.db_name)
         db = transform.db
@@ -194,9 +192,7 @@ class TestAthenaTransformEngine:
 
         table_meta.partitions = []
 
-        table_get_path = os.path.join(project_root, self.raw_data_file)
-
-        df = reader.read(table_get_path, metadata=table_meta)
+        df = reader.read(self.raw_data_file, metadata=table_meta)
         tmp = NamedTemporaryFile(suffix=".snappy.parquet")
         writer.write(df, tmp.name, metadata=table_meta)
         timestamp = int(datetime.now().timestamp())

@@ -40,20 +40,6 @@ def mypy(session: nox.Session) -> None:
 
 
 @nox.session(python="3.13", tags=["security"])
-def safety(session: nox.Session) -> None:
-    """Check dependencies for vulnerabilities."""
-    _install(session)
-    _run(session, "safety", "check")
-
-
-# @nox.session(python="3.13", tags=["security"])
-# def checkov(session: nox.Session) -> None:
-#     """Run Checkov to scan infrastructure as code (IaC)."""
-#     _install(session, "checkov")
-#     _run(session, "checkov", "--directory", PACKAGE_LOCATION)
-
-
-@nox.session(python="3.13", tags=["security"])
 def bandit(session: nox.Session) -> None:
     _install(session)
     _run(session, "bandit", "-r", "src")

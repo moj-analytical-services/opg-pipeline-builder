@@ -10,8 +10,7 @@ class TestCatalogTransformEngine:
     @mock_aws
     @mock_aws
     def test_run(self, monkeypatch):
-        import src.transform_engines.catalog as catalog
-
+        import opg_pipeline_builder.transform_engines.catalog as catalog
         from opg_pipeline_builder.utils.constants import get_full_db_name
 
         db_name = "testdb"

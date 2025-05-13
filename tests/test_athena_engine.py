@@ -40,7 +40,7 @@ class TestAthenaTransformEngine:
     temp_table_animal = "chicken"
 
     def import_athena(self):
-        import src.transform_engines.athena as athena
+        import opg_pipeline_builder.transform_engines.athena as athena
 
         return athena
 

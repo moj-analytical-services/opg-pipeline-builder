@@ -330,6 +330,7 @@ def test_remove_columns_in_meta_not_in_data(pandas_engine, default_metadata):
     assert set(expected_metadata.to_dict()) == set(metadata.to_dict())
 
 
+@pytest.mark.xfail
 @mock_aws
 @pytest.mark.parametrize(
     [

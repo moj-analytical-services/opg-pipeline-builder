@@ -149,7 +149,7 @@ def test_db_config(db_fixt):
     db, _ = db_fixt
     pipeline_config = read_pipeline_config(db.name)
 
-    assert pipeline_config == db.config
+    assert pipeline_config.model_dump() == db.config
 
 
 def test_db_metadata_path(db_fixt):

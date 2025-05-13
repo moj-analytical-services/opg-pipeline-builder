@@ -106,7 +106,6 @@ class TestDataLinterEngine:
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
 
-        from opg_pipeline_builder.utils.constants import project_root
         from opg_pipeline_builder.utils.utils import remove_lint_filestamp
 
         linter = self.get_linter()
@@ -127,14 +126,14 @@ class TestDataLinterEngine:
                 CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
             )
 
-        dummy_data_path = Path("tests") / self.land_data_path
-        dummy_data_paths = os.listdir(dummy_data_path)
+        dummy_data_path = Path(self.land_data_path)
+        dummy_data = os.listdir(dummy_data_path)
 
-        for i, path in enumerate(dummy_data_paths):
+        for i, path in enumerate(dummy_data):
             s3.meta.client.upload_file(
-                os.path.join(project_root, self.land_data_path, path),
+                dummy_data_path / path,
                 lb,
-                os.path.join(lk, table.name, dummy_data_paths[i]),
+                os.path.join(lk, table.name, dummy_data[i]),
             )
 
         if mps_list:

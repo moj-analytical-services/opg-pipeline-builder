@@ -32,23 +32,24 @@ class TableConfig(BaseModel):
     @model_validator(mode="after")
     def check_transform_type_consistency(self) -> "TableConfig":
         if self.transform_type == "derived":
-            assert (
-                self.lint_options is None
-            ), "Derived table should not have self.lint_options"
-            assert (
-                self.input_data is not None
-            ), "Derived table should have self.input_data"
+            if self.lint_options:
+                raise ValueError("Derived table should not have self.lint_options")
+            if not self.input_data:
+                raise ValueError("Derived table should have self.input_data")
 
         else:
-            assert (
-                self.lint_options is not None
-            ), f"{self.transform_type} table should have lint_options"
-            assert (
-                self.input_data is None
-            ), f"{self.transform_type} table should not have input_data"
+            if not self.lint_options:
+                raise ValueError(
+                    f"{self.transform_type} table should have lint_options"
+                )
+            if self.input_data:
+                raise ValueError(
+                    f"{self.transform_type} table should not have input_data"
+                )
 
             if self.transform_type == "default":
-                assert self.sql is None, "default table should not have sql"
+                if self.sql:
+                    raise ValueError("default table should not have sql")
 
         return self
 
@@ -65,16 +66,18 @@ class TableConfig(BaseModel):
         cls,
         v: dict[str, dict[str, str]],
     ) -> dict[str, dict[str, str]]:
-        inv_stages = [k for k, _ in v.items() if k not in etl_stages]
-        assert not inv_stages, f"ETL stages must be one of {', '.join(etl_stages)}"
+        inv_stages = [stage for stage in v if stage not in etl_stages]
+        if inv_stages:
+            raise ValueError(f"ETL stages must be one of {', '.join(etl_stages)}")
         return v
 
     @field_validator("transform_type")
     @classmethod
     def check_transform_type(cls, v: str) -> str:
-        assert (
-            v in transform_types
-        ), f"Transform type should be one of {', '.join(transform_types)}"
+        if v not in transform_types:
+            raise ValueError(
+                f"Transform type should be one of {', '.join(transform_types)}"
+            )
         return v
 
 
@@ -87,7 +90,8 @@ class ETLStepConfig(BaseModel):
     @field_validator("step")
     @classmethod
     def check_in_etl_steps(cls, v: str) -> str:
-        assert v in etl_steps, f"{v} not one of the following: {', '.join(etl_steps)}"
+        if v not in etl_steps:
+            raise ValueError(f"{v} not one of the following: {', '.join(etl_steps)}")
         return v
 
     @model_validator(mode="after")
@@ -132,9 +136,10 @@ class ETLStepConfig(BaseModel):
             if f[0] == self.transform_name
         ]
 
-        assert (
-            len(functions) == 1
-        ), f"{class_name} class is missing {self.transform_name} method"
+        if len(functions) != 1:
+            raise ValueError(
+                f"{class_name} class is missing {self.transform_name} method"
+            )
 
         return self
 
@@ -155,9 +160,8 @@ class PipelineConfig(BaseModel):
             shared_sql_names = list(chain(*[v for _, v in self.shared_sql.items()]))
             shared_sql_path = os.path.join(sql_path, self.db_name, "shared")
 
-            assert os.path.exists(
-                shared_sql_path
-            ), "shared sql directory does not exist"
+            if not os.path.exists(shared_sql_path):
+                raise ValueError("shared sql directory does not exist")
 
             shared_sql_filenames = [Path(p).stem for p in os.listdir(shared_sql_path)]
 
@@ -167,15 +171,17 @@ class PipelineConfig(BaseModel):
                 f"{missing_sql_substr} are missing in the database's shared sql folder"
             )
 
-            assert not missing_sql, message
+            if missing_sql:
+                raise ValueError(message)
 
         return self
 
     @field_validator("paths")
     @classmethod
     def check_in_etl_stages(cls, v: dict[str, str]) -> dict[str, str]:
-        stage = [k for k, _ in v.items()][0]
-        assert stage in etl_stages, f"{stage} is not a valid ETL stage"
+        stage = [k for k in v][0]
+        if stage not in etl_stages:
+            raise ValueError(f"{stage} is not a valid ETL stage")
         return v
 
     @field_validator("shared_sql")
@@ -184,7 +190,8 @@ class PipelineConfig(BaseModel):
         transform_type = [k for k, _ in v.items()][0]
         valid_type = transform_type in transform_types
         error_message = f'{transform_type} is not one of {", ".join(transform_types)}'
-        assert valid_type, error_message
+        if not valid_type:
+            raise ValueError(error_message)
         return v
 
     @model_validator(mode="after")
@@ -210,16 +217,16 @@ class PipelineConfig(BaseModel):
                         f"{table_name} inputs do not exist in config: "
                         + ", ".join(missing_tables)
                     )
-                    assert not missing_tables, missing_tables_msg
+                    if missing_tables:
+                        raise ValueError(missing_tables_msg)
 
                 else:
                     input_db_config_paths = [
                         p for p in os.listdir("configs") if Path(p).stem == input_db
                     ]
 
-                    assert (
-                        len(input_db_config_paths) == 1
-                    ), f"Cannot find config for {input_db}"
+                    if len(input_db_config_paths) != 1:
+                        raise ValueError(f"Cannot find config for {input_db}")
 
                     input_db_config_path = os.path.join(
                         "configs", input_db_config_paths[0]
@@ -231,7 +238,7 @@ class PipelineConfig(BaseModel):
                     try:
                         input_db_config = PipelineConfig(**input_db_config).dict()
                     except ValidationError as e:
-                        assert False, f"Invalid config for {input_db}: {e}"
+                        raise ValueError(f"Invalid config for {input_db}: {e}")
 
                     db_tables = input_db_config.get("tables")
                     missing_tables = [
@@ -239,9 +246,10 @@ class PipelineConfig(BaseModel):
                         for tbl, _ in input_table_dict.items()
                         if tbl not in db_tables
                     ]
-                    assert (
-                        not missing_tables
-                    ), f"{', '.join(missing_tables)} not listed in {input_db} config"
+                    if missing_tables:
+                        raise ValueError(
+                            f"{', '.join(missing_tables)} not listed in {input_db} config"
+                        )
 
         return self
 
@@ -266,7 +274,8 @@ class PipelineConfig(BaseModel):
             missing_sql_message = f"SQL for {table_name} is missing: " + ", ".join(
                 missing_sql
             )
-            assert not missing_sql, missing_sql_message
+            if missing_sql:
+                raise ValueError(missing_sql_message)
 
         return self
 

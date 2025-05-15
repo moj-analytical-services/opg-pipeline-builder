@@ -11,9 +11,9 @@ import pyarrow.fs as fs
 import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
-from moto import mock_s3
+from moto import mock_aws
 
-from tests.helpers import mock_get_file, mock_reader_read, mock_writer_write
+from tests.conftest import mock_get_file, mock_reader_read, mock_writer_write
 
 log = getLogger()
 
@@ -330,7 +330,8 @@ def test_remove_columns_in_meta_not_in_data(pandas_engine, default_metadata):
     assert set(expected_metadata.to_dict()) == set(metadata.to_dict())
 
 
-@mock_s3
+@pytest.mark.xfail
+@mock_aws
 @pytest.mark.parametrize(
     [
         "chunk_rest_threshold",

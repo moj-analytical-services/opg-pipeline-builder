@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.helpers import dummy_bucket, mock_get_file, set_up_s3
+from tests.conftest import dummy_bucket, mock_get_file, set_up_s3
 
 
 @pytest.fixture()
@@ -330,7 +330,7 @@ def test_check_s3_for_existing_timestamp_file(
     "json_path", ["tests/data/meta_data/testdb/curated/table1.json"]
 )
 def test_pa_read_json_from_s3(s3, monkeypatch, json_path):
-    import src.utils.utils as pbutils
+    import opg_pipeline_builder.utils.utils as pbutils
 
     monkeypatch.setattr(pbutils, "S3FileSystem", mock_get_file)
     set_up_s3(s3)

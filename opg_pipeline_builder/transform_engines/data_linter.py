@@ -208,24 +208,26 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     for f in tbl_tmp_files
                 ]
 
-                old_prt = old_prts[0]
+                if old_prts:
 
-                if len(set(old_prts)) > 1:
-                    msg = "Process is designed to only run on a single partition of"
-                    "raw data. More than one partition was found. Partitions:"
-                    f"{','.join(old_prts)}"
-                    raise ValueError(msg)
+                    old_prt = old_prts[0]
 
-                new_prt = f"{timestamp_partition_name}={dag_timestamp}"
+                    if len(set(old_prts)) > 1:
+                        msg = "Process is designed to only run on a single partition of"
+                        "raw data. More than one partition was found. Partitions:"
+                        f"{','.join(old_prts)}"
+                        raise ValueError(msg)
 
-                tbl_perm_files = tbl_tmp_files[0].replace("temp/", "")
-                tbl_perm_dag_files = tbl_perm_files.replace(old_prt, new_prt)
-                target_path = tbl_perm_dag_files.rsplit("/", 1)[0]
+                    new_prt = f"{timestamp_partition_name}={dag_timestamp}"
 
-                _logger.info(
-                    f"Copying files for table {tbl_name} from temporary directory"
-                )
-                wr.s3.copy_objects(tbl_tmp_files, tbl_tmp_path, str(target_path))
+                    tbl_perm_files = tbl_tmp_files[0].replace("temp/", "")
+                    tbl_perm_dag_files = tbl_perm_files.replace(old_prt, new_prt)
+                    target_path = tbl_perm_dag_files.rsplit("/", 1)[0]
+
+                    _logger.info(
+                        f"Copying files for table {tbl_name} from temporary directory"
+                    )
+                    wr.s3.copy_objects(tbl_tmp_files, tbl_tmp_path, str(target_path))
 
                 _logger.info(
                     f"Deleting files in temporary directory for table {tbl_name}"

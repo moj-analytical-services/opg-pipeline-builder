@@ -10,21 +10,21 @@ RUNNER = "uv"
 PACKAGE_LOCATION = "."
 
 
-@nox.session(python="3.13", tags=["lint"])
+@nox.session(python="3.12", tags=["lint"])
 def ruff(session: nox.Session) -> None:
     """Lint with ruff."""
     _install(session)
     _run(session, "ruff", "check", PACKAGE_LOCATION)
 
 
-@nox.session(python="3.13", tags=["format"])
+@nox.session(python="3.12", tags=["format"])
 def isort(session: nox.Session) -> None:
     """Sort imports with isort."""
     _install(session)
     _run(session, "isort", PACKAGE_LOCATION)
 
 
-@nox.session(python="3.13", tags=["test"])
+@nox.session(python="3.12", tags=["test"])
 def pytest(session: nox.Session) -> None:
     """Run the test suite with pytest."""
     args = session.posargs or ("--cov", "-m", "not e2e")
@@ -32,20 +32,20 @@ def pytest(session: nox.Session) -> None:
     _run(session, "pytest", *args)
 
 
-@nox.session(python="3.13", tags=["typecheck"])
+@nox.session(python="3.12", tags=["typecheck"])
 def mypy(session: nox.Session) -> None:
     """Verify types using mypy (so it is static)."""
     _install(session)
     _run(session, "mypy", PACKAGE_LOCATION)
 
 
-@nox.session(python="3.13", tags=["security"])
+@nox.session(python="3.12", tags=["security"])
 def bandit(session: nox.Session) -> None:
     _install(session)
     _run(session, "bandit", "-r", "src")
 
 
-@nox.session(python="3.13", tags=["lint"])
+@nox.session(python="3.12", tags=["lint"])
 def yamllint(session: nox.Session) -> None:
     _install(session, "yamllint")
     _run(session, "yamllint", "src/", ".pre-commit-config.yaml")

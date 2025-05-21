@@ -7,7 +7,7 @@ name = "opg_pipeline_builder"
 version = "0.3.1"
 description = "Provides common re-usable components for building OPG data pipelines"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "aiobotocore>=2.22.0",
     "awswrangler>=3.11.0",

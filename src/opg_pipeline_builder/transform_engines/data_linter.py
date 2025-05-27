@@ -11,11 +11,7 @@ from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
 
 from ..utils.constants import get_dag_timestamp, get_multiprocessing_settings
-from ..utils.utils import (
-    extract_mojap_partition,
-    get_modified_filepaths_from_s3_folder,
-    s3_bulk_copy,
-)
+from ..utils.utils import extract_mojap_partition, get_modified_filepaths_from_s3_folder
 from .base import BaseTransformEngine
 
 _logger: logging.Logger = logging.getLogger(__name__)
@@ -200,31 +196,34 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
             for tbl_name in config["tables"]:
                 tbl_tmp_path = os.path.join(pass_tmp_path, tbl_name)
-
                 tbl_tmp_files = get_modified_filepaths_from_s3_folder(tbl_tmp_path)
 
-                tbl_moj_prts = [
+                old_prts = [
                     extract_mojap_partition(
                         f, timestamp_partition_name=timestamp_partition_name
                     )
                     for f in tbl_tmp_files
                 ]
 
-                new_prt = f"{timestamp_partition_name}={dag_timestamp}"
+                if old_prts:
+                    old_prt = old_prts[0]
 
-                tbl_perm_files = [f.replace("temp/", "") for f in tbl_tmp_files]
+                    if len(set(old_prts)) > 1:
+                        msg = "Process is designed to only run on a single partition of"
+                        "raw data. More than one partition was found. Partitions:"
+                        f"{','.join(old_prts)}"
+                        raise ValueError(msg)
 
-                tbl_perm_dag_files = [
-                    f.replace(old_prt, new_prt)
-                    for f, old_prt in zip(tbl_perm_files, tbl_moj_prts)
-                ]
+                    new_prt = f"{timestamp_partition_name}={dag_timestamp}"
 
-                tbl_copy_args = list(zip(tbl_tmp_files, tbl_perm_dag_files))
+                    tbl_perm_files = tbl_tmp_files[0].replace("temp/", "")
+                    tbl_perm_dag_files = tbl_perm_files.replace(old_prt, new_prt)
+                    target_path = tbl_perm_dag_files.rsplit("/", 1)[0]
 
-                _logger.info(
-                    f"Copying files for table {tbl_name} from temporary directory"
-                )
-                _ = s3_bulk_copy(tbl_copy_args)
+                    _logger.info(
+                        f"Copying files for table {tbl_name} from temporary directory"
+                    )
+                    wr.s3.copy_objects(tbl_tmp_files, tbl_tmp_path, str(target_path))
 
                 _logger.info(
                     f"Deleting files in temporary directory for table {tbl_name}"

@@ -3,10 +3,10 @@ import os
 import sys
 from copy import deepcopy
 
+from opg_pipeline_builder import __version__ as v
 from opg_pipeline_builder.pipeline import Pipeline
 from opg_pipeline_builder.pipeline_builder import PipelineBuilder
 from opg_pipeline_builder.utils.constants import etl_steps
-from src.opg_pipeline_builder import __version__ as v
 
 
 class bcolors:
@@ -166,5 +166,3 @@ def entrypoint(database: str, step: str) -> None:
 
 if __name__ == "__main__":
     main()
-
-print(v)

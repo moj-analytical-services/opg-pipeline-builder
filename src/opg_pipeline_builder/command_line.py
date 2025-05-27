@@ -166,3 +166,5 @@ def entrypoint(database: str, step: str) -> None:
 
 if __name__ == "__main__":
     main()
+
+print(v)

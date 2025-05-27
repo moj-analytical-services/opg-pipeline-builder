@@ -199,7 +199,7 @@ def get_end_date() -> Union[datetime, None]:
     """
     try:
         end_str = os.environ["END_DATE"]
-        end_str += " 00:00:00"
+        end_str += " 23:59:59"
         end_dt = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tzutc())
     except KeyError:
         end_dt = None

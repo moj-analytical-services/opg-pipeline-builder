@@ -94,7 +94,7 @@ def test_get_start_date():
 
     assert get_start_date() is None
 
-    os.environ["START_DATE"] = "2022-09-01 00:00:00"
+    os.environ["START_DATE"] = "2022-09-01"
 
     assert get_start_date() == datetime(2022, 9, 1, 0, 0, 0, tzinfo=tzutc())
 
@@ -106,7 +106,7 @@ def test_get_end_date():
 
     assert get_end_date() is None
 
-    os.environ["END_DATE"] = "2022-09-30 23:59:59"
+    os.environ["END_DATE"] = "2022-09-30"
 
     assert get_end_date() == datetime(2022, 9, 30, 23, 59, 59, tzinfo=tzutc())
 

@@ -13,7 +13,7 @@ dependencies = [
     "awswrangler>=3.11.0",
     "boto3==1.37.2",
     "croniter>=6.0.0",
-    "data-linter>=6.3.1",
+    "data-linter>=6.3.2",
     "dataengineeringutils3>=1.4.3",
     "pyarrow>=18.1.0",
     "pydantic>=2.11.4",

@@ -7,13 +7,8 @@ import pydbtools as pydb
 from mojap_metadata import Metadata
 
 from ..database import Database
-from ..utils.constants import (
-    get_end_date,
-    get_full_db_name,
-    get_source_db,
-    get_source_tbls,
-    get_start_date,
-)
+from ..utils.constants import (get_end_date, get_full_db_name, get_source_db,
+                               get_source_tbls, get_start_date)
 from ..utils.utils import extract_mojap_timestamp
 from .base import BaseTransformEngine
 from .transforms import athena as athena_transforms

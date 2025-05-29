@@ -450,7 +450,7 @@ wheels = [
 
 [[package]]
 name = "data-linter"
-version = "6.3.1"
+version = "6.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow-pd-parser" },
@@ -466,9 +466,9 @@ dependencies = [
     { name = "setuptools" },
     { name = "toml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/b2/d1272bb288bd4ca4f34ba9bf4bda31c28387d2b5bf558ab18e8820fa77f8/data_linter-6.3.1.tar.gz", hash = "sha256:843570e0cf9b466d7a18b13a3dcbae7ab585cb458610f304c7028140dae3004b", size = 27721 }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/25/e981d5b27957f9cc06ff0215a8c21f6ca39c40134f0fd46545c08f2268eb/data_linter-6.3.2.tar.gz", hash = "sha256:dfb804aa88e1929857f701e5de93d6ae544d06c85c034c29e2de9171705091dc", size = 27728 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/6b/333595b9c5c5455995c60ecc73f7e41a39ab95b9537dd79fbfdfa72f0ec0/data_linter-6.3.1-py3-none-any.whl", hash = "sha256:aecf88130b0d86f0600df9546efbe37a7ba8d951b4708354ea10e14cdf363727", size = 29354 },
+    { url = "https://files.pythonhosted.org/packages/1e/3f/0d28421167b4621ac991fe47083522651922682a987f06ef49abbe67d9da/data_linter-6.3.2-py3-none-any.whl", hash = "sha256:5e67f5d32d98c16370425a17bb06110e934af295728eeefb947693c08c47fd82", size = 29358 },
 ]
 
 [[package]]
@@ -1199,11 +1199,11 @@ requires-dist = [
     { name = "awswrangler", specifier = ">=3.11.0" },
     { name = "boto3", specifier = "==1.37.2" },
     { name = "croniter", specifier = ">=6.0.0" },
-    { name = "data-linter", specifier = ">=6.3.1" },
+    { name = "data-linter", specifier = ">=6.3.2" },
     { name = "dataengineeringutils3", specifier = ">=1.4.3" },
     { name = "pyarrow", specifier = ">=18.1.0" },
     { name = "pydantic", specifier = ">=2.11.4" },
-    { name = "pydbtools", specifier = ">=5.6.4" },
+    { name = "pydbtools", specifier = ">=5.8.1" },
     { name = "s3fs", specifier = "==2025.3.2" },
     { name = "ssm-parameter-store", specifier = ">=19.11.0" },
 ]
@@ -1513,7 +1513,7 @@ wheels = [
 
 [[package]]
 name = "pydbtools"
-version = "5.6.4"
+version = "5.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow-pd-parser" },
@@ -1524,9 +1524,9 @@ dependencies = [
     { name = "sql-metadata" },
     { name = "sqlparse" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/53/8f/b1b20cf81ab1dbdd8836affc267d9233bb4e631ce9cb8e1875d2516a4a66/pydbtools-5.6.4.tar.gz", hash = "sha256:48ecefcf81ab33343fc22513590188189fc277bd37fae91393793e886eee1707", size = 11953 }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/98/bad2cbcf33b932a1e7d2686c297de16c351fa43dc6e700be6b162a4129b2/pydbtools-5.8.1.tar.gz", hash = "sha256:da1fcf5e4d42f7a58738d97f6bd946e394f3ca2a4986398459ed7ad2fdd1f5cd", size = 14704 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/ef/8f11f50aedda6d2d0064e5af6ef28eef89cfd275bfea070a4b89a91f72e2/pydbtools-5.6.4-py3-none-any.whl", hash = "sha256:f278d9beb1ffd73a2e15debe44dc28ea131f78948d84054f7b79bb550347acef", size = 12466 },
+    { url = "https://files.pythonhosted.org/packages/17/08/01535e0cfe7898e39845f7d851fa86a74c279c74f4d315677ef8ba469df7/pydbtools-5.8.1-py3-none-any.whl", hash = "sha256:c9ea8970a4b9f52b6444bc79947bd24a55db1f320b605222bd2c2a6f14c0071e", size = 12671 },
 ]
 
 [[package]]

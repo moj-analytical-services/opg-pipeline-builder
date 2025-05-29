@@ -7,8 +7,13 @@ import pydbtools as pydb
 from mojap_metadata import Metadata
 
 from ..database import Database
-from ..utils.constants import (get_end_date, get_full_db_name, get_source_db,
-                               get_source_tbls, get_start_date)
+from ..utils.constants import (
+    get_end_date,
+    get_full_db_name,
+    get_source_db,
+    get_source_tbls,
+    get_start_date,
+)
 from ..utils.utils import extract_mojap_timestamp
 from .base import BaseTransformEngine
 from .transforms import athena as athena_transforms
@@ -520,9 +525,11 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
         )
 
-        print(f"GETTING PARTITIONS FROM HERE: {db_tbl_ipts}")
-        print(f"GETTING PARTITIONS FROM HERE: {self.db.env}")
-        print(f"GETTING PARTITIONS FROM HERE: {cutoff_sql_clause}")
+        print(f"EXISTING PARTITIONS: {existing_prts}")
+
+        print(f"TBL INPUTS: {db_tbl_ipts}")
+        print(f"DB ENV: {self.db.env}")
+        print(f"CUTOFF CLAUSE: {cutoff_sql_clause}")
 
         input_prts_sql = [
             pydb.render_sql_template(
@@ -546,12 +553,15 @@ class AthenaTransformEngine(BaseTransformEngine):
             pydb.read_sql_queries(ipt_sql)["unique_prts"] for ipt_sql in input_prts_sql
         ]
 
+        print(f"INPUT PARTITIONS: {input_prts}")
+
         common_prts = set(input_prts[0])
         for prt_list in input_prts[1:]:
             common_prts = common_prts.intersection(set(prt_list))
 
         new_prts = [str(prt) for prt in common_prts if prt not in existing_prts]
         new_prts.sort(reverse=True)
+        print(f"NEW PARTITIONS: {new_prts}")
 
         return new_prts
 

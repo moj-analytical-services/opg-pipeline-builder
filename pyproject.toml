@@ -17,7 +17,7 @@ dependencies = [
     "dataengineeringutils3>=1.4.3",
     "pyarrow>=18.1.0",
     "pydantic>=2.11.4",
-    "pydbtools>=5.6.4",
+    "pydbtools>=5.8.1",
     "s3fs==2025.3.2",
     "ssm-parameter-store>=19.11.0",
 ]

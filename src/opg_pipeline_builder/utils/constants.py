@@ -379,6 +379,13 @@ def get_dag_timestamp() -> Union[int, None]:
     mp_args = get_multiprocessing_settings()
 
     raise_error = False
+
+    try:
+        dag_ts = int(os.environ["RUN_TIMESTAMP"])
+        return dag_ts
+    except Exception:
+        pass
+
     if mp_args is not None:
         tmp_staging = mp_args.get("temp_staging", False)
         if tmp_staging is True:

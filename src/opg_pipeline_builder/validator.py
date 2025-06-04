@@ -10,11 +10,14 @@ import yaml
 from croniter import croniter
 from data_linter import validation
 from pkg_resources import resource_filename
-from pydantic import (BaseModel, ValidationError, field_validator,
-                      model_validator)
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from opg_pipeline_builder.utils.constants import (etl_stages, etl_steps,
-                                                  sql_path, transform_types)
+from opg_pipeline_builder.utils.constants import (
+    etl_stages,
+    etl_steps,
+    sql_path,
+    transform_types,
+)
 
 
 class TableConfig(BaseModel):
@@ -219,7 +222,9 @@ class PipelineConfig(BaseModel):
 
                 else:
                     input_db_config_paths = [
-                        p for p in os.listdir("configs") if Path(p).stem == input_db
+                        p
+                        for p in os.listdir("opg_pipeline.configs")
+                        if Path(p).stem == input_db
                     ]
 
                     if len(input_db_config_paths) != 1:

@@ -223,7 +223,7 @@ class PipelineConfig(BaseModel):
                 else:
                     input_db_config_paths = [
                         p
-                        for p in os.listdir("src.opg_pipeline.configs")
+                        for p in os.listdir("src/opg_pipeline/configs")
                         if Path(p).stem == input_db
                     ]
 

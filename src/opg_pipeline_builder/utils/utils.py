@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import boto3
-from dataengineeringutils3.s3 import (_add_slash, bucket_key_to_s3_path,
-                                      s3_path_to_bucket_key)
+from dataengineeringutils3.s3 import (
+    _add_slash,
+    bucket_key_to_s3_path,
+    s3_path_to_bucket_key,
+)
 from pyarrow import Table
 from pyarrow.fs import S3FileSystem
 from pyarrow.json import read_json
@@ -209,18 +212,23 @@ def get_modified_filepaths_from_s3_folder(
     s3b = s3_resource.Bucket(bucket)
     obs = s3b.objects.filter(Prefix=key)
 
+    print(obs)
+
     if file_extension is not None:
         obs = [o for o in obs if o.key.endswith(file_extension)]
 
     if exclude_zero_byte_files:
         obs = [o for o in obs if o.size != 0]
 
+    print(obs)
     if modified_after is not None:
         obs = [o for o in obs if o.last_modified > modified_after]
 
+    print(obs)
     if modified_before is not None:
         obs = [o for o in obs if o.last_modified < modified_before]
 
+    print(obs)
     ob_keys = [o.key for o in obs]
 
     paths = sorted([bucket_key_to_s3_path(bucket, o) for o in ob_keys])

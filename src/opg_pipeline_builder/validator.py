@@ -9,12 +9,7 @@ from croniter import croniter
 from data_linter import validation
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from opg_pipeline_builder.utils.constants import (
-    etl_stages,
-    etl_steps,
-    sql_path,
-    transform_types,
-)
+from opg_pipeline_builder.utils.constants import etl_stages, sql_path, transform_types
 
 
 class TableConfig(BaseModel):
@@ -84,12 +79,12 @@ class ETLStepConfig(BaseModel):
     transform_name: Optional[str] = None
     transform_kwargs: Optional[Dict[str, object]] = None
 
-    @field_validator("step")
-    @classmethod
-    def check_in_etl_steps(cls, v: str) -> str:
-        if v not in etl_steps:
-            raise ValueError(f"{v} not one of the following: {', '.join(etl_steps)}")
-        return v
+    # @field_validator("step")
+    # @classmethod
+    # def check_in_etl_steps(cls, v: str) -> str:
+    #     if v not in etl_steps:
+    #         raise ValueError(f"{v} not one of the following: {', '.join(etl_steps)}")
+    #     return v
 
     @model_validator(mode="after")
     def check_engine_exists(self) -> "ETLStepConfig":

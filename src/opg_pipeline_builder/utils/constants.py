@@ -173,6 +173,7 @@ def get_start_date() -> Union[datetime, None]:
     """
     try:
         start_str = os.environ["START_DATE"]
+        start_str += " 00:00:00"
         start_dt = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S").replace(
             tzinfo=tzutc()
         )
@@ -198,6 +199,7 @@ def get_end_date() -> Union[datetime, None]:
     """
     try:
         end_str = os.environ["END_DATE"]
+        end_str += " 23:59:59"
         end_dt = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tzutc())
     except KeyError:
         end_dt = None
@@ -296,6 +298,8 @@ def get_full_db_name(
     else:
         full_db_name = "_".join([prefix, db_name, env_suffix])
 
+    print(f"FULL DB NAME: {full_db_name}")
+
     return full_db_name
 
 
@@ -375,6 +379,13 @@ def get_dag_timestamp() -> Union[int, None]:
     mp_args = get_multiprocessing_settings()
 
     raise_error = False
+
+    try:
+        dag_ts = int(os.environ["RUN_TIMESTAMP"])
+        return dag_ts
+    except Exception:
+        pass
+
     if mp_args is not None:
         tmp_staging = mp_args.get("temp_staging", False)
         if tmp_staging is True:

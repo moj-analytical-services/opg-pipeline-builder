@@ -58,10 +58,8 @@ class TestAthenaTransformEngine:
         alt_database=None,
         **kwargs,
     ):
-        from opg_pipeline_builder.utils.utils import (
-            extract_mojap_partition,
-            extract_mojap_timestamp,
-        )
+        from opg_pipeline_builder.utils.utils import (extract_mojap_partition,
+                                                      extract_mojap_timestamp)
 
         athena = self.import_athena()
         transform = athena.AthenaTransformEngine(self.db_name)

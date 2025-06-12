@@ -8,7 +8,8 @@ from .database import Database
 from .pipeline import Pipeline
 from .transform_engines.base import BaseTransformEngine
 from .transforms import Transforms
-from .utils.constants import etl_stages, etl_steps, get_source_db, get_source_tbls
+from .utils.constants import (etl_stages, etl_steps, get_source_db,
+                              get_source_tbls)
 from .utils.utils import do_nothing
 from .validator import read_pipeline_config
 

@@ -218,9 +218,13 @@ def get_modified_filepaths_from_s3_folder(
     if exclude_zero_byte_files:
         obs = [o for o in obs if o.size != 0]
 
+    print("OBS BEFORE MODIFIED AFTER DATE")
+    print(obs)
     if modified_after is not None:
         obs = [o for o in obs if o.last_modified > modified_after]
 
+    print("OBS AFTER MODIFIED AFTER DATE")
+    print(obs)
     if modified_before is not None:
         obs = [o for o in obs if o.last_modified < modified_before]
 

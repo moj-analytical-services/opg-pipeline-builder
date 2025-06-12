@@ -6,7 +6,8 @@ from croniter import croniter
 from jinja2 import Template
 from mojap_metadata import Metadata
 
-from .utils.constants import get_env, get_metadata_path, get_source_db, get_source_tbls
+from .utils.constants import (get_env, get_metadata_path, get_source_db,
+                              get_source_tbls)
 from .validator import read_pipeline_config
 
 

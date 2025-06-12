@@ -3,10 +3,10 @@ import os
 import sys
 from copy import deepcopy
 
+from opg_pipeline_builder import __version__ as v
 from opg_pipeline_builder.pipeline import Pipeline
 from opg_pipeline_builder.pipeline_builder import PipelineBuilder
 from opg_pipeline_builder.utils.constants import etl_steps
-from src import __version__ as v
 
 
 class bcolors:
@@ -21,7 +21,7 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
-def run_pipeline_step(pipeline: Pipeline, step: str):
+def run_pipeline_step(pipeline: Pipeline, step: str) -> None:
     etl_step_fn = getattr(pipeline, step)
     print(
         f"{bcolors.BOLD}\tRunning ETL step:{bcolors.ENDC}\n"
@@ -31,7 +31,7 @@ def run_pipeline_step(pipeline: Pipeline, step: str):
     print(f"{bcolors.BOLD}\tFinished running ETL step{bcolors.ENDC}")
 
 
-def run_full_pipeline(pipeline: Pipeline):
+def run_full_pipeline(pipeline: Pipeline) -> None:
     for etl_step in etl_steps:
         run_pipeline_step(pipeline, etl_step)
 
@@ -45,7 +45,7 @@ class keyvalue(argparse.Action):
         namespace,
         values,
         option_string=None,
-    ):
+    ) -> None:
         setattr(namespace, self.dest, dict())
 
         for value in values:

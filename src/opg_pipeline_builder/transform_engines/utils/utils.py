@@ -8,13 +8,14 @@ import awswrangler as wr
 from dataengineeringutils3.s3 import _add_slash
 from mojap_metadata import Metadata
 from pydantic import BaseModel
-from ssm_parameter_store import EC2ParameterStore
 
 from ...database import Database
-from ...utils.constants import (aws_region, get_end_date, get_source_tbls,
-                                get_start_date)
-from ...utils.utils import (extract_mojap_partition, extract_mojap_timestamp,
-                            get_modified_filepaths_from_s3_folder)
+from ...utils.constants import get_end_date, get_source_tbls, get_start_date
+from ...utils.utils import (
+    extract_mojap_partition,
+    extract_mojap_timestamp,
+    get_modified_filepaths_from_s3_folder,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -293,11 +294,10 @@ class TransformEngineUtils(BaseModel):
         return (input_path, output_path, tf_type)
 
     def get_secrets(self, secret_key: str) -> str:
-        """Return secret from parameter store
+        """Return secret from environment variable.
 
-        Returns the given secret from the EC2 parameter store
-        for the pipeline. Note, IAM_ROLE env variable needs to
-        be set for this method.
+        Looks up the value from the environment variables for the
+        given secret key.
 
         Params
         ------
@@ -307,16 +307,15 @@ class TransformEngineUtils(BaseModel):
         Return
         ------
         str
-            Secret value from parameter store.
+            Secret value from environment variable containing the secret.
         """
-        iam_role = os.environ["IAM_ROLE"]
-        store = EC2ParameterStore(region_name=aws_region)
+        secret = os.getenv(secret_key, None)
 
-        param_path = os.path.join("/alpha/airflow/", iam_role, "secrets", self._db.name)
+        if not secret:
+            err = f"No value found for secret: '{secret_key}'. The secret needs to be added to the DAG manifest file and AWS secret manager."
+            raise ValueError(err)
 
-        secrets = store.get_parameters_by_path(param_path)
-
-        return secrets[secret_key]
+        return secret
 
     @staticmethod
     def cleanup_partitions(base_data_path: str, partitions: List[str]):

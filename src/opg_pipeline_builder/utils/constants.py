@@ -298,8 +298,6 @@ def get_full_db_name(
     else:
         full_db_name = "_".join([prefix, db_name, env_suffix])
 
-    print(f"FULL DB NAME: {full_db_name}")
-
     return full_db_name
 
 

@@ -6,7 +6,7 @@ from croniter import croniter
 from jinja2 import Template
 from mojap_metadata import Metadata
 
-from .utils.constants import get_env, get_metadata_path, get_source_db, get_source_tbls
+from .utils.constants import get_env, get_metadata_path, get_source_tbls
 from .validator import PipelineConfig
 
 
@@ -43,11 +43,8 @@ class Database:
             given transform types.
     """
 
-    def __init__(self, config: PipelineConfig, db_name: Optional[str] = None) -> None:
-        if db_name is None:
-            db_name = get_source_db()
-
-        self._name = db_name
+    def __init__(self, config: PipelineConfig) -> None:
+        self._name = config.db_name
         self._config = config.model_dump()
 
         tables = list(self._config["tables"].keys())
@@ -60,16 +57,16 @@ class Database:
         cpt = Template(paths.get("curated", ""))
         dpt = Template(paths.get("derived", ""))
 
-        lp = lpt.render(env=get_env(), db=db_name)
-        rp = rp.render(env=get_env(), db=db_name)
-        rhp = rhpt.render(env=get_env(), db=db_name)
-        pp = ppt.render(env=get_env(), db=db_name)
-        cp = cpt.render(env=get_env(), db=db_name)
-        dp = dpt.render(env=get_env(), db=db_name)
+        lp = lpt.render(env=get_env(), db=self._name)
+        rp = rp.render(env=get_env(), db=self._name)
+        rhp = rhpt.render(env=get_env(), db=self._name)
+        pp = ppt.render(env=get_env(), db=self._name)
+        cp = cpt.render(env=get_env(), db=self._name)
+        dp = dpt.render(env=get_env(), db=self._name)
 
         self._env = get_env()
         self._tables = tables
-        self._metadata_path = get_metadata_path(db_name)
+        self._metadata_path = get_metadata_path(self._name)
         self._land_path = lp
         self._raw_path = rp
         self._raw_hist_path = rhp

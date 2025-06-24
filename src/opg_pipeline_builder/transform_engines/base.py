@@ -13,17 +13,15 @@ _logger: logging.Logger = logging.getLogger(__name__)
 class BaseTransformEngine(BaseModel):
     config: PipelineConfig
     db: Database
-    utils: TransformEngineUtils
 
     class Config:
         arbitrary_types_allowed = True
 
-    def __post_init__(
+    def __init__(
         self,
     ) -> None:
-        self.utils = (
-            TransformEngineUtils(db=self.db) if self.utils is None else self.utils
-        )
+        utils = TransformEngineUtils(db=self.db)
+        super().__init__(config=self.config, db=self.db, utils=utils)
         self._validate_method_kwargs()
 
     @staticmethod

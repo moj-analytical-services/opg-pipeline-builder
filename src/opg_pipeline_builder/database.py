@@ -477,7 +477,10 @@ class DatabaseTable:
             self._config = db_config["tables"][table_name]
 
         else:
-            raise KeyError("Table not listed against database in config")
+            err = (
+                f"Table: '{table_name}' is not present in the config for this database"
+            )
+            raise KeyError(err)
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, DatabaseTable):

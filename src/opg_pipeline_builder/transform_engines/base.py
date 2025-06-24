@@ -1,6 +1,5 @@
 import logging
 from inspect import getmembers, isfunction, signature
-from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -19,18 +18,12 @@ class BaseTransformEngine(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    def __init__(
+    def __post_init__(
         self,
-        config: PipelineConfig,
-        db: Database,
-        utils: Optional[TransformEngineUtils] = None,
-        **kwargs: dict[str, Any],
     ) -> None:
-        self.config = config
-        self.db = db
-        utils = TransformEngineUtils(db=db) if utils is None else utils
-
-        _logger.debug("Validating engine public method arguments")
+        self.utils = (
+            TransformEngineUtils(db=self.db) if self.utils is None else self.utils
+        )
         self._validate_method_kwargs()
 
     @staticmethod

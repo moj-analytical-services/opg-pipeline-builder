@@ -76,6 +76,8 @@ class TableConfig(BaseModel):
 class ETLStepConfig(BaseModel):
     step: str
     engine_name: str
+    source_path: str
+    target_path: str
     transform_name: Optional[str] = None
     transform_kwargs: Optional[Dict[str, object]] = None
 
@@ -308,6 +310,11 @@ class PipelineConfig(BaseModel):
             )
 
         return self
+
+    @property
+    def etl_steps(self) -> set[str]:
+        """Set of all etl steps configured for this pipeline."""
+        (step.step for step in self.etl)
 
 
 def read_pipeline_config(db_name: str) -> PipelineConfig:

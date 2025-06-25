@@ -312,9 +312,9 @@ class PipelineConfig(BaseModel):
         return self
 
     @property
-    def etl_steps(self) -> set[str]:
+    def etl_steps(self) -> list[str]:
         """Set of all etl steps configured for this pipeline."""
-        (step.step for step in self.etl)
+        return [step.step for step in self.etl]
 
 
 def read_pipeline_config(db_name: str) -> PipelineConfig:

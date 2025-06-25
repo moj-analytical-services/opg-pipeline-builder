@@ -76,8 +76,6 @@ class TableConfig(BaseModel):
 class ETLStepConfig(BaseModel):
     step: str
     engine_name: str
-    source_path: str
-    target_path: str
     transform_name: Optional[str] = None
     transform_kwargs: Optional[Dict[str, object]] = None
 

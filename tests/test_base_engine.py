@@ -36,8 +36,7 @@ class TestBaseEngineTransform:
         return list(iter)
 
     def get_transform(self):
-        from opg_pipeline_builder.transform_engines.base import \
-            BaseTransformEngine
+        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 
         transform = BaseTransformEngine("testdb")
         return transform
@@ -109,7 +108,7 @@ class TestBaseEngineTransform:
         ) + timedelta(seconds=1)
 
         for stage_bucket in stage_buckets:
-            stage = "land" if "land" in stage_bucket else "raw-hist"
+            stage = "land" if "land" in stage_bucket else "raw_hist"
             path_index = 1 if stage == "land" else 2
             for i, table in enumerate(["table1", "table2"]):
                 assert transform.utils.list_table_files(stage, table) == [
@@ -255,7 +254,7 @@ class TestBaseEngineTransform:
                         },
                     },
                     "output": {
-                        "name": "raw-hist",
+                        "name": "raw_hist",
                         "bucket_name": "raw_hist_bucket",
                         "partitions": {
                             "mojap_file_land_timestamp=1664198347": ["dummy_data1.csv"],
@@ -271,7 +270,7 @@ class TestBaseEngineTransform:
             (
                 {
                     "input": {
-                        "name": "raw-hist",
+                        "name": "raw_hist",
                         "bucket_name": "raw_hist_bucket",
                         "partitions": {
                             "mojap_file_land_timestamp=1664198347": ["dummy_data1.csv"],
@@ -325,7 +324,7 @@ class TestBaseEngineTransform:
                 ]
 
             for lp, p1, p2 in setup:
-                p = p2 if stage == "raw-hist" else p1
+                p = p2 if stage == "raw_hist" else p1
                 s3_client.upload_file(lp, getattr(self, bucket), p)
 
         input_stage = stages_map["input"]["name"]
@@ -354,7 +353,7 @@ class TestBaseEngineTransform:
                         },
                     },
                     "output": {
-                        "name": "raw-hist",
+                        "name": "raw_hist",
                         "bucket_name": "raw_hist_bucket",
                         "partitions": {
                             "mojap_file_land_timestamp=1664198347": ["dummy_data1.csv"],
@@ -371,7 +370,7 @@ class TestBaseEngineTransform:
             (
                 {
                     "input": {
-                        "name": "raw-hist",
+                        "name": "raw_hist",
                         "bucket_name": "raw_hist_bucket",
                         "partitions": {
                             "mojap_file_land_timestamp=1664198347": ["dummy_data1.csv"],
@@ -428,7 +427,7 @@ class TestBaseEngineTransform:
                 ]
 
             for lp, p1, p2 in setup:
-                p = p2 if stage == "raw-hist" else p1
+                p = p2 if stage == "raw_hist" else p1
                 s3_client.upload_file(lp, getattr(self, bucket), p)
 
         if "table2" in tables:
@@ -455,7 +454,7 @@ class TestBaseEngineTransform:
                     ]
 
                 for lp, p1, p2 in setup:
-                    p = p2 if stage == "raw-hist" else p1
+                    p = p2 if stage == "raw_hist" else p1
                     s3_client.upload_file(lp, getattr(self, bucket), p)
 
         stages_arg = {k: v["name"] for k, v in stages_map.items()}
@@ -476,7 +475,7 @@ class TestBaseEngineTransform:
             ),
             (
                 "table2",
-                {"input": "raw-hist", "output": "curated"},
+                {"input": "raw_hist", "output": "curated"},
                 (
                     "s3://mojap-raw-hist/dep/test/testdb/pass/table2",
                     "s3://alpha-dep-etl/test/testdb/curated/table2",

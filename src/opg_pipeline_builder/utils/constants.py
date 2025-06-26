@@ -12,7 +12,7 @@ from dateutil.tz import tzutc
 
 # Constants for pipelines
 aws_region = "eu-west-1"
-etl_stages = ["land", "raw", "raw-hist", "processed", "curated", "derived", "export"]
+etl_stages = ["land", "raw", "raw_hist", "processed", "curated", "derived", "export"]
 etl_steps = [
     "to_land",
     "land_to_raw_hist",

@@ -220,19 +220,19 @@ def test_db_primary_partition(db_fixt):
                 "name": "table1",
                 "db_name": "testdb",
                 "transform_type": "default",
-                "etl_stages": ["land", "raw-hist", "curated"],
+                "etl_stages": ["land", "raw_hist", "curated"],
                 "file_formats": {
                     "land": {"file_format": "csv"},
-                    "raw-hist": {"file_format": "csv"},
+                    "raw_hist": {"file_format": "csv"},
                     "curated": {"file_format": "parquet"},
                 },
                 "table_paths": {
                     "land": "s3://mojap-land/dep/test/testdb/table1",
-                    "raw-hist": "s3://mojap-raw-hist/dep/test/testdb/pass/table1",
+                    "raw_hist": "s3://mojap-raw-hist/dep/test/testdb/pass/table1",
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table1",
                 },
                 "table_meta_paths": {
-                    "raw-hist": "meta_data/test/testdb/raw-hist/table1.json",
+                    "raw_hist": "meta_data/test/testdb/raw-hist/table1.json",
                     "curated": "meta_data/test/testdb/curated/table1.json",
                 },
                 "input_data": None,
@@ -265,16 +265,16 @@ def test_db_primary_partition(db_fixt):
                 "etl_stages": ["land", "raw-hist", "curated"],
                 "file_formats": {
                     "land": {"file_format": "csv"},
-                    "raw-hist": {"file_format": "csv"},
+                    "raw_hist": {"file_format": "csv"},
                     "curated": {"file_format": "parquet"},
                 },
                 "table_paths": {
                     "land": "s3://mojap-land/dep/test/testdb/table2",
-                    "raw-hist": "s3://mojap-raw-hist/dep/test/testdb/pass/table2",
+                    "raw_hist": "s3://mojap-raw-hist/dep/test/testdb/pass/table2",
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table2",
                 },
                 "table_meta_paths": {
-                    "raw-hist": "meta_data/test/testdb/raw-hist/table2.json",
+                    "raw_hist": "meta_data/test/testdb/raw-hist/table2.json",
                     "curated": "meta_data/test/testdb/curated/table2.json",
                 },
                 "input_data": None,
@@ -462,7 +462,7 @@ def test_db_tbl_lint_config(tbl_fixt):
 def test_db_tbl_transform_args(tbl_fixt):
     tbl, expected = tbl_fixt
     transform_type = expected["transform_type"]
-    input = None if transform_type == "derived" else "raw-hist"
+    input = None if transform_type == "derived" else "raw_hist"
     output = "derived" if transform_type == "derived" else "curated"
     expected_tf_args = expected["transform_args"]
     assert (
@@ -541,7 +541,7 @@ def test_db_tf_args(db_fixt, specify_tables, spec):
     spec_tbls_glue = {tbl: tfms[tbl] for tbl in tbls_to_use if tbl != "table3"}
 
     glue_inputs = {
-        tbl: {"input": "raw-hist", "output": "curated"} for tbl in tbls_to_use
+        tbl: {"input": "raw_hist", "output": "curated"} for tbl in tbls_to_use
     }
 
     exp_tf_args["transforms"] = spec_tbls_glue

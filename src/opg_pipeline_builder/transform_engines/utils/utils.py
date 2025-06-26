@@ -11,10 +11,12 @@ from pydantic import BaseModel
 from ssm_parameter_store import EC2ParameterStore
 
 from ...database import Database
-from ...utils.constants import (aws_region, get_end_date, get_source_tbls,
-                                get_start_date)
-from ...utils.utils import (extract_mojap_partition, extract_mojap_timestamp,
-                            get_modified_filepaths_from_s3_folder)
+from ...utils.constants import aws_region, get_end_date, get_source_tbls, get_start_date
+from ...utils.utils import (
+    extract_mojap_partition,
+    extract_mojap_timestamp,
+    get_modified_filepaths_from_s3_folder,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +163,7 @@ class TransformEngineUtils(BaseModel):
     def list_unprocessed_partitions(
         self,
         table_name: str,
-        input_stage: str = "raw-hist",
+        input_stage: str = "raw_hist",
         output_stage: str = "curated",
         **kwargs,
     ) -> Union[List[str], List[int]]:
@@ -208,7 +210,7 @@ class TransformEngineUtils(BaseModel):
     def transform_partitions(
         self,
         tables: Union[List[str], None] = get_source_tbls(),
-        stages: Dict[str, str] = {"input": "raw-hist", "output": "curated"},
+        stages: Dict[str, str] = {"input": "raw_hist", "output": "curated"},
         tf_types: List[str] = ["default", "custom"],
     ) -> Dict[str, Union[List[str], List[int]]]:
         """Lists unprocessed partitions for a set of tables
@@ -251,7 +253,7 @@ class TransformEngineUtils(BaseModel):
     def tf_args(
         self,
         table_name: str,
-        stages: Dict[str, str] = {"input": "raw-hist", "output": "curated"},
+        stages: Dict[str, str] = {"input": "raw_hist", "output": "curated"},
     ) -> Tuple[str, str, str]:
         """Transformation arguments for specified table
 

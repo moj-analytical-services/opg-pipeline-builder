@@ -51,7 +51,7 @@ class Database:
         paths = self._config["paths"]
 
         lpt = Template(paths.get("land", ""))
-        rhpt = Template(paths.get("raw-hist", ""))
+        rhpt = Template(paths.get("raw_hist", ""))
         rp = Template(paths.get("raw", ""))
         ppt = Template(paths.get("processed", ""))
         cpt = Template(paths.get("curated", ""))
@@ -216,7 +216,7 @@ class Database:
     def lint_config(
         self,
         tables: Union[List[str], None] = None,
-        meta_stage: str = "raw-hist",
+        meta_stage: str = "raw_hist",
         tmp_staging: bool = False,
     ) -> Union[Dict[str, Union[str, bool]], Dict[None, None]]:
         """Returns data linter config for the db
@@ -239,15 +239,15 @@ class Database:
         Returns:
             (dict): data_linter config dictionary
         """
-        if meta_stage not in ["raw", "raw-hist"]:
-            raise ValueError("Stage must be one of raw or raw-hist")
+        if meta_stage not in ["raw", "raw_hist"]:
+            raise ValueError("Stage must be one of raw or raw_hist")
 
         if tables is None:
             tables = self.tables if get_source_tbls() is None else get_source_tbls()
 
         log_suffix = tables[0] + "/" if len(tables) == 1 else ""
 
-        base_path = self.raw_hist_path if meta_stage == "raw-hist" else self.raw_path
+        base_path = self.raw_hist_path if meta_stage == "raw_hist" else self.raw_path
 
         db_config = self._config
         if db_config["db_lint_options"] is not None:
@@ -430,7 +430,7 @@ class DatabaseTable:
 
     lint_config(
         self,
-        meta_stage: str = 'raw-hist'
+        meta_stage: str = 'raw_hist'
     )
         Returns a config for the table for the stage
         specified.
@@ -612,7 +612,7 @@ class DatabaseTable:
                 path,
                 (
                     table_name
-                    if stage not in ["raw", "raw-hist"]
+                    if stage not in ["raw", "raw_hist"]
                     else f"pass/{table_name}"
                 ),
             )
@@ -765,7 +765,7 @@ class DatabaseTable:
         return config
 
     def lint_config(
-        self, meta_stage: str = "raw-hist"
+        self, meta_stage: str = "raw_hist"
     ) -> Union[Dict[str, Union[str, bool]], Dict[None, None]]:
         """Returns data linter config for the table
 

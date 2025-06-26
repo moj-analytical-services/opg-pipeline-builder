@@ -28,7 +28,7 @@ class Pipeline:
             Callable for processing data from land to raw location.
 
         **land_to_raw_hist:**
-            Callable for processing data from land to raw-hist location.
+            Callable for processing data from land to raw_hist location.
 
         **raw_to_processed:**
             Callable for processing data from raw to processed location.
@@ -37,10 +37,10 @@ class Pipeline:
             Callable for processing data from raw to curated location.
 
         **raw_hist_to_processed:**
-            Callable for processing data from raw-hist to processed location.
+            Callable for processing data from raw_hist to processed location.
 
         **raw_hist_to_curated:**
-            Callable for processing data from raw-hist to curated location.
+            Callable for processing data from raw_hist to curated location.
 
         **processed_to_curated:**
             Callable for processing data from processed to curated location.

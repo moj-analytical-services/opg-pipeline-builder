@@ -15,7 +15,7 @@ class TestDataLinterEngine:
     db_name = "testdb"
     table_name = "table1"
     input_stage = "land"
-    output_stage = "raw-hist"
+    output_stage = "raw_hist"
     land_data_path = "tests/data/dummy_data"
     data_ext = ".csv"
 
@@ -147,8 +147,7 @@ class TestDataLinterEngine:
                 if dag_interval_end is not None:
                     os.environ["DAG_INTERVAL_END"] = dag_interval_end
 
-                from opg_pipeline_builder.utils.constants import \
-                    get_dag_timestamp
+                from opg_pipeline_builder.utils.constants import get_dag_timestamp
 
                 transform.run(tables=[table.name], stage=self.output_stage)
 

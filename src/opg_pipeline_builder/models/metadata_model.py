@@ -243,6 +243,7 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
 
     Args:
         database_name (str): The name of the database to load metadata for
+        metadata_path (Path): The base path where metadata files are stored
 
     Returns:
         MetaData: The Metadata object

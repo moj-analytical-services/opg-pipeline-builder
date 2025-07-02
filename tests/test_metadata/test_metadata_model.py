@@ -1,11 +1,9 @@
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
-from opg_pipeline.metadata import metadata_model as m
 
-from tests.conftest import TEST_METADATA_PATH
+from opg_pipeline_builder.models import metadata_model as m
 
 
 def create_stage(
@@ -407,11 +405,7 @@ def test_metadata_get_table_metadata_invalid() -> None:
 
 
 def test_load_metadata() -> None:
-    with patch(
-        "opg_pipeline.metadata.metadata_model.METADATA_PATH",
-        Path(TEST_METADATA_PATH),
-    ):
-        metadata = m.load_metadata("test_database")
+    metadata = m.load_metadata(Path("tests/data/test_metadata"), "test_database")
 
     assert list(metadata.tables.keys()) == ["test_table", "test_table2"]
     assert metadata.tables["test_table"].columns[0].name == "id"

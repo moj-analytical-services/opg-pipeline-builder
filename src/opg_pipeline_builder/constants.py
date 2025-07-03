@@ -8,6 +8,7 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "date32",
     "timestamp(ns)",
     "timestamp(ms)",
+    "null",
 )
 
 ALLOWED_STRUCT_DATA_TYPES: tuple[str, ...] = ("list<struct<",)

@@ -8,6 +8,7 @@ from opg_pipeline_builder.constants import (
     ALLOWED_DATA_TYPES,
     ALLOWED_ETL_STAGES,
     ALLOWED_FILE_FORMATS,
+    ALLOWED_STRUCT_DATA_TYPES,
 )
 
 
@@ -68,7 +69,7 @@ class Stage(BaseModel):
     @classmethod
     def validate_data_type(cls, value: str) -> str:
         """Check the provided data type is valid."""
-        if value in ALLOWED_DATA_TYPES:
+        if value in ALLOWED_DATA_TYPES or value.startswith(ALLOWED_STRUCT_DATA_TYPES):
             return value
 
         err = f"Data type '{value}' is not in the ALLOWED_DATA_TYPES constant"

@@ -7,9 +7,9 @@ from opg_pipeline_builder.models import metadata_model as m
 
 
 def create_stage(
-    name: str = "raw", type_name: str = "string", pattern: str = "pattern"
+    name: str = "raw", data_type: str = "string", pattern: str = "pattern"
 ) -> m.Stage:
-    return m.Stage(name=name, type=type_name, pattern=pattern)
+    return m.Stage(name=name, type=data_type, pattern=pattern)
 
 
 def create_column(
@@ -41,15 +41,24 @@ def create_table_metadata(
     )
 
 
-def test_stage_valid() -> None:
-    stage = create_stage()
+@pytest.mark.parametrize(
+    ("data_type"),
+    [
+        ("string"),
+        ("list<struct<"),
+        ("list<struct<stuff_and_more_stuff"),
+        ("list<struct<stuff_and_list<struct<"),
+    ],
+)
+def test_stage_valid(data_type: str) -> None:
+    stage = create_stage(data_type=data_type)
     assert stage.name == "raw"
-    assert stage.type == "string"
+    assert stage.type == data_type
     assert stage.pattern == "pattern"
 
 
 @pytest.mark.parametrize(
-    ("name", "type_name", "exception", "err"),
+    ("name", "data_type", "exception", "err"),
     [
         (
             "invalid",
@@ -63,11 +72,29 @@ def test_stage_valid() -> None:
             m.InvalidTypeError,
             "Data type 'invalid' is not in the ALLOWED_DATA_TYPES constant",
         ),
+        (
+            "raw",
+            "strong",
+            m.InvalidTypeError,
+            "Data type 'strong' is not in the ALLOWED_DATA_TYPES constant",
+        ),
+        (
+            "raw",
+            "list<struc",
+            m.InvalidTypeError,
+            "Data type 'list<struc' is not in the ALLOWED_DATA_TYPES constant",
+        ),
+        (
+            "raw",
+            "list<string<",
+            m.InvalidTypeError,
+            "Data type 'list<string<' is not in the ALLOWED_DATA_TYPES constant",
+        ),
     ],
 )
-def test_stage_invalid(name: str, type_name: str, exception: Any, err: str) -> None:
+def test_stage_invalid(name: str, data_type: str, exception: Any, err: str) -> None:
     with pytest.raises(exception) as e:
-        create_stage(name, type_name)
+        create_stage(name, data_type)
 
     assert str(e.value) == err
 
@@ -77,7 +104,7 @@ def test_column_valid() -> None:
         stages=[
             create_stage(),
             create_stage(name="processed"),
-            create_stage(name="curated", type_name="int64"),
+            create_stage(name="curated", data_type="int64"),
         ],
     )
     assert column.name == "id"
@@ -94,7 +121,7 @@ def test_column_get_stage_for_column_valid() -> None:
         stages=[
             create_stage(),
             create_stage(name="processed"),
-            create_stage(name="curated", type_name="int64"),
+            create_stage(name="curated", data_type="int64"),
         ],
     )
 
@@ -108,7 +135,7 @@ def test_column_get_stage_for_column_invalid() -> None:
         stages=[
             create_stage(),
             create_stage(name="processed"),
-            create_stage(name="curated", type_name="int64"),
+            create_stage(name="curated", data_type="int64"),
         ],
     )
 

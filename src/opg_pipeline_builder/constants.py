@@ -10,6 +10,8 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "timestamp(ms)",
 )
 
+ALLOWED_STRUCT_DATA_TYPES: tuple[str, ...] = ("list<struct<",)
+
 ALLOWED_ETL_STAGES: tuple[str, ...] = (
     "land",
     "raw",

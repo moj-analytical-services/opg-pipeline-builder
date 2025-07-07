@@ -1,6 +1,8 @@
+from typing import List, Union
+
 from opg_etl.base_classes.opg_pipeline import OPGPipeline
-from opg_etl.utils.constants import get_source_tbls, get_multiprocessing_settings
-from typing import Union, List
+from opg_etl.utils.constants import (get_multiprocessing_settings,
+                                     get_source_tbls)
 
 
 class testdbPipeline(OPGPipeline):

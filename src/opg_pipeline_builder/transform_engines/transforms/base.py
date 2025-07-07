@@ -17,8 +17,7 @@ class BaseTransformations(BaseModel, ABC):
     @abstractmethod
     def default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ):
-        ...
+    ): ...
 
     def custom_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str

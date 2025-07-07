@@ -1,13 +1,11 @@
 import os
 import time
-import boto3
+from datetime import timedelta
+from itertools import chain
+
 import pytest
 
-from moto import mock_ssm
-from itertools import chain
-from datetime import timedelta
-
-from tests.helpers import set_up_s3, land_bucket, raw_hist_bucket, dep_bucket
+from tests.conftest import dep_bucket, land_bucket, raw_hist_bucket, set_up_s3
 
 
 class TestBaseEngineTransform:
@@ -111,7 +109,6 @@ class TestBaseEngineTransform:
             stage = "land" if "land" in stage_bucket else "raw-hist"
             path_index = 1 if stage == "land" else 2
             for i, table in enumerate(["table1", "table2"]):
-
                 assert transform.utils.list_table_files(stage, table) == [
                     f"s3://{getattr(self, stage_bucket)}/{p[path_index]}"
                     for p in setup[i]
@@ -509,21 +506,17 @@ class TestBaseEngineTransform:
         transform = self.get_transform()
         assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected
 
-    @mock_ssm
-    @pytest.mark.parametrize("secret_key, value", [("dummy", "hjshfkheu27837")])
-    def test_get_secrets(self, secret_key, value):
+    def test_get_secrets_valid(self) -> None:
+        os.environ["dummy"] = "fjg95ihi94wg"
         transform = self.get_transform()
-        db = transform.db
-        ssm_client = boto3.client("ssm")
-        _ = ssm_client.put_parameter(
-            Name=os.path.join(
-                "/alpha/airflow/",
-                os.environ["IAM_ROLE"],
-                "secrets",
-                db.name,
-                secret_key,
-            ),
-            Type="SecureString",
-            Value=value,
+        assert transform.utils.get_secrets("dummy") == "fjg95ihi94wg"
+
+    def test_get_secrets_invalid(self) -> None:
+        os.environ["valid"] = "fjg95ihi94wg"
+        transform = self.get_transform()
+        with pytest.raises(ValueError) as error:
+            transform.utils.get_secrets("invalid")
+        assert (
+            str(error.value)
+            == "No value found for secret: 'invalid'. The secret needs to be added to the DAG manifest file and AWS secret manager."  # pragma: allowlist secret
         )
-        assert transform.utils.get_secrets(secret_key) == value

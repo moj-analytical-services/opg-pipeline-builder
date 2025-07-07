@@ -16,8 +16,7 @@ class AthenaTransformations(BaseTransformations, ABC):
     @abstractmethod
     def default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ):
-        ...
+    ): ...
 
 
 class AthenaParquetTransformations(AthenaTransformations):

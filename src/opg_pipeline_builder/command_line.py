@@ -21,7 +21,7 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
-def run_pipeline_step(pipeline: Pipeline, step: str):
+def run_pipeline_step(pipeline: Pipeline, step: str) -> None:
     etl_step_fn = getattr(pipeline, step)
     print(
         f"{bcolors.BOLD}\tRunning ETL step:{bcolors.ENDC}\n"
@@ -31,7 +31,7 @@ def run_pipeline_step(pipeline: Pipeline, step: str):
     print(f"{bcolors.BOLD}\tFinished running ETL step{bcolors.ENDC}")
 
 
-def run_full_pipeline(pipeline: Pipeline):
+def run_full_pipeline(pipeline: Pipeline) -> None:
     for etl_step in etl_steps:
         run_pipeline_step(pipeline, etl_step)
 
@@ -45,7 +45,7 @@ class keyvalue(argparse.Action):
         namespace,
         values,
         option_string=None,
-    ):
+    ) -> None:
         setattr(namespace, self.dest, dict())
 
         for value in values:
@@ -153,6 +153,15 @@ def main():
         run_pipeline_step(pipeline, args.step)
 
     print(f"{bcolors.BOLD}\tFinished running pipeline! \U0001f389")
+
+
+def entrypoint(database: str, step: str) -> None:
+    pipeline = PipelineBuilder.build_pipeline_from_config(database)
+
+    if step == "all":
+        run_full_pipeline(pipeline)
+    else:
+        run_pipeline_step(pipeline, step)
 
 
 if __name__ == "__main__":

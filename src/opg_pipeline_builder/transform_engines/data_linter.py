@@ -11,10 +11,8 @@ from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
 
 from ..utils.constants import get_dag_timestamp, get_multiprocessing_settings
-from ..utils.utils import (
-    extract_mojap_partition,
-    get_modified_filepaths_from_s3_folder,
-)
+from ..utils.utils import (extract_mojap_partition,
+                           get_modified_filepaths_from_s3_folder)
 from .base import BaseTransformEngine
 
 _logger: logging.Logger = logging.getLogger(__name__)
@@ -209,7 +207,6 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 ]
 
                 if old_prts:
-
                     old_prt = old_prts[0]
 
                     if len(set(old_prts)) > 1:

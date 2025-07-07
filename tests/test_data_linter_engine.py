@@ -2,12 +2,13 @@ import base64
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import awswrangler as wr
 import pytest
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 
-from tests.helpers import mock_get_file
+from tests.conftest import mock_get_file
 
 
 class TestDataLinterEngine:
@@ -93,12 +94,18 @@ class TestDataLinterEngine:
             ),
         ],
     )
-    def test_run(self, mps_list, dag_run_id, dag_interval_end, monkeypatch, s3):
+    def test_run(
+        self,
+        mps_list: list[dict[str, str | int | bool]],
+        dag_run_id: str,
+        dag_interval_end: str,
+        monkeypatch: Any,
+        s3: Any,
+    ) -> None:
         import pyarrow.fs as fs
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
 
-        from opg_pipeline_builder.utils.constants import project_root
         from opg_pipeline_builder.utils.utils import remove_lint_filestamp
 
         linter = self.get_linter()
@@ -119,13 +126,14 @@ class TestDataLinterEngine:
                 CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
             )
 
-        dummy_data_paths = os.listdir(os.path.join(project_root, self.land_data_path))
+        dummy_data_path = Path(self.land_data_path)
+        dummy_data = os.listdir(dummy_data_path)
 
-        for i, path in enumerate(dummy_data_paths):
+        for i, path in enumerate(dummy_data):
             s3.meta.client.upload_file(
-                os.path.join(project_root, self.land_data_path, path),
+                dummy_data_path / path,
                 lb,
-                os.path.join(lk, table.name, dummy_data_paths[i]),
+                os.path.join(lk, table.name, dummy_data[i]),
             )
 
         if mps_list:
@@ -139,7 +147,8 @@ class TestDataLinterEngine:
                 if dag_interval_end is not None:
                     os.environ["DAG_INTERVAL_END"] = dag_interval_end
 
-                from opg_pipeline_builder.utils.constants import get_dag_timestamp
+                from opg_pipeline_builder.utils.constants import \
+                    get_dag_timestamp
 
                 transform.run(tables=[table.name], stage=self.output_stage)
 

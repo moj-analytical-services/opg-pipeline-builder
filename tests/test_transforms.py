@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import Dict, List
 
 
 class TestTransforms:
@@ -10,16 +10,17 @@ class TestTransforms:
         return Transforms()
 
     def setup_child_athena(self):
-        from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
+        from opg_pipeline_builder.transform_engines.athena import \
+            AthenaTransformEngine
 
         class ChildAthenaTransformEngine(AthenaTransformEngine):
-            def dummy_method(self, tables: List[str], stages: Dict[str, str]):
-                ...
+            def dummy_method(self, tables: List[str], stages: Dict[str, str]): ...
 
         return ChildAthenaTransformEngine
 
     def setup_dummy_engine(self):
-        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
+        from opg_pipeline_builder.transform_engines.base import \
+            BaseTransformEngine
 
         class DummyTransformEngine(BaseTransformEngine):
             def run(self, tables: List[str], stages: Dict[str, str]):

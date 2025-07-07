@@ -1,7 +1,8 @@
-import pytest
 import os
-from mojap_metadata import Metadata
 from copy import deepcopy
+
+import pytest
+from mojap_metadata import Metadata
 
 
 @pytest.mark.parametrize("db_name, expected", [("testdb", True)])
@@ -148,7 +149,7 @@ def test_db_config(db_fixt):
     db, _ = db_fixt
     pipeline_config = read_pipeline_config(db.name)
 
-    assert pipeline_config == db.config
+    assert pipeline_config.model_dump() == db.config
 
 
 def test_db_metadata_path(db_fixt):
@@ -158,7 +159,7 @@ def test_db_metadata_path(db_fixt):
 
 
 def test_db_land_path(db_fixt):
-    from tests.helpers import land_bucket
+    from tests.conftest import land_bucket
 
     db, _ = db_fixt
     exp_lp = os.path.join("s3://", land_bucket, "dep", db.env, db.name)
@@ -166,7 +167,7 @@ def test_db_land_path(db_fixt):
 
 
 def test_db_raw_hist_path(db_fixt):
-    from tests.helpers import raw_hist_bucket
+    from tests.conftest import raw_hist_bucket
 
     db, _ = db_fixt
     exp_rhp = os.path.join("s3://", raw_hist_bucket, "dep", db.env, db.name)
@@ -179,7 +180,7 @@ def test_db_processed_path(db_fixt):
 
 
 def test_db_curated_path(db_fixt):
-    from tests.helpers import dep_bucket
+    from tests.conftest import dep_bucket
 
     db, _ = db_fixt
     exp_cp = os.path.join("s3://", dep_bucket, db.env, db.name, "curated")

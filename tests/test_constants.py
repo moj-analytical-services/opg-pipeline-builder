@@ -1,7 +1,8 @@
-from datetime import datetime
-from dateutil.tz import tzutc
 import os
+from datetime import datetime
+
 import pytest
+from dateutil.tz import tzutc
 
 
 def test_get_env():
@@ -77,7 +78,8 @@ def test_get_etl_stage():
     ],
 )
 def test_get_multiprocessing_settings(env_var, expected):
-    from opg_pipeline_builder.utils.constants import get_multiprocessing_settings
+    from opg_pipeline_builder.utils.constants import \
+        get_multiprocessing_settings
 
     assert get_multiprocessing_settings() is None
 
@@ -93,7 +95,7 @@ def test_get_start_date():
 
     assert get_start_date() is None
 
-    os.environ["START_DATE"] = "2022-09-01 00:00:00"
+    os.environ["START_DATE"] = "2022-09-01"
 
     assert get_start_date() == datetime(2022, 9, 1, 0, 0, 0, tzinfo=tzutc())
 
@@ -105,7 +107,7 @@ def test_get_end_date():
 
     assert get_end_date() is None
 
-    os.environ["END_DATE"] = "2022-09-30 23:59:59"
+    os.environ["END_DATE"] = "2022-09-30"
 
     assert get_end_date() == datetime(2022, 9, 30, 23, 59, 59, tzinfo=tzutc())
 
@@ -149,7 +151,8 @@ def test_get_use_glue(enable_glue, expected, error):
     ],
 )
 def test_get_no_glue_workers(use_glue, no_workers, expected):
-    from opg_pipeline_builder.utils.constants import get_no_glue_workers, get_use_glue
+    from opg_pipeline_builder.utils.constants import (get_no_glue_workers,
+                                                      get_use_glue)
 
     if use_glue is None:
         if "USE_GLUE" in os.environ.keys():
@@ -260,9 +263,7 @@ def test_get_chunk_size(chunk_size, expected, error):
 )
 def test_get_dag_timestamp(mp_env_var, dag_run_id, dag_interval_run, expected):
     from opg_pipeline_builder.utils.constants import (
-        get_multiprocessing_settings,
-        get_dag_timestamp,
-    )
+        get_dag_timestamp, get_multiprocessing_settings)
 
     if mp_env_var is not None:
         os.environ["MULTI_PROC_ENV"] = mp_env_var

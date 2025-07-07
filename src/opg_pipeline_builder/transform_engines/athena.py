@@ -87,9 +87,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         return {
             "database_name": database_name,
             "environment": environment,
-            "snapshot_timestamps": snapshot_timestamps
-            if snapshot_timestamps is not None
-            else "",
+            "snapshot_timestamps": (
+                snapshot_timestamps if snapshot_timestamps is not None else ""
+            ),
             "github_tag": os.environ["GITHUB_TAG"],
             "primary_partition": self.db.primary_partition_name(),
             **additional_jinja_args,
@@ -656,7 +656,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         tables: List[str],
         stage: Optional[str] = "derived",
         jinja_args: Optional[dict] = None,
-    ):
+    ) -> None:
         """Creates derived tables for db using Athena
 
         Runs the following steps:

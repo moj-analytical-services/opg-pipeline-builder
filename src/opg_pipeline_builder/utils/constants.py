@@ -381,8 +381,8 @@ def get_dag_timestamp() -> Union[int, None]:
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
         return dag_ts
-    except Exception:
-        pass
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
 
     if mp_args is not None:
         tmp_staging = mp_args.get("temp_staging", False)

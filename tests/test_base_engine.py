@@ -3,9 +3,7 @@ import time
 from datetime import timedelta
 from itertools import chain
 
-import boto3
 import pytest
-from moto import mock_aws
 
 from tests.conftest import dep_bucket, land_bucket, raw_hist_bucket, set_up_s3
 
@@ -36,8 +34,7 @@ class TestBaseEngineTransform:
         return list(iter)
 
     def get_transform(self):
-        from opg_pipeline_builder.transform_engines.base import \
-            BaseTransformEngine
+        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 
         transform = BaseTransformEngine("testdb")
         return transform
@@ -509,21 +506,17 @@ class TestBaseEngineTransform:
         transform = self.get_transform()
         assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected
 
-    @mock_aws
-    @pytest.mark.parametrize("secret_key, value", [("dummy", "hjshfkheu27837")])
-    def test_get_secrets(self, secret_key, value):
+    def test_get_secrets_valid(self) -> None:
+        os.environ["dummy"] = "fjg95ihi94wg"
         transform = self.get_transform()
-        db = transform.db
-        ssm_client = boto3.client("ssm")
-        _ = ssm_client.put_parameter(
-            Name=os.path.join(
-                "/alpha/airflow/",
-                os.environ["IAM_ROLE"],
-                "secrets",
-                db.name,
-                secret_key,
-            ),
-            Type="SecureString",
-            Value=value,
+        assert transform.utils.get_secrets("dummy") == "fjg95ihi94wg"
+
+    def test_get_secrets_invalid(self) -> None:
+        os.environ["valid"] = "fjg95ihi94wg"
+        transform = self.get_transform()
+        with pytest.raises(ValueError) as error:
+            transform.utils.get_secrets("invalid")
+        assert (
+            str(error.value)
+            == "No value found for secret: 'invalid'. The secret needs to be added to the DAG manifest file and AWS secret manager."  # pragma: allowlist secret
         )
-        assert transform.utils.get_secrets(secret_key) == value

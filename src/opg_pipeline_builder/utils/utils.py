@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import boto3
-from dataengineeringutils3.s3 import (_add_slash, bucket_key_to_s3_path,
-                                      s3_path_to_bucket_key)
+from dataengineeringutils3.s3 import (
+    _add_slash,
+    bucket_key_to_s3_path,
+    s3_path_to_bucket_key,
+)
 from pyarrow import Table
 from pyarrow.fs import S3FileSystem
 from pyarrow.json import read_json

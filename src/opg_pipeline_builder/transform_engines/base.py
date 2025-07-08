@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from ..database import Database
 from ..utils.constants import get_source_db
+from ..validator import PipelineConfig
 from .utils.utils import TransformEngineUtils
 
 _logger: logging.Logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class BaseTransformEngine(BaseModel):
 
     def __init__(
         self,
+        config: PipelineConfig,
         db_name: Optional[str] = None,
         utils: Optional[TransformEngineUtils] = None,
         **kwargs,
@@ -30,7 +32,7 @@ class BaseTransformEngine(BaseModel):
             _logger.debug(f"Engine database environment variable set to {db_name}")
 
         _logger.debug("Creating database object for engine")
-        db = Database(db_name=db_name)
+        db = Database(config=config, db_name=db_name)
 
         _logger.debug("Creating utils object for engine")
         utils = TransformEngineUtils(db=db) if utils is None else utils

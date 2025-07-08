@@ -6,9 +6,8 @@ from croniter import croniter
 from jinja2 import Template
 from mojap_metadata import Metadata
 
-from .utils.constants import (get_env, get_metadata_path, get_source_db,
-                              get_source_tbls)
-from .validator import read_pipeline_config
+from .utils.constants import get_env, get_metadata_path, get_source_db, get_source_tbls
+from .validator import PipelineConfig
 
 
 class Database:
@@ -44,15 +43,15 @@ class Database:
             given transform types.
     """
 
-    def __init__(self, db_name: Optional[str] = None) -> None:
+    def __init__(self, config: PipelineConfig, db_name: Optional[str] = None) -> None:
         if db_name is None:
             db_name = get_source_db()
 
-        db_config = read_pipeline_config(db_name).dict()
         self._name = db_name
+        self._config = config.model_dump()
 
-        tables = list(db_config["tables"].keys())
-        paths = db_config["paths"]
+        tables = list(self._config["tables"].keys())
+        paths = self._config["paths"]
 
         lpt = Template(paths.get("land", ""))
         rhpt = Template(paths.get("raw-hist", ""))
@@ -70,7 +69,6 @@ class Database:
 
         self._env = get_env()
         self._tables = tables
-        self._config = db_config
         self._metadata_path = get_metadata_path(db_name)
         self._land_path = lp
         self._raw_path = rp
@@ -707,7 +705,7 @@ class DatabaseTable:
 
             all_data_paths = {}
             for db_name in input_data:
-                db = Database(db_name)
+                db = Database(self.config, db_name)
                 tables = input_data[db_name]
                 table_names = list(tables.keys())
                 all_data_paths[db_name] = {}

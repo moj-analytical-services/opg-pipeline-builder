@@ -9,6 +9,7 @@ from mojap_metadata import Metadata
 
 from ..database import Database
 from ..utils.constants import get_source_db
+from ..validator import PipelineConfig
 from .enrich_meta import EnrichMetaTransformEngine
 from .transforms.pandas import PandasTransformations
 from .utils.utils import TransformEngineUtils
@@ -29,6 +30,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
 
     def __init__(
         self,
+        config: PipelineConfig,
         db_name: Optional[str] = None,
         utils: Optional[TransformEngineUtils] = None,
         transforms: Optional[PandasTransformations] = None,
@@ -39,7 +41,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             db_name = get_source_db()
             _logger.debug(f"Engine database environment variable set to {db_name}")
 
-        db = Database(db_name=db_name)
+        db = Database(config=config, db_name=db_name)
         utils = TransformEngineUtils(db=db) if utils is None else utils
 
         super().__init__(db_name=db_name, utils=utils, **kwargs)

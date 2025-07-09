@@ -1,8 +1,8 @@
 ---
 files: >
   (?x)^(
-    src/ |
-    ^tests/
+    src/
+    tests/
   )
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -54,7 +54,6 @@ repos:
     rev: 1.7.4
     hooks:
       - id: bandit
-        exclude: tests/
         args:
           - -s
           - B101
@@ -63,8 +62,3 @@ repos:
     rev: v1.28.0
     hooks:
       - id: yamllint
-
-  - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 2.0.7
-    hooks:
-      - id: sqlfluff-lint

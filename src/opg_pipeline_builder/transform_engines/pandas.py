@@ -11,7 +11,7 @@ from ..database import Database
 from ..utils.constants import get_source_db
 from ..validator import PipelineConfig
 from .enrich_meta import EnrichMetaTransformEngine
-from .transforms.pandas import PandasTransformations
+from .transforms.panda import PandasTransformations
 from .utils.utils import TransformEngineUtils
 
 _logger: logging.Logger = logging.getLogger(__name__)

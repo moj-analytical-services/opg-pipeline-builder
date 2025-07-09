@@ -10,7 +10,7 @@ from mojap_metadata import Metadata
 from pydantic import BaseModel
 
 from ...database import Database
-from ...utils.constants import aws_region, get_end_date, get_source_tbls, get_start_date
+from ...utils.constants import get_end_date, get_source_tbls, get_start_date
 from ...utils.utils import (
     extract_mojap_partition,
     extract_mojap_timestamp,

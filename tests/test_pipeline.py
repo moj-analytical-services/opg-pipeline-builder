@@ -18,8 +18,7 @@ class TestPipelineBuilder:
 
     def test_pipeline_builder(self):
         from opg_pipeline_builder.pipeline_builder import PipelineBuilder
-        from opg_pipeline_builder.transform_engines.athena import \
-            AthenaTransformEngine
+        from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
 
         dag_timestamp = int(datetime.utcnow().timestamp())
         pipeline_builder = PipelineBuilder(db_name=self.database_name)
@@ -41,14 +40,14 @@ class TestPipelineBuilder:
 
         lrh = partial(
             transforms.data_linter(dag_timestamp=dag_timestamp).run,
-            tables=db.tables_to_use(stages=["land", "raw-hist"]),
-            stage="raw-hist",
+            tables=db.tables_to_use(stages=["land", "raw_hist"]),
+            stage="raw_hist",
         )
 
         rhc = partial(
             transforms.athena().run,
-            tables=db.tables_to_use(stages=["raw-hist", "curated"]),
-            stages={"input": "raw-hist", "output": "curated"},
+            tables=db.tables_to_use(stages=["raw_hist", "curated"]),
+            stages={"input": "raw_hist", "output": "curated"},
         )
 
         ccdb = partial(

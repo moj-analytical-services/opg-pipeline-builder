@@ -269,7 +269,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         primary_partition = self.db.primary_partition_name()
 
-        if input_stage in ["raw", "raw-hist"]:
+        if input_stage in ["raw", "raw_hist"]:
             tbl_cast_args = tbl.get_cast_cols()
 
             meta_cast_args = [
@@ -376,7 +376,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             transform(sql, output_metadata, output_path, temporary_load_database_name)
 
             wr.catalog.delete_database(temporary_load_database_name)
-            if input_stage != "raw-hist":
+            if input_stage != "raw_hist":
                 self.utils.cleanup_partitions(
                     base_data_path=input_path, partitions=partitions
                 )

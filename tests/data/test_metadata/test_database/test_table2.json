@@ -1,0 +1,137 @@
+{
+  "columns": [
+    {
+      "name": "ids",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw",
+          "type": "int32"
+        },
+        {
+          "name": "processed",
+          "type": "int32"
+        },
+        {
+          "name": "curated",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "names",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw",
+          "type": "int32"
+        },
+        {
+          "name": "processed",
+          "type": "string"
+        },
+        {
+          "name": "curated",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "addresses",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw",
+          "pattern": "^\\[(\\s*(\".*\"|null)\\s*,\\s*)*(\\s*(\".*\"|null)\\s*){1}\\]$|^{(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*,\\s*)*(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*){1}}$|^\\[\\]$",
+          "type": "string"
+        },
+        {
+          "name": "processed",
+          "type": "list<string>"
+        },
+        {
+          "name": "curated",
+          "type": "list<string>"
+        }
+      ]
+    },
+    {
+      "name": "conditions",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw",
+          "type": "int32"
+        },
+        {
+          "name": "processed",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "condition_ids",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Resolutions",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "resolutions",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "processed",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "resolution_ids",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "bool"
+        }
+      ]
+    }
+  ],
+  "converted_from": "arrow_schema",
+  "description": "",
+  "file_formats": [
+    {
+      "format": "csv",
+      "name": "raw"
+    },
+    {
+      "format": "parquet",
+      "name": "processed"
+    },
+    {
+      "format": "parquet",
+      "name": "curated"
+    }
+  ],
+  "name": "test_table2",
+  "partitions": [
+    "condition_ids",
+    "resolution_ids"
+  ],
+  "primary_key": [],
+  "schema_link": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.3.0.json",
+  "sensitive": true
+}

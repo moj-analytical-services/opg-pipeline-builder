@@ -1,8 +1,7 @@
 from typing import List, Union
 
 from opg_etl.base_classes.opg_pipeline import OPGPipeline
-from opg_etl.utils.constants import (get_multiprocessing_settings,
-                                     get_source_tbls)
+from opg_etl.utils.constants import get_multiprocessing_settings, get_source_tbls
 
 
 class testdbPipeline(OPGPipeline):
@@ -23,12 +22,12 @@ class testdbPipeline(OPGPipeline):
         mp_args: Union[str, int, None] = get_multiprocessing_settings(),
     ):
         tables_to_use = self.db.tables_to_use(
-            tables, stages=["raw-hist"], tf_types=["default", "custom"]
+            tables, stages=["raw_hist"], tf_types=["default", "custom"]
         )
 
         if tables_to_use:
             self._run_data_linter(
-                tables=tables_to_use, stage="raw-hist", mp_args=mp_args
+                tables=tables_to_use, stage="raw_hist", mp_args=mp_args
             )
 
     def raw_to_processed(self, tables: Union[List[str], None] = get_source_tbls()):
@@ -50,7 +49,7 @@ class testdbPipeline(OPGPipeline):
         tables: Union[List[str], None] = get_source_tbls(),
     ):
         tables_to_use = self.db.tables_to_use(
-            tables, stages=["raw-hist", "curated"], tf_types=["default", "custom"]
+            tables, stages=["raw_hist", "curated"], tf_types=["default", "custom"]
         )
 
         self._glue_job_transform(tables=tables_to_use)

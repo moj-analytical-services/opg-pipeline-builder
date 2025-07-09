@@ -296,11 +296,11 @@ def check_s3_for_existing_timestamp_file(
         bool: Whether to process file
     """
     try:
-        # get max timestamp in raw-hist for given table
+        # get max timestamp in raw_hist for given table
         ts = [re.search(filename_regex, Path(i).name).group(3) for i in existing_data]
     except AttributeError:
         raise ValueError(
-            """a file timestamp in raw-hist is not
+            """a file timestamp in raw_hist is not
                in the expected format"""
         )
 

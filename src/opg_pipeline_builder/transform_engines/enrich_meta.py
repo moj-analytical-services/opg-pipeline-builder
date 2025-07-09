@@ -86,7 +86,7 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
     def _enrich_metadata(
         self,
         tables: List[str],
-        meta_stage: Optional[str] = "raw-hist",
+        meta_stage: Optional[str] = "raw_hist",
         raw_data_stage: Optional[str] = "land",
     ):
         for table_name in tables:

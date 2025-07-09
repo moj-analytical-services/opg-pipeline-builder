@@ -1,7 +1,7 @@
 ---
 files: >
   (?x)^(
-    src/
+    src/ |
     tests/
   )
 repos:
@@ -62,3 +62,8 @@ repos:
     rev: v1.28.0
     hooks:
       - id: yamllint
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 2.0.7
+    hooks:
+      - id: sqlfluff-lint

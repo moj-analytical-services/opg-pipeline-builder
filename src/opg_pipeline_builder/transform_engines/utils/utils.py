@@ -11,11 +11,8 @@ from pydantic import BaseModel
 
 from ...database import Database
 from ...utils.constants import get_end_date, get_source_tbls, get_start_date
-from ...utils.utils import (
-    extract_mojap_partition,
-    extract_mojap_timestamp,
-    get_modified_filepaths_from_s3_folder,
-)
+from ...utils.utils import (extract_mojap_partition, extract_mojap_timestamp,
+                            get_modified_filepaths_from_s3_folder)
 
 logger = logging.getLogger(__name__)
 

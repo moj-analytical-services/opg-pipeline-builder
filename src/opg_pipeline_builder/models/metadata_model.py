@@ -4,12 +4,10 @@ from typing import Any
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from opg_pipeline_builder.constants import (
-    ALLOWED_DATA_TYPES,
-    ALLOWED_ETL_STAGES,
-    ALLOWED_FILE_FORMATS,
-    ALLOWED_STRUCT_DATA_TYPES,
-)
+from opg_pipeline_builder.constants import (ALLOWED_DATA_TYPES,
+                                            ALLOWED_ETL_STAGES,
+                                            ALLOWED_FILE_FORMATS,
+                                            ALLOWED_STRUCT_DATA_TYPES)
 
 
 class InvalidStageError(Exception):

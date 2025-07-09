@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Optional, Union
 import yaml
 from croniter import croniter
 from data_linter import validation
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import (BaseModel, ValidationError, field_validator,
+                      model_validator)
 
-from opg_pipeline_builder.utils.constants import etl_stages, sql_path, transform_types
+from opg_pipeline_builder.utils.constants import (etl_stages, sql_path,
+                                                  transform_types)
 
 
 class TableConfig(BaseModel):

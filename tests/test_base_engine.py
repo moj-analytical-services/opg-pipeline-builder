@@ -34,7 +34,8 @@ class TestBaseEngineTransform:
         return list(iter)
 
     def get_transform(self):
-        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
+        from opg_pipeline_builder.transform_engines.base import \
+            BaseTransformEngine
 
         transform = BaseTransformEngine("testdb")
         return transform

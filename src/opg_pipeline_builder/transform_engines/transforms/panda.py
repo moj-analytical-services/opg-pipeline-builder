@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, Optional, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -16,10 +16,10 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class PandasTransformations(BaseTransformations):
-    add_partition_column: Optional[bool] = False
-    attributes_file: Optional[Union[str, None]] = None
-    attributes: Optional[Union[dict, None]] = None
-    extract_header_values: Optional[Union[Dict[str, str], None]] = None
+    add_partition_column: bool = False
+    attributes_file: str | None = None
+    attributes: dict[Any, Any] | None = None
+    extract_header_values: dict[str, str] | None = None
 
     @staticmethod
     def remove_columns_not_in_metadata(

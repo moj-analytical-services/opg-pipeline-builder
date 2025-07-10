@@ -1,14 +1,19 @@
 import logging
 import os
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import awswrangler as wr
 import pydbtools as pydb
 from mojap_metadata import Metadata
 
 from ..database import Database
-from ..utils.constants import (get_end_date, get_full_db_name, get_source_db,
-                               get_source_tbls, get_start_date)
+from ..utils.constants import (
+    get_end_date,
+    get_full_db_name,
+    get_source_db,
+    get_source_tbls,
+    get_start_date,
+)
 from ..utils.utils import extract_mojap_timestamp
 from ..validator import PipelineConfig
 from .base import BaseTransformEngine
@@ -30,20 +35,20 @@ class AthenaTransformEngine(BaseTransformEngine):
         Optional jinja args to pass onto the pydbtools SQL call.
     """
 
-    sql_table_filter: Optional[bool] = False
-    db_search_limit: Optional[Union[int, None]] = None
-    jinja_args: Optional[Union[dict, None]] = None
-    transforms: Optional[Union[athena_transforms.AthenaTransformations, None]] = None
+    sql_table_filter: bool = False
+    db_search_limit: int | None = None
+    jinja_args: dict[Any, Any] | None = None
+    transforms: athena_transforms.AthenaTransformations | None = None
 
     def __init__(
         self,
         config: PipelineConfig,
-        db_name: Optional[str] = None,
-        utils: Optional[AthenaTransformEngineUtils] = None,
-        transforms: Optional[athena_transforms.AthenaTransformations] = None,
-        transforms_type: Optional[Union[str, None]] = None,
-        **kwargs,
-    ):
+        db_name: str = None,
+        utils: AthenaTransformEngineUtils = None,
+        transforms: athena_transforms.AthenaTransformations = None,
+        transforms_type: str | None = None,
+        **kwargs: dict[Any, Any],
+    ) -> None:
         if db_name is None:
             _logger.debug("Setting database for engine from environment")
             db_name = get_source_db()
@@ -68,10 +73,10 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def _default_jinja_args(
         self,
-        snapshot_timestamps: Optional[Union[str, None]] = None,
-        database_name: Optional[Union[str, None]] = None,
-        environment: Optional[Union[str, None]] = None,
-    ) -> Dict[str, str]:
+        snapshot_timestamps: str | None = None,
+        database_name: str | None = None,
+        environment: str | None = None,
+    ) -> dict[str, str]:
         environment = self.db.env if environment is None else environment
 
         database_name = (
@@ -96,8 +101,8 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _check_shared_temporary_table_snapshots(
         self,
         temporary_table_name: str,
-        expected_snapshots: List[str],
-    ) -> Tuple[bool, bool]:
+        expected_snapshots: list[str],
+    ) -> tuple[bool, bool]:
         primary_partition = self.db.primary_partition_name()
         try:
             check_prts_sql = pydb.render_sql_template(
@@ -131,10 +136,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         temp_table_name: str,
         table_sql_filepath: str,
-        base_database_name: Optional[Union[str, None]] = None,
-        environment: Optional[Union[str, None]] = None,
-        **additional_jinja_args,
-    ):
+        base_database_name: str | None = None,
+        environment: str | None = None,
+        **additional_jinja_args: dict[Any, Any],
+    ) -> None:
         sql = pydb.get_sql_from_file(
             table_sql_filepath,
             jinja_args={
@@ -149,7 +154,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         pydb.create_temp_table(sql, table_name=temp_table_name)
 
     def _create_shared_temporary_tables(
-        self, tf_types: List[str], snapshot_timestamps: str, **jinja_args
+        self,
+        tf_types: list[str],
+        snapshot_timestamps: str,
+        **jinja_args: dict[Any, Any],
     ) -> None:
         """Create db shared temp tables
 
@@ -210,7 +218,9 @@ class AthenaTransformEngine(BaseTransformEngine):
                 _logger.info(f"Validating shared intermediate temp table {sql_tbl}")
                 self.utils.check_table_is_not_empty(table_name=sql_tbl)
 
-    def _create_temporary_tables(self, table_name: str, **jinja_args):
+    def _create_temporary_tables(
+        self, table_name: str, **jinja_args: dict[Any, Any]
+    ) -> None:
         """Create temp tables for the given db table
 
         Creates temporary tables for the given table as specified

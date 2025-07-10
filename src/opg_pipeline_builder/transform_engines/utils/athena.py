@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Optional
 
 import awswrangler as wr
 import boto3
@@ -6,12 +6,12 @@ import pydbtools as pydb
 from mojap_metadata import Metadata
 from mojap_metadata.converters.glue_converter import GlueConverter
 
-from .utils import TransformEngineUtils
+from opg_pipeline_builder.transform_engines.utils.utils import TransformEngineUtils
 
 
 class AthenaTransformEngineUtils(TransformEngineUtils):
     @staticmethod
-    def check_table_is_not_empty(table_name: str):
+    def check_table_is_not_empty(table_name: str) -> None:
         count_template = pydb.render_sql_template(
             "SELECT COUNT(*) as count FROM __temp__.{{ sql_tbl }}",
             jinja_args={"sql_tbl": table_name},
@@ -25,8 +25,8 @@ class AthenaTransformEngineUtils(TransformEngineUtils):
     def recreate_database(
         self,
         database_name: str,
-        existing_databases: Optional[Union[List[str], None]] = None,
-    ):
+        existing_databases: Optional[list[str] | None] = None,
+    ) -> None:
         if existing_databases is None:
             databases_df = wr.catalog.databases(limit=self.db_search_limit)
             existing_databases = databases_df.Database.to_list()
@@ -42,7 +42,7 @@ class AthenaTransformEngineUtils(TransformEngineUtils):
         database_name: str,
         table_metadata: Metadata,
         table_data_path: str,
-    ):
+    ) -> None:
         wr.catalog.delete_table_if_exists(database=database_name, table=table_name)
 
         gc = GlueConverter()

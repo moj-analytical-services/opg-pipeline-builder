@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 from mojap_metadata import Metadata
 from pydantic import BaseModel
 
-from ...database import Database
-from ..utils.utils import TransformEngineUtils
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.transform_engines.utils.utils import TransformEngineUtils
 
 
 class BaseTransformations(BaseModel, ABC):
@@ -17,11 +17,11 @@ class BaseTransformations(BaseModel, ABC):
     @abstractmethod
     def default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ): ...
+    ) -> None: ...
 
     def custom_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ):
+    ) -> None:
         """Custom table transformation
 
         Passes arguments to the table specific method (this is the name
@@ -51,7 +51,7 @@ class BaseTransformations(BaseModel, ABC):
 
     def derived_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ):
+    ) -> None:
         """Derived table transformation
 
         Transformation to apply to tables marked with 'derived' transformation

@@ -2,7 +2,7 @@ import os
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Union
+from typing import Any
 
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 from mojap_metadata import Metadata
@@ -48,7 +48,7 @@ class SchemaReader:
         schemas for comparison.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Parameters
         ----------
@@ -111,11 +111,11 @@ class SchemaReader:
         return schema
 
     @staticmethod
-    def _split_type(x):
+    def _split_type(x: str) -> list[str]:
         no_commas = x.count(", ")
         split_x = x.split(", ")
         i = 0
-        indicies = []
+        indicies: list[int] = []
         split = []
 
         while i <= no_commas:
@@ -133,7 +133,7 @@ class SchemaReader:
         return split
 
     @classmethod
-    def _unpack_type(cls, value, contains_field: bool = True):
+    def _unpack_type(cls, value: str, contains_field: bool = True) -> dict[Any, Any]:
         if contains_field:
             split_type = value.split(":")
             field = split_type[0]
@@ -159,7 +159,9 @@ class SchemaReader:
         return full_final_val
 
     @classmethod
-    def _struct_validator(cls, col_type, meta_col_type, unpack=True):
+    def _struct_validator(
+        cls, col_type: Any, meta_col_type: str, unpack: bool = True
+    ) -> bool:
         valid = True
 
         if unpack:
@@ -190,7 +192,7 @@ class SchemaReader:
         return valid
 
     @classmethod
-    def _validate(cls, data_columns, meta_columns):
+    def _validate(cls, data_columns, meta_columns) -> bool:
         valid = True
         data_column_lookup = {c["name"]: c["type"] for c in data_columns}
         for col in meta_columns:
@@ -213,8 +215,8 @@ class SchemaReader:
         return valid
 
     def read_schema(
-        self, s3_path: str, moj_meta: bool = False, ext: Union[str, None] = None
-    ) -> Union[Metadata, Schema]:
+        self, s3_path: str, moj_meta: bool = False, ext: str | None = None
+    ) -> Metadata | Schema:
         """Method for reading schemas
 
         Reads a schema from an object in S3 and optionally converts
@@ -253,11 +255,11 @@ class SchemaReader:
 
     def check_schemas_match(
         self,
-        s3_paths: List[str],
-        expected_meta: Union[Metadata, str],
+        s3_paths: list[str],
+        expected_meta: Metadata | str,
         keep_partitions: bool = False,
         mojap_base: bool = True,
-        ext: Union[str, None] = None,
+        ext: str | None = None,
     ) -> bool:
         """Method for checking files match a schema
 

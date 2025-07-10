@@ -1,0 +1,49 @@
+---
+name: Security checks
+
+on: [push, pull_request]
+
+permissions:
+  security-events: write
+  contents: read
+  actions: read
+
+jobs:
+  trufflehog:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Secret Scanning
+      uses: trufflesecurity/trufflehog@main
+      with:
+        base: ""
+        head: ${{ github.ref_name }}
+        extra_args: --results=verified,unknown
+  
+  bandit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Perform Bandit Analysis
+        uses: PyCQA/bandit-action@v1
+
+  detect-secrets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install detect-secrets
+        run: pip install detect-secrets
+
+      - name: Scan for secrets
+        run: detect-secrets scan --all-files > .secrets.baseline --exclude-files '.git*'

@@ -2,42 +2,48 @@ import json
 import logging
 import os
 import re
-from typing import Dict, Optional, Union
+from typing import Any
 
 import numpy as np
+import pandas as pd
 from dataengineeringutils3.s3 import read_json_from_s3
 from jinja2 import Template
+from mojap_metadata import Metadata
 
-from .base import BaseTransformations
+from opg_pipeline_builder.transform_engines.transforms.base import BaseTransformations
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class PandasTransformations(BaseTransformations):
-    add_partition_column: Optional[bool] = False
-    attributes_file: Optional[Union[str, None]] = None
-    attributes: Optional[Union[dict, None]] = None
-    extract_header_values: Optional[Union[Dict[str, str], None]] = None
+    add_partition_column: bool = False
+    attributes_file: str | None = None
+    attributes: dict[Any, Any] | None = None
+    extract_header_values: dict[str, str] | None = None
 
     @staticmethod
-    def remove_columns_not_in_metadata(df, meta):
+    def remove_columns_not_in_metadata(
+        df: pd.DataFrame, meta: Metadata
+    ) -> pd.DataFrame:
         _logger.info("Removing columns in data not in metadata")
         df_columns = df.columns.to_list()
         meta_columns = meta.column_names
         columns_to_drop = [c for c in df_columns if c not in meta_columns]
         return df.drop(columns=columns_to_drop, inplace=False)
 
-    def set_colnames_to_lower(self, df):
+    def set_colnames_to_lower(self, df: pd.DataFrame) -> pd.DataFrame:
         _logger.info("Setting data column names to lower case")
         df.columns = [x.lower() for x in df.columns]
         return df
 
-    def add_attributes_from_headers_and_rename(self, df, output_meta):
+    def add_attributes_from_headers_and_rename(
+        self, df: pd.DataFrame, output_meta: Metadata
+    ) -> pd.DataFrame:
         extract_header_values = self.extract_header_values
         if extract_header_values is not None:
             _logger.info("Adding attributes to data from column headers")
             header_field_name = extract_header_values.get("field_name")
-            header_regex = extract_header_values.get("header_regex")
+            header_regex: str = extract_header_values.get("header_regex")
             headers = df.columns.to_list()
 
             header_values = [(c, re.search(header_regex, c)) for c in headers]
@@ -76,7 +82,9 @@ class PandasTransformations(BaseTransformations):
 
         return df
 
-    def add_primary_partition_column(self, df, partition_value):
+    def add_primary_partition_column(
+        self, df: pd.DataFrame, partition_value: str
+    ) -> pd.DataFrame:
         if self.add_partition_column:
             _logger.info("Adding primary partition column")
             primary_partition = self.db.primary_partition_name()
@@ -85,7 +93,7 @@ class PandasTransformations(BaseTransformations):
             )
         return df
 
-    def add_etl_column(self, df):
+    def add_etl_column(self, df: pd.DataFrame) -> pd.DataFrame:
         _logger.info("Adding etl version column")
         tag = os.environ["GITHUB_TAG"]
         db_prefix = os.environ.get("ATHENA_DB_PREFIX", "")
@@ -93,7 +101,7 @@ class PandasTransformations(BaseTransformations):
         df[col_name] = tag
         return df
 
-    def add_attributes_from_json_file(self, df):
+    def add_attributes_from_json_file(self, df: pd.DataFrame) -> pd.DataFrame:
         if self.attributes_file is not None:
             _logger.info("Adding attributes to data from file")
             attributes_fp = (
@@ -113,7 +121,7 @@ class PandasTransformations(BaseTransformations):
 
         return df
 
-    def add_attributes_from_config(self, df):
+    def add_attributes_from_config(self, df: pd.DataFrame) -> pd.DataFrame:
         _logger.info("Adding attributes to data from config")
         attr_dict = self.attributes if self.attributes is not None else {}
         for k, v in attr_dict.items():
@@ -123,7 +131,7 @@ class PandasTransformations(BaseTransformations):
         return df
 
     @staticmethod
-    def remove_null_columns(df, input_meta):
+    def remove_null_columns(df: pd.DataFrame, input_meta: Metadata) -> pd.DataFrame:
         _logger.info("Removing null type columns from data")
         null_columns = [
             c["name"].lower() for c in input_meta.columns if c["type"] == "null"
@@ -133,7 +141,9 @@ class PandasTransformations(BaseTransformations):
         return df
 
     @staticmethod
-    def create_null_columns_for_columns_in_meta_not_in_data(df, output_meta):
+    def create_null_columns_for_columns_in_meta_not_in_data(
+        df: pd.DataFrame, output_meta: Metadata
+    ) -> pd.DataFrame:
         _logger.info("Creating null columns for columns in metadata not in data")
         column_names = output_meta.column_names
         partitions = output_meta.partitions
@@ -143,13 +153,17 @@ class PandasTransformations(BaseTransformations):
                 df[column_name] = np.NaN
         return df
 
-    def input_transform_methods(self, df, input_meta):
+    def input_transform_methods(
+        self, df: pd.DataFrame, input_meta: Metadata
+    ) -> pd.DataFrame:
         _logger.info("Running input transformations on data")
         df = self.set_colnames_to_lower(df)
         df = self.remove_null_columns(df, input_meta)
         return df
 
-    def output_transform_methods(self, df, partition, output_meta):
+    def output_transform_methods(
+        self, df: pd.DataFrame, partition: str, output_meta: Metadata
+    ) -> pd.DataFrame:
         _logger.info("Running output transformations on data")
         df = self.add_attributes_from_headers_and_rename(df, output_meta)
         df = self.add_primary_partition_column(df, partition)
@@ -160,12 +174,25 @@ class PandasTransformations(BaseTransformations):
         df = self.create_null_columns_for_columns_in_meta_not_in_data(df, output_meta)
         return df
 
-    def default_transform(self, df, partition, input_meta, output_meta):
+    def default_transform(
+        self,
+        df: pd.DataFrame,
+        partition: str,
+        input_meta: Metadata,
+        output_meta: Metadata,
+    ) -> pd.DataFrame:
         df = self.input_transform_methods(df, input_meta)
         df = self.output_transform_methods(df, partition, output_meta)
         return df
 
-    def custom_transform(self, df, table_name, partition, input_meta, output_meta):
+    def custom_transform(
+        self,
+        df: pd.DataFrame,
+        table_name: str,
+        partition: str,
+        input_meta: Metadata,
+        output_meta: Metadata,
+    ) -> pd.DataFrame:
         try:
             transform = getattr(self, f"{table_name}_transform")
             df = transform(df, partition, input_meta, output_meta)
@@ -173,7 +200,14 @@ class PandasTransformations(BaseTransformations):
             df = self.default_transform(df, partition, input_meta, output_meta)
         return df
 
-    def derived_transform(self, df, table_name, partition, input_meta, output_meta):
+    def derived_transform(
+        self,
+        df: pd.DataFrame,
+        table_name: str,
+        partition: str,
+        input_meta: Metadata,
+        output_meta: Metadata,
+    ) -> pd.DataFrame:
         return self.custom_transform(
             df,
             table_name,

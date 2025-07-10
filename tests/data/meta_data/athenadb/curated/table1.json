@@ -1,45 +1,45 @@
 {
-    "columns": [
-        {
-            "name": "my_int",
-            "type": "int64",
-            "nullable": true
-        },
-        {
-            "name": "animal",
-            "type": "string",
-            "nullable": true
-        },
-        {
-            "name": "my_email",
-            "type": "string",
-            "nullable": true
-        },
-        {
-            "name": "my_datetime",
-            "type": "timestamp(ns)",
-            "nullable": true
-        },
-        {
-            "name": "my_date",
-            "type": "date32",
-            "nullable": true
-        },
-        {
-            "name": "mojap_file_land_timestamp",
-            "type": "int64",
-            "nullable": false
-        }
-    ],
-    "_converted_from": "arrow_schema",
-    "$schema": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.3.0.json",
-    "name": "table1",
-    "description": "",
-    "file_format": "parquet",
-    "sensitive": false,
-    "primary_key": [],
-    "partitions": [
-        "mojap_file_land_timestamp",
-        "animal"
-    ]
+  "$schema": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.3.0.json",
+  "_converted_from": "arrow_schema",
+  "columns": [
+    {
+      "name": "my_int",
+      "nullable": true,
+      "type": "int64"
+    },
+    {
+      "name": "animal",
+      "nullable": true,
+      "type": "string"
+    },
+    {
+      "name": "my_email",
+      "nullable": true,
+      "type": "string"
+    },
+    {
+      "name": "my_datetime",
+      "nullable": true,
+      "type": "timestamp(ns)"
+    },
+    {
+      "name": "my_date",
+      "nullable": true,
+      "type": "date32"
+    },
+    {
+      "name": "mojap_file_land_timestamp",
+      "nullable": false,
+      "type": "int64"
+    }
+  ],
+  "description": "",
+  "file_format": "parquet",
+  "name": "table1",
+  "partitions": [
+    "mojap_file_land_timestamp",
+    "animal"
+  ],
+  "primary_key": [],
+  "sensitive": false
 }

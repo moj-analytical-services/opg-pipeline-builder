@@ -213,8 +213,7 @@ def test_extract_mojap_timestamp(partition, timestamp_partition_name, expected):
     "upload_setup", [(["dummy_data1.csv", "dummy_data2.csv"], "orig")], indirect=True
 )
 def test_get_modified_filepaths_from_s3_folder(upload_setup, s3_client):
-    from opg_pipeline_builder.utils.utils import \
-        get_modified_filepaths_from_s3_folder
+    from opg_pipeline_builder.utils.utils import get_modified_filepaths_from_s3_folder
 
     bucket = "mytestbucket"
 
@@ -315,8 +314,7 @@ def test_list_configs():
 def test_check_s3_for_existing_timestamp_file(
     existing_data, new_file, one_a_day, expected
 ):
-    from opg_pipeline_builder.utils.utils import \
-        check_s3_for_existing_timestamp_file
+    from opg_pipeline_builder.utils.utils import check_s3_for_existing_timestamp_file
 
     if expected is None:
         with pytest.raises(ValueError):

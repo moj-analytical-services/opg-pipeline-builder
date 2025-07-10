@@ -1,18 +1,19 @@
 import importlib
 from pkgutil import iter_modules
+from typing import Any
 
 from . import transform_engines
 
 
 class Transforms:
     @staticmethod
-    def _engine_name(base_name: str):
+    def _engine_name(base_name: str) -> str:
         split_name = base_name.split("_")
         proper = "".join([e[0].upper() + e[1:] for e in split_name])
         transform_name = proper + "TransformEngine"
         return transform_name
 
-    def __init__(self):
+    def __init__(self) -> None:
         engines = [e.name for e in iter_modules(transform_engines.__path__)]
         engine_names = [self._engine_name(e) for e in engines]
         engine_zip = zip(engines, engine_names)
@@ -23,7 +24,7 @@ class Transforms:
             engine_class = getattr(engine, en)
             setattr(self, e, engine_class)
 
-    def __setattr__(self, key, value):
+    def __setattr__(self, key: str, value: Any) -> None:
         base_engine = importlib.import_module(
             ".base", package=transform_engines.__package__
         )

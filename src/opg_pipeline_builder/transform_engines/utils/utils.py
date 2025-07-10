@@ -2,7 +2,7 @@ import logging
 import os
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import awswrangler as wr
 from dataengineeringutils3.s3 import _add_slash

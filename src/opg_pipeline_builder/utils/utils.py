@@ -275,7 +275,7 @@ def check_s3_for_existing_timestamp_file(
     new_file: str,
     one_a_day: bool = True,
     filename_regex: str = (
-        "^([a-zA-z/?]+)([_-]{1})([0-9]{10})" "([-0-9]{3})?([0-9]{10})?([.][a-z.]+)$"
+        "^([a-zA-z/?]+)([_-]{1})([0-9]{10})([-0-9]{3})?([0-9]{10})?([.][a-z.]+)$"
     ),
 ) -> bool:
     """

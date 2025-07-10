@@ -181,7 +181,7 @@ class PipelineConfig(BaseModel):
     def check_in_transform_types(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
         transform_type = [k for k, _ in v.items()][0]
         valid_type = transform_type in transform_types
-        error_message = f'{transform_type} is not one of {", ".join(transform_types)}'
+        error_message = f"{transform_type} is not one of {', '.join(transform_types)}"
         if not valid_type:
             raise ValueError(error_message)
         return v

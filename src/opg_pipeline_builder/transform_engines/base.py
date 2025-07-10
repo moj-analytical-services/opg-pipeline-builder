@@ -47,5 +47,5 @@ class BaseTransformEngine(BaseModel):
 
         if not validation:
             raise AssertionError(
-                "Transform engine public methods have invalid" " arguments."
+                "Transform engine public methods have invalid arguments."
             )

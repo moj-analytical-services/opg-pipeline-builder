@@ -350,7 +350,7 @@ def get_chunk_size() -> int | bool:
 
         if not isinstance(chunk, bool) and not isinstance(chunk, int):
             raise ValueError(
-                "CHUNK_SIZE must be a string corresponding " "to a boolean or integer"
+                "CHUNK_SIZE must be a string corresponding to a boolean or integer"
             )
 
     except KeyError:

@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any
 
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
@@ -18,30 +18,30 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class PandasTransformEngine(EnrichMetaTransformEngine):
-    chunk_memory_size: Optional[Union[int, str]] = 100_000
-    chunk_rest_threshold: Optional[int] = 500_000_000
-    add_partition_column: Optional[bool] = False
-    attributes_file: Optional[Union[str, None]] = None
-    attributes: Optional[Union[dict, None]] = None
-    extract_header_values: Optional[Union[Dict[str, str], None]] = None
-    enrich_meta: Optional[bool] = True
-    final_partition_stage: Optional[str] = "curated"
-    transforms: Optional[Union[PandasTransformations, None]] = None
+    chunk_memory_size: int | str = 100_000
+    chunk_rest_threshold: int = 500_000_000
+    add_partition_column: bool = False
+    attributes_file: str | None = None
+    attributes: dict | None = None
+    extract_header_values: dict[str, str] | None = None
+    enrich_meta: bool = True
+    final_partition_stage: str = "curated"
+    transforms: PandasTransformations | None = None
 
     def __init__(
         self,
         config: PipelineConfig,
-        db_name: Optional[str] = None,
-        utils: Optional[TransformEngineUtils] = None,
-        transforms: Optional[PandasTransformations] = None,
-        **kwargs,
-    ):
+        db_name: str | None = None,
+        utils: TransformEngineUtils | None = None,
+        transforms: PandasTransformations | None = None,
+        **kwargs: dict[Any, Any],
+    ) -> None:
         if db_name is None:
             _logger.debug("Setting database for engine from environment")
             db_name = get_source_db()
             _logger.debug(f"Engine database environment variable set to {db_name}")
 
-        db = Database(config=config, db_name=db_name)
+        db = Database(config=config)
         utils = TransformEngineUtils(db=db) if utils is None else utils
 
         super().__init__(db_name=db_name, utils=utils, **kwargs)
@@ -86,7 +86,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         output_partition_format: str,
         input_meta: Metadata,
         output_meta: Metadata,
-    ):
+    ) -> None:
         _logger.info(f"Updating metadata for {table_name} from data")
         updated_input_meta = self._remove_columns_in_meta_not_in_data(
             filepath, input_meta
@@ -142,7 +142,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         output_partition_format: str,
         input_meta: Metadata,
         output_meta: Metadata,
-    ):
+    ) -> None:
         _logger.info(f"Updating metadata for {table_name} from data")
         updated_input_meta = self._remove_columns_in_meta_not_in_data(
             filepath, input_meta
@@ -193,7 +193,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         output_format: str,
         input_meta: Metadata,
         output_meta: Metadata,
-    ):
+    ) -> None:
         files_to_process = wr.s3.list_objects(input_partition_path)
         for file in files_to_process:
             partition_input_info = wr.s3.describe_objects(file)
@@ -226,7 +226,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                     output_meta,
                 )
 
-    def run(self, tables: List[str], stages: Dict[str, str]):
+    def run(self, tables: list[str], stages: dict[str, str]) -> None:
         input_stage = stages.get("input")
         output_stage = stages.get("output")
 

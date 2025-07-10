@@ -306,7 +306,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         return input_meta
 
-    def _get_sql_partitions(self, partitions: List[str]) -> str:
+    def _get_sql_partitions(self, partitions: list[str]) -> str:
         prts_timestamps = [
             str(
                 extract_mojap_timestamp(
@@ -333,7 +333,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _get_sql(
         self,
         table_name: str,
-        partitions: List[str],
+        partitions: list[str],
         transformation_type: str,
         input_metadata: Metadata,
         output_metadata: Metadata,
@@ -373,8 +373,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         output_metadata: Metadata,
         output_path: str,
         temporary_load_database_name: str,
-        partitions: List[str],
-    ):
+        partitions: list[str],
+    ) -> None:
         transform = getattr(self.transforms, f"{transformation_type}_transform")
 
         try:
@@ -403,7 +403,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
+    def run(self, stages: dict[str, str], tables: list[str] | None = None) -> None:
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform transformation.
@@ -499,9 +499,9 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _new_derived_table_partitions(
         self,
         table_name: str,
-        transform_args: Dict,
+        transform_args: dict[Any, Any],
         primary_partition: str,
-    ) -> List[str]:
+    ) -> list[str]:
         cutoff_sql_clause = self._create_derived_cutoff_sql_clause()
         ipt_args = transform_args["transforms"][table_name]["input"]
         db_ipts = list(ipt_args.keys())
@@ -516,7 +516,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         db_tbl_tf_ipts = [
-            (db, tbl, Database(self.config, db).table(tbl).transform_type())
+            (db, tbl, Database(self.config).table(tbl).transform_type())
             for db, tbl in db_tbls
         ]
 
@@ -568,9 +568,9 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _create_intermediate_tables_for_derived_table(
         self,
         table_name: str,
-        partitions: List[str],
-        jinja_args: Dict,
-    ):
+        partitions: list[str],
+        jinja_args: dict[Any, Any],
+    ) -> None:
         prts_arg = ",".join(partitions)
 
         table = self.db.table(table_name)
@@ -589,9 +589,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         table_name: str,
         primary_partition: str,
-        partitions: List[str],
-        transform_args: Dict,
-        jinja_args: Dict,
+        partitions: list[str],
+        transform_args: dict[Any, Any],
+        jinja_args: dict[Any, Any],
     ) -> Metadata:
         table = self.db.table(table_name)
         prts_arg = ",".join(partitions)
@@ -662,9 +662,9 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def run_derived(
         self,
-        tables: List[str],
-        stage: Optional[str] = "derived",
-        jinja_args: Optional[dict] = None,
+        tables: list[str],
+        stage: str = "derived",
+        jinja_args: dict[str, Any] = None,
     ) -> None:
         """Creates derived tables for db using Athena
 

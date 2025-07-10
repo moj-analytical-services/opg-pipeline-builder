@@ -35,7 +35,7 @@ def lint(session: nox.Session) -> None:
 def typecheck(session: nox.Session) -> None:
     """Run mypy on source code."""
     install_with_tools(session, "mypy")
-    run_tool(session, "mypy", *TARGETS)
+    run_tool(session, "mypy", "--config-file=.github/linters/.mypy.ini", *TARGETS)
 
 
 @nox.session(tags=["security"])

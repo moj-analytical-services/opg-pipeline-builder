@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Any, Callable
 
 from .database import Database
 from .transforms import Transforms
@@ -56,7 +56,10 @@ class Pipeline:
     """
 
     def __init__(
-        self, db_name: Optional[str] = None, debug: bool = False, **pipeline_etl_steps
+        self,
+        db_name: str = None,
+        debug: bool = False,
+        **pipeline_etl_steps: dict[Any, Any],
     ) -> None:
         if db_name is None:
             db_name = get_source_db()
@@ -78,13 +81,13 @@ class Pipeline:
 
             _ = setattr(self, f"_{etl_step}", etl_attr_val)
 
-    def __setattr__(self, key: str, value: Callable):
+    def __setattr__(self, key: str, value: Callable) -> None:
         if key.startswith("_") and (key[1:] in etl_steps or key in {"_db", "_tf"}):
             self.__dict__[key] = value
         else:
             raise NotImplementedError("Setter not implemented for this attribute")
 
-    def __getattr__(self, key: str):
+    def __getattr__(self, key: str) -> dict[Any, Any]:
         if not key.startswith("_") and key not in {"db", "tf"}:
             return self.__dict__[f"_{key}"]
         else:

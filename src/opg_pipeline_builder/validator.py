@@ -2,26 +2,24 @@ import os
 from copy import deepcopy
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import yaml
 from croniter import croniter
 from data_linter import validation
-from pydantic import (BaseModel, ValidationError, field_validator,
-                      model_validator)
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from opg_pipeline_builder.utils.constants import (etl_stages, sql_path,
-                                                  transform_types)
+from opg_pipeline_builder.utils.constants import etl_stages, sql_path, transform_types
 
 
 class TableConfig(BaseModel):
-    etl_stages: Dict[str, Dict[str, str]]
+    etl_stages: dict[str, dict[str, str]]
     transform_type: str
     frequency: str
-    sql: Optional[Dict[str, Union[List[str], bool]]] = None
-    lint_options: Optional[Dict[str, Any]] = None
-    input_data: Optional[Dict[str, Dict[str, str]]] = None
-    optional_arguments: Optional[Dict[str, Any]] = None
+    sql: dict[str, list[str] | bool] | None = None
+    lint_options: dict[str, Any] | None = None
+    input_data: dict[str, dict[str, str]] | None = None
+    optional_arguments: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def check_transform_type_consistency(self) -> "TableConfig":
@@ -78,8 +76,8 @@ class TableConfig(BaseModel):
 class ETLStepConfig(BaseModel):
     step: str
     engine_name: str
-    transform_name: Optional[str] = None
-    transform_kwargs: Optional[Dict[str, object]] = None
+    transform_name: str | None = None
+    transform_kwargs: dict[str, object] | None = None
 
     # @field_validator("step")
     # @classmethod
@@ -140,13 +138,13 @@ class ETLStepConfig(BaseModel):
 
 class PipelineConfig(BaseModel):
     db_name: str
-    etl: List[ETLStepConfig]
+    etl: list[ETLStepConfig]
     description: str
-    paths: Dict[str, str]
-    db_lint_options: Dict[str, Any]
-    shared_sql: Optional[Dict[str, List[str]]] = None
-    optional_arguments: Optional[Dict[str, Any]] = None
-    tables: Dict[str, TableConfig]
+    paths: dict[str, str]
+    db_lint_options: dict[str, Any]
+    shared_sql: dict[str, list[str]] | None = None
+    optional_arguments: dict[str, Any] | None = None
+    tables: dict[str, TableConfig]
 
     @model_validator(mode="after")
     def check_shared_sql_exists(self) -> "PipelineConfig":

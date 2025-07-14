@@ -11,6 +11,7 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "bool",
     "list<bool>",
     "date32",
+    "list<date32>",
     "timestamp(ns)",
     "timestamp(ms)",
     "null",

@@ -1,6 +1,7 @@
 ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "string",
     "list<string>",
+    "list<list<string>>",
     "int32",
     "list<int32>",
     "int64",
@@ -8,6 +9,7 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "list<float64>",
     "decimal128(12,2)",
     "bool",
+    "list<bool",
     "date32",
     "timestamp(ns)",
     "timestamp(ms)",

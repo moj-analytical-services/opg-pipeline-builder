@@ -4,6 +4,7 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "int32",
     "int64",
     "float64",
+    "list<float64>",
     "decimal128(12,2)",
     "bool",
     "date32",

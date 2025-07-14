@@ -9,7 +9,7 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "list<float64>",
     "decimal128(12,2)",
     "bool",
-    "list<bool",
+    "list<bool>",
     "date32",
     "timestamp(ns)",
     "timestamp(ms)",

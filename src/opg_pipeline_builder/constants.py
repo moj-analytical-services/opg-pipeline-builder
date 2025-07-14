@@ -2,6 +2,7 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "string",
     "list<string>",
     "int32",
+    "list<int>",
     "int64",
     "float64",
     "list<float64>",

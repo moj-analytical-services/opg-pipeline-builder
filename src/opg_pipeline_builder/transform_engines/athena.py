@@ -15,6 +15,7 @@ from ..utils.constants import (
     get_start_date,
 )
 from ..utils.utils import extract_mojap_timestamp
+from ..validator import PipelineConfig
 from .base import BaseTransformEngine
 from .transforms import athena as athena_transforms
 from .utils.athena import AthenaTransformEngineUtils
@@ -41,6 +42,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def __init__(
         self,
+        config: PipelineConfig,
         db_name: Optional[str] = None,
         utils: Optional[AthenaTransformEngineUtils] = None,
         transforms: Optional[athena_transforms.AthenaTransformations] = None,
@@ -52,7 +54,8 @@ class AthenaTransformEngine(BaseTransformEngine):
             db_name = get_source_db()
             _logger.debug(f"Engine database environment variable set to {db_name}")
 
-        db = Database(db_name=db_name)
+        self.config = config
+        db = Database(config=self.config, db_name=db_name)
         utils = AthenaTransformEngineUtils(db=db) if utils is None else utils
 
         super().__init__(db_name=db_name, utils=utils, **kwargs)
@@ -508,7 +511,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         db_tbl_tf_ipts = [
-            (db, tbl, Database(db).table(tbl).transform_type()) for db, tbl in db_tbls
+            (db, tbl, Database(self.config, db).table(tbl).transform_type())
+            for db, tbl in db_tbls
         ]
 
         db_tbl_ipts = [

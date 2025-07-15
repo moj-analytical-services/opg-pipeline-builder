@@ -2,20 +2,10 @@ import os
 from copy import deepcopy
 
 import pytest
+import yaml
 from mojap_metadata import Metadata
 
-
-@pytest.mark.parametrize("db_name, expected", [("testdb", True)])
-def test_database_init(db_name, expected):
-    from opg_pipeline_builder.database import Database
-
-    if expected:
-        Database(db_name=db_name)
-        pass
-
-    else:
-        with pytest.raises(Exception):
-            Database(db_name=db_name)
+from src.opg_pipeline_builder.validator import PipelineConfig
 
 
 @pytest.fixture(
@@ -43,14 +33,14 @@ def test_database_init(db_name, expected):
                             "expect-header": True,
                             "headers-ignore-case": False,
                             "allow-missing-cols": True,
-                            "metadata": "meta_data/test/testdb/raw-hist/table1.json",
+                            "metadata": "meta_data/test/testdb/raw_hist/table1.json",
                         },
                         "table2": {
                             "required": False,
                             "expect-header": True,
                             "headers-ignore-case": False,
                             "allow-missing-cols": True,
-                            "metadata": "meta_data/test/testdb/raw-hist/table2.json",
+                            "metadata": "meta_data/test/testdb/raw_hist/table2.json",
                         },
                     },
                 },
@@ -123,14 +113,18 @@ def db_fixt(request):
     db_name, expected = request.param
     from opg_pipeline_builder.database import Database
 
-    db = Database(db_name=db_name)
+    with open(os.path.join("tests/data/configs", f"{db_name}.yml")) as config_file:
+        raw_pipeline_config = yaml.safe_load(config_file)
+    config = PipelineConfig(**raw_pipeline_config)
+
+    db = Database(config)
 
     return db, expected
 
 
 def test_db_name(db_fixt):
     db, expected = db_fixt
-    assert db.name == expected["name"]
+    assert db._name == expected["name"]
 
 
 def test_db_env(db_fixt):
@@ -147,7 +141,7 @@ def test_db_config(db_fixt):
     from opg_pipeline_builder.validator import read_pipeline_config
 
     db, _ = db_fixt
-    pipeline_config = read_pipeline_config(db.name)
+    pipeline_config = read_pipeline_config(db._name)
 
     assert pipeline_config.model_dump() == db.config
 
@@ -162,7 +156,7 @@ def test_db_land_path(db_fixt):
     from tests.conftest import land_bucket
 
     db, _ = db_fixt
-    exp_lp = os.path.join("s3://", land_bucket, "dep", db.env, db.name)
+    exp_lp = os.path.join("s3://", land_bucket, "dep", db.env, db._name)
     assert db.land_path == exp_lp
 
 
@@ -170,7 +164,7 @@ def test_db_raw_hist_path(db_fixt):
     from tests.conftest import raw_hist_bucket
 
     db, _ = db_fixt
-    exp_rhp = os.path.join("s3://", raw_hist_bucket, "dep", db.env, db.name)
+    exp_rhp = os.path.join("s3://", raw_hist_bucket, "dep", db.env, db._name)
     assert db.raw_hist_path == exp_rhp
 
 
@@ -183,26 +177,8 @@ def test_db_curated_path(db_fixt):
     from tests.conftest import dep_bucket
 
     db, _ = db_fixt
-    exp_cp = os.path.join("s3://", dep_bucket, db.env, db.name, "curated")
+    exp_cp = os.path.join("s3://", dep_bucket, db.env, db._name, "curated")
     assert db.curated_path == exp_cp
-
-
-@pytest.mark.parametrize(
-    "db_table, expected",
-    [("testdb.table1", True), ("testdb.table2", True), ("testdb.table3", True)],
-)
-def test_db_tables_init(db_table, expected):
-    from opg_pipeline_builder.database import Database, DatabaseTable
-
-    db_name, tbl_name = db_table.split(".")
-    db = Database(db_name)
-
-    if expected:
-        DatabaseTable(table_name=tbl_name, db=db)
-
-    else:
-        with pytest.raises(Exception):
-            DatabaseTable(table_name=tbl_name, db=db)
 
 
 def test_db_primary_partition(db_fixt):
@@ -232,7 +208,7 @@ def test_db_primary_partition(db_fixt):
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table1",
                 },
                 "table_meta_paths": {
-                    "raw_hist": "meta_data/test/testdb/raw-hist/table1.json",
+                    "raw_hist": "meta_data/test/testdb/raw_hist/table1.json",
                     "curated": "meta_data/test/testdb/curated/table1.json",
                 },
                 "input_data": None,
@@ -241,7 +217,7 @@ def test_db_primary_partition(db_fixt):
                     "expect-header": True,
                     "headers-ignore-case": False,
                     "allow-missing-cols": True,
-                    "metadata": "meta_data/test/testdb/raw-hist/table1.json",
+                    "metadata": "meta_data/test/testdb/raw_hist/table1.json",
                 },
                 "transform_args": {
                     "transform_type": "default",
@@ -262,7 +238,7 @@ def test_db_primary_partition(db_fixt):
                 "name": "table2",
                 "db_name": "testdb",
                 "transform_type": "custom",
-                "etl_stages": ["land", "raw-hist", "curated"],
+                "etl_stages": ["land", "raw_hist", "curated"],
                 "file_formats": {
                     "land": {"file_format": "csv"},
                     "raw_hist": {"file_format": "csv"},
@@ -274,7 +250,7 @@ def test_db_primary_partition(db_fixt):
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table2",
                 },
                 "table_meta_paths": {
-                    "raw_hist": "meta_data/test/testdb/raw-hist/table2.json",
+                    "raw_hist": "meta_data/test/testdb/raw_hist/table2.json",
                     "curated": "meta_data/test/testdb/curated/table2.json",
                 },
                 "input_data": None,
@@ -283,7 +259,7 @@ def test_db_primary_partition(db_fixt):
                     "expect-header": True,
                     "headers-ignore-case": False,
                     "allow-missing-cols": True,
-                    "metadata": "meta_data/test/testdb/raw-hist/table2.json",
+                    "metadata": "meta_data/test/testdb/raw_hist/table2.json",
                 },
                 "transform_args": {
                     "transform_type": "custom",
@@ -356,14 +332,13 @@ def test_db_primary_partition(db_fixt):
         ),
     ]
 )
-def tbl_fixt(request):
-    from opg_pipeline_builder.database import Database, DatabaseTable
+def tbl_fixt(request, db_fixt):
+    from opg_pipeline_builder.database import DatabaseTable
 
     db_table, expected = request.param
-    db_name, tbl_name = db_table.split(".")
-    db = Database(db_name)
+    _, tbl_name = db_table.split(".")
 
-    return DatabaseTable(table_name=tbl_name, db=db), expected
+    return DatabaseTable(table_name=tbl_name, db=db_fixt[0]), expected
 
 
 @pytest.fixture
@@ -531,7 +506,7 @@ def test_db_lint_config(db_fixt, specify_tables, spec):
 def test_db_tf_args(db_fixt, specify_tables, spec):
     db, expected = db_fixt
     exp_tf_args = deepcopy(expected["transform_args"])
-    exp_tf_args["db"] = db.name
+    exp_tf_args["db"] = db._name
     tbls = expected["tables"]
     tbls_to_use = tbls[0:spec] if specify_tables else tbls
     tbl_arg = tbls_to_use if specify_tables else None

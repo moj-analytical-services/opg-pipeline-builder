@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-import re
 from ast import literal_eval
 from binascii import Error
 from datetime import datetime
@@ -384,42 +383,42 @@ def get_dag_timestamp() -> Union[int, None]:
     except Exception:  # pylint: disable=broad-exception-caught
         return None
 
-    if mp_args is not None:
-        tmp_staging = mp_args.get("temp_staging", False)
-        if tmp_staging is True:
-            raise_error = True
+    # if mp_args is not None:
+    #     tmp_staging = mp_args.get("temp_staging", False)
+    #     if tmp_staging is True:
+    #         raise_error = True
 
-    try:
-        dag_run_id = os.environ["DAG_RUN_ID"]
-        dag_interval_end = os.environ["DAG_INTERVAL_END"]
+    # try:
+    #     dag_run_id = os.environ["DAG_RUN_ID"]
+    #     dag_interval_end = os.environ["DAG_INTERVAL_END"]
 
-        manual_run = re.search("manual__", dag_run_id)
+    #     manual_run = re.search("manual__", dag_run_id)
 
-        try:
-            if manual_run is not None:
-                dag_ts = int(
-                    datetime.fromisoformat(
-                        dag_run_id.replace("manual__", "")
-                    ).timestamp()
-                )
+    #     try:
+    #         if manual_run is not None:
+    #             dag_ts = int(
+    #                 datetime.fromisoformat(
+    #                     dag_run_id.replace("manual__", "")
+    #                 ).timestamp()
+    #             )
 
-            else:
-                dag_ts = int(datetime.fromisoformat(dag_interval_end).timestamp())
+    #         else:
+    #             dag_ts = int(datetime.fromisoformat(dag_interval_end).timestamp())
 
-        except Exception as e:
-            raise ValueError(
-                f"""
-                DAG_RUN_TIMESTAMP must be a string in ISO format.
-                Error: {e}
-                """
-            )
+    #     except Exception as e:
+    #         raise ValueError(
+    #             f"""
+    #             DAG_RUN_TIMESTAMP must be a string in ISO format.
+    #             Error: {e}
+    #             """
+    #         )
 
-    except KeyError:
-        if raise_error:
-            raise ValueError(
-                "DAG_RUN_ID and DAG_INTERVAL_END must be set when temp staging enabled."
-            )
-        else:
-            dag_ts = None
+    # except KeyError:
+    #     if raise_error:
+    #         raise ValueError(
+    #             "DAG_RUN_ID and DAG_INTERVAL_END must be set when temp staging enabled."
+    #         )
+    #     else:
+    #         dag_ts = None
 
-    return dag_ts
+    # return dag_ts

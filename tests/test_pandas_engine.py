@@ -18,7 +18,7 @@ from tests.conftest import mock_get_file, mock_reader_read, mock_writer_write
 log = getLogger()
 
 DEFAULT_DATA_FILE = "tests/data/dummy_data/dummy_data1.csv"
-DEFAULT_METADATA_FILE = "tests/data/meta_data/testdb/raw_hist/table1.json"
+DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
@@ -248,7 +248,7 @@ def test_output_transform_methods(
     attributes,
     header_values_suffix,
     new_columns,
-):
+) -> None:
     pandas_engine = pandas_engine_class(
         attributes=attributes,
         extract_header_values=extract_header_values,

@@ -162,7 +162,7 @@ class TransformEngineUtils(BaseModel):
     def list_unprocessed_partitions(
         self,
         table_name: str,
-        input_stage: str = "raw-hist",
+        input_stage: str = "raw_hist",
         output_stage: str = "curated",
         **kwargs,
     ) -> Union[List[str], List[int]]:
@@ -209,7 +209,7 @@ class TransformEngineUtils(BaseModel):
     def transform_partitions(
         self,
         tables: Union[List[str], None] = get_source_tbls(),
-        stages: Dict[str, str] = {"input": "raw-hist", "output": "curated"},
+        stages: Dict[str, str] = {"input": "raw_hist", "output": "curated"},
         tf_types: List[str] = ["default", "custom"],
     ) -> Dict[str, Union[List[str], List[int]]]:
         """Lists unprocessed partitions for a set of tables
@@ -252,7 +252,7 @@ class TransformEngineUtils(BaseModel):
     def tf_args(
         self,
         table_name: str,
-        stages: Dict[str, str] = {"input": "raw-hist", "output": "curated"},
+        stages: Dict[str, str] = {"input": "raw_hist", "output": "curated"},
     ) -> Tuple[str, str, str]:
         """Transformation arguments for specified table
 

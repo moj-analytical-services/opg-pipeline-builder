@@ -1,11 +1,9 @@
 import logging
 from inspect import getmembers, isfunction, signature
-from typing import Optional
 
 from pydantic import BaseModel
 
 from ..database import Database
-from ..utils.constants import get_source_db
 from ..validator import PipelineConfig
 from .utils.utils import TransformEngineUtils
 
@@ -13,34 +11,16 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class BaseTransformEngine(BaseModel):
+    config: PipelineConfig
     db: Database
     utils: TransformEngineUtils
 
     class Config:
         arbitrary_types_allowed = True
 
-    def __init__(
-        self,
-        config: PipelineConfig,
-        db_name: Optional[str] = None,
-        utils: Optional[TransformEngineUtils] = None,
-        **kwargs,
-    ):
-        if db_name is None:
-            _logger.debug("Setting database for engine from environment")
-            db_name = get_source_db()
-            _logger.debug(f"Engine database environment variable set to {db_name}")
-
-        _logger.debug("Creating database object for engine")
-        db = Database(config=config, db_name=db_name)
-
-        _logger.debug("Creating utils object for engine")
-        utils = TransformEngineUtils(db=db) if utils is None else utils
-
-        _logger.debug(f"Creating engine with database {db.name}")
-        super().__init__(db=db, utils=utils, **kwargs)
-
-        _logger.debug("Validating engine public method arguments")
+    def __init__(self, config: PipelineConfig, db: Database) -> None:
+        utils = TransformEngineUtils(db=db)
+        super().__init__(config=config, db=db, utils=utils)
         self._validate_method_kwargs()
 
     @staticmethod

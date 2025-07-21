@@ -11,8 +11,7 @@ from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
 
 from ..utils.constants import get_dag_timestamp, get_multiprocessing_settings
-from ..utils.utils import (extract_mojap_partition,
-                           get_modified_filepaths_from_s3_folder)
+from ..utils.utils import extract_mojap_partition, get_modified_filepaths_from_s3_folder
 from .base import BaseTransformEngine
 
 _logger: logging.Logger = logging.getLogger(__name__)
@@ -238,7 +237,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             tables, meta_stage=stage, tmp_staging=temporary_staging
         )
 
-    def run(self, tables: List[str], stage: str = "raw-hist") -> None:
+    def run(self, tables: List[str], stage: str = "raw_hist") -> None:
         """Runs data_linter based on db config over the given tables
 
         Runs data_linter over data in land and moves it to

@@ -6,7 +6,7 @@ from croniter import croniter
 from jinja2 import Template
 from mojap_metadata import Metadata
 
-from .utils.constants import get_env, get_metadata_path, get_source_db, get_source_tbls
+from .utils.constants import get_env, get_metadata_path, get_source_tbls
 from .validator import PipelineConfig
 
 
@@ -43,33 +43,30 @@ class Database:
             given transform types.
     """
 
-    def __init__(self, config: PipelineConfig, db_name: Optional[str] = None) -> None:
-        if db_name is None:
-            db_name = get_source_db()
-
-        self._name = db_name
+    def __init__(self, config: PipelineConfig) -> None:
+        self._name = config.db_name
         self._config = config.model_dump()
 
         tables = list(self._config["tables"].keys())
         paths = self._config["paths"]
 
         lpt = Template(paths.get("land", ""))
-        rhpt = Template(paths.get("raw-hist", ""))
+        rhpt = Template(paths.get("raw_hist", ""))
         rp = Template(paths.get("raw", ""))
         ppt = Template(paths.get("processed", ""))
         cpt = Template(paths.get("curated", ""))
         dpt = Template(paths.get("derived", ""))
 
-        lp = lpt.render(env=get_env(), db=db_name)
-        rp = rp.render(env=get_env(), db=db_name)
-        rhp = rhpt.render(env=get_env(), db=db_name)
-        pp = ppt.render(env=get_env(), db=db_name)
-        cp = cpt.render(env=get_env(), db=db_name)
-        dp = dpt.render(env=get_env(), db=db_name)
+        lp = lpt.render(env=get_env(), db=self._name)
+        rp = rp.render(env=get_env(), db=self._name)
+        rhp = rhpt.render(env=get_env(), db=self._name)
+        pp = ppt.render(env=get_env(), db=self._name)
+        cp = cpt.render(env=get_env(), db=self._name)
+        dp = dpt.render(env=get_env(), db=self._name)
 
         self._env = get_env()
         self._tables = tables
-        self._metadata_path = get_metadata_path(db_name)
+        self._metadata_path = get_metadata_path(self._name)
         self._land_path = lp
         self._raw_path = rp
         self._raw_hist_path = rhp
@@ -219,7 +216,7 @@ class Database:
     def lint_config(
         self,
         tables: Union[List[str], None] = None,
-        meta_stage: str = "raw-hist",
+        meta_stage: str = "raw_hist",
         tmp_staging: bool = False,
     ) -> Union[Dict[str, Union[str, bool]], Dict[None, None]]:
         """Returns data linter config for the db
@@ -242,15 +239,15 @@ class Database:
         Returns:
             (dict): data_linter config dictionary
         """
-        if meta_stage not in ["raw", "raw-hist"]:
-            raise ValueError("Stage must be one of raw or raw-hist")
+        if meta_stage not in ["raw", "raw_hist"]:
+            raise ValueError("Stage must be one of raw or raw_hist")
 
         if tables is None:
             tables = self.tables if get_source_tbls() is None else get_source_tbls()
 
         log_suffix = tables[0] + "/" if len(tables) == 1 else ""
 
-        base_path = self.raw_hist_path if meta_stage == "raw-hist" else self.raw_path
+        base_path = self.raw_hist_path if meta_stage == "raw_hist" else self.raw_path
 
         db_config = self._config
         if db_config["db_lint_options"] is not None:
@@ -433,7 +430,7 @@ class DatabaseTable:
 
     lint_config(
         self,
-        meta_stage: str = 'raw-hist'
+        meta_stage: str = 'raw_hist'
     )
         Returns a config for the table for the stage
         specified.
@@ -480,7 +477,10 @@ class DatabaseTable:
             self._config = db_config["tables"][table_name]
 
         else:
-            raise KeyError("Table not listed against database in config")
+            err = (
+                f"Table: '{table_name}' is not present in the config for this database"
+            )
+            raise KeyError(err)
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, DatabaseTable):
@@ -612,7 +612,7 @@ class DatabaseTable:
                 path,
                 (
                     table_name
-                    if stage not in ["raw", "raw-hist"]
+                    if stage not in ["raw", "raw_hist"]
                     else f"pass/{table_name}"
                 ),
             )
@@ -765,7 +765,7 @@ class DatabaseTable:
         return config
 
     def lint_config(
-        self, meta_stage: str = "raw-hist"
+        self, meta_stage: str = "raw_hist"
     ) -> Union[Dict[str, Union[str, bool]], Dict[None, None]]:
         """Returns data linter config for the table
 

@@ -31,7 +31,7 @@ class BaseTransformEngine(BaseModel):
         if "stages" or "stage" in parameters:
             return True
 
-    def _validate_method_kwargs(self):
+    def _validate_method_kwargs(self) -> None:
         methods = [
             signature(getattr(self, method_name)).parameters
             for method_name, _ in getmembers(self, predicate=isfunction)
@@ -47,5 +47,5 @@ class BaseTransformEngine(BaseModel):
 
         if not validation:
             raise AssertionError(
-                "Transform engine public methods have invalid" " arguments."
+                "Transform engine public methods have invalid arguments."
             )

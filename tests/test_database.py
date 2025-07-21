@@ -50,13 +50,13 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                             "transform_type": "default",
                             "input": {
                                 "path": (
-                                    "s3://mojap-raw-hist/dep/test/" "testdb/pass/table1"
+                                    "s3://mojap-raw-hist/dep/test/testdb/pass/table1"
                                 ),
                                 "file_format": "csv",
                             },
                             "output": {
                                 "path": (
-                                    "s3://alpha-dep-etl/test/" "testdb/curated/table1"
+                                    "s3://alpha-dep-etl/test/testdb/curated/table1"
                                 ),
                                 "file_format": "parquet",
                             },
@@ -65,13 +65,13 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                             "transform_type": "custom",
                             "input": {
                                 "path": (
-                                    "s3://mojap-raw-hist/dep/test/" "testdb/pass/table2"
+                                    "s3://mojap-raw-hist/dep/test/testdb/pass/table2"
                                 ),
                                 "file_format": "csv",
                             },
                             "output": {
                                 "path": (
-                                    "s3://alpha-dep-etl/test/" "testdb/curated/table2"
+                                    "s3://alpha-dep-etl/test/testdb/curated/table2"
                                 ),
                                 "file_format": "parquet",
                             },
@@ -309,14 +309,14 @@ def test_db_primary_partition(db_fixt):
                         "testdb": {
                             "table1": {
                                 "path": (
-                                    "s3://mojap-raw-hist/dep/test/testdb/pass/" "table1"
+                                    "s3://mojap-raw-hist/dep/test/testdb/pass/table1"
                                 ),
                                 "frequency": "@daily",
                                 "file_format": "csv",
                             },
                             "table2": {
                                 "path": (
-                                    "s3://mojap-raw-hist/dep/test/testdb/pass/" "table2"
+                                    "s3://mojap-raw-hist/dep/test/testdb/pass/table2"
                                 ),
                                 "frequency": "@daily",
                                 "file_format": "csv",
@@ -375,8 +375,7 @@ def test_db_tbl_transform(tbl_fixt, db_config):
         with pytest.raises(
             ValueError,
             match=(
-                "Transform type in config should be"
-                " one of default, custom or derived"
+                "Transform type in config should be one of default, custom or derived"
             ),
         ):
             tbl.transform_type()

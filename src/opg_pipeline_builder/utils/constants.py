@@ -5,7 +5,6 @@ from ast import literal_eval
 from binascii import Error
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Union
 
 from dateutil.tz import tzutc
 
@@ -84,7 +83,7 @@ def get_source_db() -> str:
     return source_env
 
 
-def get_source_tbls() -> Union[List[str], None]:
+def get_source_tbls() -> str | None:
     """Retrieves source database
 
     Retrieved source database tables to use
@@ -122,7 +121,7 @@ def get_etl_stage() -> str:
     return etl_stage
 
 
-def get_multiprocessing_settings() -> Union[dict, None]:
+def get_multiprocessing_settings() -> dict[str, str] | None:
     """Retrieves data_linter multiprocessing settings
 
     Retrieves base64 encoded dictionary from MULTI_PROC_ENV
@@ -156,7 +155,7 @@ def get_multiprocessing_settings() -> Union[dict, None]:
     return mp_settings
 
 
-def get_start_date() -> Union[datetime, None]:
+def get_start_date() -> datetime | None:
     """Retrieves start date for pipeline
 
     Retrieves START_DATE environment variable. Converts
@@ -182,7 +181,7 @@ def get_start_date() -> Union[datetime, None]:
     return start_dt
 
 
-def get_end_date() -> Union[datetime, None]:
+def get_end_date() -> datetime | None:
     """Retrieves end date for pipeline
 
     Retrieves END_DATE environment variable. Converts
@@ -231,7 +230,7 @@ def get_use_glue() -> bool:
     return glue_enable
 
 
-def get_no_glue_workers() -> Union[int, None]:
+def get_no_glue_workers() -> int | None:
     """Retrieves no. of glue workers to use
 
     Retrieves NO_GLUE_WORKERS environment variable.
@@ -256,10 +255,10 @@ def get_no_glue_workers() -> Union[int, None]:
 
 
 def get_full_db_name(
-    db_name: Optional[str] = None,
-    env: Optional[str] = None,
-    prefix: Optional[str] = None,
-    derived: Optional[bool] = False,
+    db_name: str = None,
+    env: str = None,
+    prefix: str = None,
+    derived: bool = False,
 ) -> str:
     """Returns full database name
 
@@ -300,7 +299,7 @@ def get_full_db_name(
     return full_db_name
 
 
-def get_metadata_path(db_name: Optional[str] = None, env: Optional[str] = None) -> str:
+def get_metadata_path(db_name: str = None, env: str = None) -> str:
     """Returns metadata base path
 
     Returns the base path for the specified
@@ -331,7 +330,7 @@ def get_metadata_path(db_name: Optional[str] = None, env: Optional[str] = None) 
     return mp
 
 
-def get_chunk_size() -> Union[int, bool]:
+def get_chunk_size() -> int | bool:
     """Returns chunk size for high memory tables
 
     Returns chunk size option environment variable
@@ -350,7 +349,7 @@ def get_chunk_size() -> Union[int, bool]:
 
         if not isinstance(chunk, bool) and not isinstance(chunk, int):
             raise ValueError(
-                "CHUNK_SIZE must be a string corresponding " "to a boolean or integer"
+                "CHUNK_SIZE must be a string corresponding to a boolean or integer"
             )
 
     except KeyError:
@@ -359,7 +358,7 @@ def get_chunk_size() -> Union[int, bool]:
     return chunk
 
 
-def get_dag_timestamp() -> Union[int, None]:
+def get_dag_timestamp() -> int | None:
     """Returns DAG run timestamp
 
     Returns timestamp for when DAG was executed. This will

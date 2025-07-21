@@ -4,7 +4,10 @@ from datetime import timedelta
 from itertools import chain
 
 import pytest
+import yaml
 
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import dep_bucket, land_bucket, raw_hist_bucket, set_up_s3
 
 
@@ -33,17 +36,27 @@ class TestBaseEngineTransform:
 
         return list(iter)
 
+    def create_db(self) -> Database:
+        with open("tests/data/configs/testdb.yml") as config_file:
+            raw_config = yaml.safe_load(config_file)
+
+        config = PipelineConfig(**raw_config)
+        db = Database(config)
+        return config, db
+
     def get_transform(self):
         from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 
-        transform = BaseTransformEngine("testdb")
+        config, db = self.create_db()
+
+        transform = BaseTransformEngine(config, db)
         return transform
 
     def test_base_db(self):
-        from opg_pipeline_builder.database import Database
+        _, db = self.create_db()
 
         base_tf = self.get_transform()
-        assert base_tf.db == Database("testdb")
+        assert base_tf.db == db
 
     def test_list_table_files(self, s3):
         set_up_s3(s3)

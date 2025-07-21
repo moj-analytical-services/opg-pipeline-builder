@@ -327,7 +327,7 @@ def test_check_s3_for_existing_timestamp_file(
 
 
 @pytest.mark.parametrize(
-    "json_path", ["tests/data/meta_data/testdb/curated/table1.json"]
+    "json_path", ["tests/data/meta_data/test/testdb/curated/table1.json"]
 )
 def test_pa_read_json_from_s3(s3, monkeypatch, json_path):
     import opg_pipeline_builder.utils.utils as pbutils

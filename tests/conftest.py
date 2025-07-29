@@ -68,6 +68,11 @@ def tests_env_setup_and_teardown():
             os.remove(testdb)
 
 
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Run after all tests complete to clear up test data and vars"""
+    shutil.rmtree("tests/data/metadata/test_output")
+
+
 @pytest.fixture(scope="module", autouse=True)
 def copy_files():
     test_directories = {"configs", "meta_data/test", "glue_jobs", "pipelines", "sql"}

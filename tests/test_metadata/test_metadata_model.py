@@ -431,8 +431,32 @@ def test_metadata_get_table_metadata_invalid() -> None:
     )
 
 
+def test_output_metadata() -> None:
+    metadata = m.MetaData(
+        database="test",
+        tables={
+            "test_table": create_table_metadata(
+                "test_table", ["id"], [create_file_format()], [create_column()]
+            ),
+            "test_table2": create_table_metadata(
+                "test_table2",
+                ["name"],
+                [create_file_format(name="processed")],
+                [create_column(name="name")],
+            ),
+        },
+    )
+
+    test_metadata_path = Path("tests/data/metadata/test_output")
+    test_metadata_path.mkdir(exist_ok=True, parents=True)
+    metadata.output_metadata(test_metadata_path)
+
+    assert (test_metadata_path / "test_table.json").is_file()
+    assert (test_metadata_path / "test_table2.json").is_file()
+
+
 def test_load_metadata() -> None:
-    metadata = m.load_metadata(Path("tests/data/test_metadata"), "test_database")
+    metadata = m.load_metadata(Path("tests/data/meta_data"), "test_database")
 
     assert list(metadata.tables.keys()) == ["test_table", "test_table2"]
     assert metadata.tables["test_table"].columns[0].name == "id"

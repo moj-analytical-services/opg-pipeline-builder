@@ -48,7 +48,7 @@ def security(session: nox.Session) -> None:
 @nox.session(tags=["test"])
 def test(session: nox.Session) -> None:
     """Run pytest test suite."""
-    install_with_tools(session, "pytest", "pytest-cov", "moto", "duckdb")
+    install_with_tools(session, "pytest", "pytest-cov", "moto", "duckdb", "sqlglot")
     args = session.posargs or []
     session.run("pytest", *args)
 

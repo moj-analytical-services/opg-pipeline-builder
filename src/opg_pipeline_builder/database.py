@@ -241,8 +241,6 @@ class Database:
         Returns:
             dict[str, str | bool] | dict[None, None]: data_linter config dictionary
         """
-        if meta_stage not in ["raw", "raw_hist"]:
-            raise ValueError("Stage must be one of raw or raw_hist")
 
         if tables is None:
             tables = self.tables if get_source_tbls() is None else get_source_tbls()

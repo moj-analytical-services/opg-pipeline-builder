@@ -244,7 +244,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             tables, meta_stage=stage, tmp_staging=temporary_staging
         )
 
-    def run(self, tables: list[str], stage: str = "raw-hist") -> None:
+    def run(self, table: str, stage: str = "raw-hist") -> None:
         """Runs data_linter based on db config over the given tables
 
         Runs data_linter over data in land and moves it to
@@ -269,6 +269,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         """
         mp_args = self.mp_args
         dag_timestamp = self.dag_timestamp
+        tables = [table]
 
         if mp_args is None:
             _logger.info("Setting multiprocessing arguments from environment")

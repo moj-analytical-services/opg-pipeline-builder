@@ -277,7 +277,6 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
     """
 
     db_metadata_files = list((metadata_path / database_name).glob("*.json"))
-    print(db_metadata_files)
 
     database_metadata: dict[str, Any] = {}
 

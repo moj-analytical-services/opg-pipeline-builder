@@ -10,6 +10,7 @@ from data_linter import validation
 from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
 
+from opg_pipeline_builder.models.metadata_model import MetaData
 from opg_pipeline_builder.utils.constants import (
     get_dag_timestamp,
     get_multiprocessing_settings,
@@ -244,7 +245,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             tables, meta_stage=stage, tmp_staging=temporary_staging
         )
 
-    def run(self, table: str, stage: str = "raw-hist") -> None:
+    def run(self, table: str, metadata: MetaData, stage: str = "raw_hist") -> None:
         """Runs data_linter based on db config over the given tables
 
         Runs data_linter over data in land and moves it to

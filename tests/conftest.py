@@ -70,7 +70,9 @@ def tests_env_setup_and_teardown():
 
 def pytest_unconfigure(config: pytest.Config) -> None:
     """Run after all tests complete to clear up test data and vars"""
-    shutil.rmtree("tests/data/metadata/test_output")
+    path = Path("tests/data/meta_data/test_output")
+    if path.is_dir():
+        shutil.rmtree(path)
 
 
 @pytest.fixture(scope="module", autouse=True)

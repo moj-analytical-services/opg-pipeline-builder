@@ -81,6 +81,7 @@ class Column(BaseModel):
 
     name: str
     nullable: bool
+    enum: list[str | int] = []
     stages: list[Stage]
 
     def get_stage_for_column(self, stage_name: str) -> Stage:

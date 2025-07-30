@@ -13,9 +13,12 @@ def create_stage(
 
 
 def create_column(
-    name: str = "id", nullable: bool = True, stages: list[m.Stage] = [create_stage()]
+    name: str = "id",
+    nullable: bool = True,
+    enum: list[str | int] = ["A", "B"],
+    stages: list[m.Stage] = [create_stage()],
 ) -> m.Column:
-    return m.Column(name=name, nullable=nullable, stages=stages)
+    return m.Column(name=name, nullable=nullable, enum=enum, stages=stages)
 
 
 def create_file_format(name: str = "raw", file_format: str = "parquet") -> m.FileFormat:
@@ -109,6 +112,7 @@ def test_column_valid() -> None:
     )
     assert column.name == "id"
     assert column.nullable
+    assert column.enum == ["A", "B"]
     assert column.stages[0].name == "raw"
     assert column.stages[0].type == "string"
     assert column.stages[1].name == "processed"
@@ -447,7 +451,7 @@ def test_output_metadata() -> None:
         },
     )
 
-    test_metadata_path = Path("tests/data/metadata/test_output")
+    test_metadata_path = Path("tests/data/meta_data/test_output")
     test_metadata_path.mkdir(exist_ok=True, parents=True)
     metadata.output_metadata(test_metadata_path)
 

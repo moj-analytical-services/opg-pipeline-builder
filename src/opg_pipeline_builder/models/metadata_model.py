@@ -230,6 +230,15 @@ class MetaData(BaseModel):
     tables: dict[str, TableMetaData]
 
     def get_table_metadata(self, table_name: str) -> TableMetaData:
+        """Retrieve the TableMetaData object for a specific table.
+
+        Args:
+            table_name (str): Table to retrieve
+
+        Returns:
+            TableMetaData: The TableMetaData object
+
+        """
         table = self.tables.get(table_name, None)
 
         if not table:
@@ -237,6 +246,23 @@ class MetaData(BaseModel):
             raise InvalidTableError(err)
 
         return table
+
+    def output_metadata(self, folder_path: Path) -> None:
+        """Output the metadata object into individual files for each table.
+
+        Args:
+            folder_path (Path): Metadata folder path to write the files into
+
+        Returns:
+            None
+        """
+        folder_path.mkdir(exist_ok=True, parents=True)
+
+        for table in self.tables.values():
+            with (folder_path / f"{table.name}.json").open(
+                encoding="UTF-8", mode="w"
+            ) as file:
+                json.dump(table.model_dump(), file)
 
 
 def load_metadata(metadata_path: Path, database_name: str) -> MetaData:

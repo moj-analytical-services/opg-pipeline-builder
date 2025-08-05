@@ -365,6 +365,65 @@ def test_table_metadata_get_column_invalid() -> None:
     )
 
 
+def test_create_old_style_metadata() -> None:
+    table_metadata = create_table_metadata(
+        "test_table",
+        ["id"],
+        [create_file_format(name="curated", file_format="csv"), create_file_format()],
+        [
+            create_column(
+                name="id",
+                stages=[
+                    create_stage(data_type="date32"),
+                    create_stage(name="curated", data_type="string", pattern="blah"),
+                ],
+            ),
+            create_column(
+                name="name",
+                stages=[
+                    create_stage(data_type="int32"),
+                    create_stage(
+                        name="curated", data_type="float64", pattern="nrettap"
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    curated_output = table_metadata.create_old_style_metadata("curated")
+    raw_output = table_metadata.create_old_style_metadata("raw")
+
+    assert curated_output == {
+        "columns": [
+            {"name": "id", "type": "string"},
+            {"name": "name", "type": "float64"},
+        ],
+        "_converted_from": "arrow_schema",
+        "$schema": "https://link-to-schema.com",
+        "name": "test_table",
+        "description": "description",
+        "file_format": "csv",
+        "sensitive": False,
+        "primary_key": [],
+        "partitions": ["id"],
+    }
+
+    assert raw_output == {
+        "columns": [
+            {"name": "id", "type": "date32"},
+            {"name": "name", "type": "int32"},
+        ],
+        "_converted_from": "arrow_schema",
+        "$schema": "https://link-to-schema.com",
+        "name": "test_table",
+        "description": "description",
+        "file_format": "parquet",
+        "sensitive": False,
+        "primary_key": [],
+        "partitions": [],
+    }
+
+
 def test_metadata_valid() -> None:
     metadata = m.MetaData(
         database="test",

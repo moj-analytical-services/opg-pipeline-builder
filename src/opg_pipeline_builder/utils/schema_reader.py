@@ -317,6 +317,8 @@ class SchemaReader:
                     return_val = False
 
             else:
+                print(schema)
+                print(expected_schema)
                 if schema != expected_schema:
                     return_val = False
 

@@ -25,6 +25,7 @@ etl_steps = [
     "create_curated_database",
     "create_derived",
     "export_extracts",
+    "land_to_processed",
 ]
 aws_loggers = {
     "boto",

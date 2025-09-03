@@ -45,7 +45,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         super().__init__(config=config, db=db)
 
         if transforms is None:
-            transforms = PandasTransformations(**self.dict())
+            transforms = PandasTransformations(config=config, db=db)
 
         self.transforms = transforms
 

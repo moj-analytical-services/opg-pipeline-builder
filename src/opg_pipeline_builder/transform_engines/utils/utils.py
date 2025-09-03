@@ -31,9 +31,9 @@ class TransformEngineUtils(BaseModel):
         underscore_attrs_are_private = True
         arbitrary_types_allowed = True
 
-    def __init__(self, **data: dict[Any, Any]):
-        super().__init__(**data)
-        self._db = data.get("db")
+    def __init__(self, db: Database):
+        super().__init__()
+        self._db = db
 
     def list_table_files(
         self,

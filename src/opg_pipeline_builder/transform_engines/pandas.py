@@ -1,7 +1,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
@@ -34,7 +33,6 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         db_name: str | None = None,
         utils: TransformEngineUtils | None = None,
         transforms: PandasTransformations | None = None,
-        **kwargs: dict[Any, Any],
     ) -> None:
         if db_name is None:
             _logger.debug("Setting database for engine from environment")
@@ -44,7 +42,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         db = Database(config=config)
         utils = TransformEngineUtils(db=db) if utils is None else utils
 
-        super().__init__(db_name=db_name, utils=utils, **kwargs)
+        super().__init__(config=config, db=db)
 
         if transforms is None:
             transforms = PandasTransformations(**self.dict())

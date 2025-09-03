@@ -1,5 +1,6 @@
 import logging
 from inspect import getmembers, isfunction, signature
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -13,14 +14,14 @@ _logger: logging.Logger = logging.getLogger(__name__)
 class BaseTransformEngine(BaseModel):
     config: PipelineConfig
     db: Database
-    utils: TransformEngineUtils
+    utils: Optional[TransformEngineUtils] = None
 
     class Config:
         arbitrary_types_allowed = True
 
-    def __init__(self, config: PipelineConfig, db: Database) -> None:
-        utils = TransformEngineUtils(db=db)
-        super().__init__(config=config, db=db, utils=utils)
+    def __post_init__(self) -> None:
+        if not self.utils:
+            self.utils = TransformEngineUtils(db=self.db)
         self._validate_method_kwargs()
 
     @staticmethod

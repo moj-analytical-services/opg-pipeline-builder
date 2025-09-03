@@ -44,10 +44,10 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         db = Database(config=config)
         utils = TransformEngineUtils(db=db) if utils is None else utils
 
-        super().__init__(config=config, db=db, utils=utils)
+        super().__init__(config=config, db=db)
 
         if transforms is None:
-            transforms = PandasTransformations(config=config, db=db, utils=utils)
+            transforms = PandasTransformations(config=config, db=db)
 
         self.transforms = transforms
 

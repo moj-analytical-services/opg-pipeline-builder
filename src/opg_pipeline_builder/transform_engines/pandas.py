@@ -32,10 +32,11 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     def __init__(
         self,
         config: PipelineConfig,
-        db_name: str | None = None,
+        db: Database,
         utils: TransformEngineUtils | None = None,
         transforms: PandasTransformations | None = None,
     ) -> None:
+        db_name = self.db.name
         if db_name is None:
             _logger.debug("Setting database for engine from environment")
             db_name = get_source_db()

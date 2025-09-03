@@ -6,6 +6,8 @@ import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 
+from opg_pipeline_builder.models.metadata_model import MetaData
+
 from ..database import Database
 from ..utils.constants import get_source_db
 from ..validator import PipelineConfig
@@ -224,9 +226,11 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                     output_meta,
                 )
 
-    def run(self, tables: list[str], stages: dict[str, str]) -> None:
+    def run(self, table: str, _: MetaData, stages: dict[str, str]) -> None:
         input_stage = stages.get("input")
         output_stage = stages.get("output")
+
+        tables = [table]
 
         if self.enrich_meta:
             _logger.info("Enriching metadata based on data")

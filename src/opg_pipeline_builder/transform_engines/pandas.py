@@ -29,11 +29,8 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     final_partition_stage: str = "curated"
     transforms: PandasTransformations | None = None
 
-    def __init__(
+    def __post_init__(
         self,
-        config: PipelineConfig,
-        db: Database,
-        utils: TransformEngineUtils | None = None,
         transforms: PandasTransformations | None = None,
     ) -> None:
         db_name = self.db.name
@@ -42,13 +39,8 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             db_name = get_source_db()
             _logger.debug(f"Engine database environment variable set to {db_name}")
 
-        db = Database(config=config)
-        utils = TransformEngineUtils(db=db) if utils is None else utils
-
-        super().__init__(config=config, db=db)
-
         if transforms is None:
-            transforms = PandasTransformations(config=config, db=db)
+            transforms = PandasTransformations(config=self.config, db=self.db)
 
         self.transforms = transforms
 

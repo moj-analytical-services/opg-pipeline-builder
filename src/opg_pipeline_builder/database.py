@@ -241,8 +241,6 @@ class Database:
         Returns:
             dict[str, str | bool] | dict[None, None]: data_linter config dictionary
         """
-        if meta_stage not in ["raw", "raw_hist"]:
-            raise ValueError("Stage must be one of raw or raw_hist")
 
         if tables is None:
             tables = self.tables if get_source_tbls() is None else get_source_tbls()
@@ -642,9 +640,7 @@ class DatabaseTable:
         used_stages = stages if transform_type in ["default", "custom"] else ["derived"]
 
         table_meta_paths = {
-            type: os.path.join(
-                get_metadata_path(self._db_name), type, f"{self._name}.json"
-            )
+            type: os.path.join("src/opg_pipeline/temp_metadata", f"{self._name}.json")
             for type in used_stages
         }
 

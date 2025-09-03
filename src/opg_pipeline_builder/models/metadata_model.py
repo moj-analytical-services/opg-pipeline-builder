@@ -81,6 +81,7 @@ class Column(BaseModel):
 
     name: str
     nullable: bool
+    enum: list[str | int] = []
     stages: list[Stage]
 
     def get_stage_for_column(self, stage_name: str) -> Stage:
@@ -223,6 +224,24 @@ class TableMetaData(BaseModel):
 
         err = f"Column '{column_name}' was not found in the metadata for table '{self.name}'."
         raise InvalidColumnError(err)
+
+    def create_old_style_metadata(self, stage: str) -> dict[Any, Any]:
+        output_metadata: dict[Any, Any] = {}
+
+        output_metadata["columns"] = [
+            {"name": column.name, "type": column.get_stage_for_column(stage).type}
+            for column in self.get_columns_for_stage(stage)
+        ]
+        output_metadata["_converted_from"] = self.converted_from
+        output_metadata["$schema"] = self.schema_link
+        output_metadata["name"] = self.name
+        output_metadata["description"] = self.description
+        output_metadata["file_format"] = self.get_file_format_for_stage(stage).format
+        output_metadata["sensitive"] = self.sensitive
+        output_metadata["primary_key"] = self.primary_key
+        output_metadata["partitions"] = self.partitions if stage == "curated" else []
+
+        return output_metadata
 
 
 class MetaData(BaseModel):

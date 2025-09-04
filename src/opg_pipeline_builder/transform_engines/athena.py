@@ -353,8 +353,6 @@ class AthenaTransformEngine(BaseTransformEngine):
                 "sql_columns": sql_columns,
             },
         )
-        _logger.info("GET_SQL")
-        _logger.info(f"SQL: {sql}")
 
         return sql
 
@@ -434,6 +432,8 @@ class AthenaTransformEngine(BaseTransformEngine):
                 temp_input_db_name = self._temporary_database_name_for_load(
                     table_name, ipt_stage
                 )
+                _logger.info(f"Temp DB name: {temp_input_db_name}")
+                _logger.info(f"Existing Database: {existing_databases}")
 
                 _logger.info(f"Preparing input metadata for {table_name} load")
                 input_meta = self._prepare_input_metadata_for_load(
@@ -463,8 +463,6 @@ class AthenaTransformEngine(BaseTransformEngine):
                 output_meta = db.table(table_name).get_table_metadata(out_stage)
                 output_meta.force_partition_order = "start"
 
-                _logger.info(f"Output meta: {output_meta}")
-
                 _logger.info(f"Generating SQL for {table_name} load")
                 sql = self._get_sql(
                     table_name=table_name,
@@ -474,6 +472,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     output_metadata=output_meta,
                     temporary_database_name=temp_input_db_name,
                 )
+                _logger.info(f"SQL: {sql}")
 
                 _logger.info(f"Executing SQL load for {table_name}")
                 self._execute_load(

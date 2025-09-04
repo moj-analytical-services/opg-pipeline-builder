@@ -32,8 +32,10 @@ class AthenaTransformEngineUtils(TransformEngineUtils):
             existing_databases = databases_df.Database.to_list()
 
         if database_name in existing_databases:
+            print(f"DELETING DATABASE {database_name}")
             wr.catalog.delete_database(database_name)
 
+        print(f"CREATING DATABASE: {database_name}")
         wr.catalog.create_database(database_name)
 
     @staticmethod
@@ -52,6 +54,10 @@ class AthenaTransformEngineUtils(TransformEngineUtils):
             database_name=database_name,
             table_location=table_data_path,
         )
+
+        print(f"SPEC: {spec}")
+        print(f"TABLE NAME FOR REFRESH: {table_name}")
+        print(f"DATABASE NAME FOR REFRESH: {database_name}")
 
         glue_client = boto3.client("glue")
         glue_client.create_table(**spec)

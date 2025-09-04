@@ -353,6 +353,8 @@ class AthenaTransformEngine(BaseTransformEngine):
                 "sql_columns": sql_columns,
             },
         )
+        _logger.info("GET_SQL")
+        _logger.info(f"SQL: {sql}")
 
         return sql
 
@@ -460,6 +462,8 @@ class AthenaTransformEngine(BaseTransformEngine):
 
                 output_meta = db.table(table_name).get_table_metadata(out_stage)
                 output_meta.force_partition_order = "start"
+
+                _logger.info(f"Output meta: {output_meta}")
 
                 _logger.info(f"Generating SQL for {table_name} load")
                 sql = self._get_sql(

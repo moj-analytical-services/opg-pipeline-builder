@@ -55,6 +55,11 @@ class AthenaParquetTransformations(AthenaTransformations):
                 temp_path = temp_path.replace(stage, "temp")
 
             _logger.info("Performing unload")
+            _logger.info(f"{sql =}")
+            _logger.info(f"{temp_path =}")
+            _logger.info(f"{database_name =}")
+            _logger.info(f"{output_meta.partitions =}")
+
             response = wr.athena.unload(
                 sql=sql,
                 path=temp_path,
@@ -87,6 +92,10 @@ class AthenaParquetTransformations(AthenaTransformations):
                         + ".snappy.parquet"
                         for file in tmp_files
                     }
+
+                    _logger.info(f"{filename_replace =}")
+                    _logger.info(f"{output_path =}")
+                    _logger.info(f"{tmp_files =}")
 
                     wr.s3.copy_objects(
                         tmp_files,

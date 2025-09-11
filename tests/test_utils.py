@@ -200,6 +200,8 @@ def test_extract_mojap_partition(test_input, timestamp_partition_name, expected)
         ("mojap_file_land_timestamp=1651237709", None, 1651237709),
         ("gibberish", None, None),
         ("my_funky_partition=1651237707", "my_funky_partition", 1651237707),
+        ("my_funky_partition=16512377", "my_funky_partition", 16512377),
+        ("mojap_file_land_timestamp=16512377", None, 16512377),
     ],
 )
 def test_extract_mojap_timestamp(partition, timestamp_partition_name, expected):

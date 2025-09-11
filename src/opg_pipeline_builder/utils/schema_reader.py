@@ -304,13 +304,17 @@ class SchemaReader:
             expected_schema = sorted(expected_schema, key=lambda x: x["name"])
 
         return_val = True
+        print(f"{s3_paths =}")
         for pth in s3_paths:
+            print(f"{pth =}")
+            print(f"{expected_schema =}")
             schema = self.read_schema(pth, moj_meta=mojap_base, ext=ext)
             if mojap_base:
                 schema = [
                     {"name": c["name"], "type": c["type"]} for c in schema.columns
                 ]
                 schema = sorted(schema, key=lambda x: x["name"])
+                print(f"{schema =}")
                 if not self._validate(schema, expected_schema):
                     return_val = False
 

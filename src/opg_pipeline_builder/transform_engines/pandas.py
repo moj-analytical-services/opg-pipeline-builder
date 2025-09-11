@@ -8,12 +8,9 @@ from mojap_metadata import Metadata
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
-from ..database import Database
 from ..utils.constants import get_source_db
-from ..validator import PipelineConfig
 from .enrich_meta import EnrichMetaTransformEngine
 from .transforms.panda import PandasTransformations
-from .utils.utils import TransformEngineUtils
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
@@ -219,17 +216,14 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                     output_meta,
                 )
 
-    def run(self, table: str, _: MetaData, stages: dict[str, str]) -> None:
-        input_stage = stages.get("input")
-        output_stage = stages.get("output")
+    def run(self, table: str, _: MetaData, stage: str) -> None:
+        output_stage = "processed"
 
         tables = [table]
 
         if self.enrich_meta:
             _logger.info("Enriching metadata based on data")
-            self._enrich_metadata(
-                tables, meta_stage=input_stage, raw_data_stage=input_stage
-            )
+            self._enrich_metadata(tables, meta_stage=stage, raw_data_stage=stage)
 
         _logger.info("Checking for unprocessed partitions")
         unprocessed_partitions = [
@@ -237,7 +231,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 table_name,
                 self.utils.list_unprocessed_partitions(
                     table_name,
-                    input_stage=input_stage,
+                    input_stage=stage,
                     output_stage=self.final_partition_stage,
                 ),
             )
@@ -250,10 +244,10 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             table = self.db.table(table_name)
             transform_type = table.transform_type()
 
-            input_path = table.get_table_path(input_stage)
+            input_path = table.get_table_path(stage)
             output_path = table.get_table_path(output_stage)
 
-            input_meta = table.get_table_metadata(input_stage)
+            input_meta = table.get_table_metadata(stage)
             output_meta = table.get_table_metadata(output_stage)
             output_format = (
                 table.table_file_formats().get(output_stage).get("file_format")

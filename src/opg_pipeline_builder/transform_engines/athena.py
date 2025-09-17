@@ -395,7 +395,9 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
+    def run(
+        self, stages: Dict[str, str], tables: Union[List[str], None] = None
+    ) -> None:
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform transformation.

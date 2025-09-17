@@ -22,7 +22,7 @@ class AthenaTransformations(BaseTransformations, ABC):
 class AthenaParquetTransformations(AthenaTransformations):
     def default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ):
+    ) -> None:
         """Default table transformation
 
         Takes an SQL query for a temporary table in Athena and unloads
@@ -55,6 +55,7 @@ class AthenaParquetTransformations(AthenaTransformations):
                 temp_path = temp_path.replace(stage, "temp")
 
             _logger.info("Performing unload")
+
             response = wr.athena.unload(
                 sql=sql,
                 path=temp_path,

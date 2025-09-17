@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -147,8 +148,13 @@ class TestDataLinterEngine:
                 if dag_interval_end is not None:
                     os.environ["DAG_INTERVAL_END"] = dag_interval_end
 
-                from opg_pipeline_builder.utils.constants import \
-                    get_dag_timestamp
+                os.environ["RUN_TIMESTAMP"] = str(
+                    datetime.fromisoformat(
+                        dag_run_id.replace("manual__", "")
+                    ).timestamp()
+                ).split(".")[0]
+
+                from opg_pipeline_builder.utils.constants import get_dag_timestamp
 
                 transform.run(tables=[table.name], stage=self.output_stage)
 

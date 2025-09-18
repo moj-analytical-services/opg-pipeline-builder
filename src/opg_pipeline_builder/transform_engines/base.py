@@ -2,7 +2,7 @@ import logging
 from inspect import getmembers, isfunction, signature
 from typing import Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, Field
 
 from ..database import Database
 from ..validator import PipelineConfig
@@ -14,7 +14,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 class BaseTransformEngine(BaseModel):
     config: PipelineConfig
     db: Database
-    utils: Optional[TransformEngineUtils] = None
+    utils: TransformEngineUtils = Field(default_factory=TransformEngineUtils)
 
     class Config:
         arbitrary_types_allowed = True

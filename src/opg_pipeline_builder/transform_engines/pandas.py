@@ -29,7 +29,9 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     def model_post_init(self, __context) -> None:
         super().model_post_init(__context)
         if not self.transforms:
-            self.transforms = PandasTransformations(config=self.config, db=self.db)
+            self.transforms = PandasTransformations(
+                config=self.config, db=self.db, utils=self.utils
+            )
 
     @classmethod
     def _remove_columns_in_meta_not_in_data(

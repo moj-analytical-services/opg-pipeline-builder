@@ -27,12 +27,8 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     transforms: PandasTransformations | None = None
 
     @model_validator(mode="after")
-    def init_transform(
-        self,
-        transforms: PandasTransformations | None = None,
-    ) -> "PandasTransformEngine":
-        if transforms is None:
-            self.transforms = PandasTransformations(config=self.config, db=self.db)
+    def init_transform(self) -> "PandasTransformEngine":
+        self.transforms = PandasTransformations(config=self.config, db=self.db)
         return self
 
     @classmethod

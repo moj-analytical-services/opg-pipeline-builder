@@ -2,7 +2,7 @@ import logging
 from inspect import getmembers, isfunction, signature
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from ..database import Database
 from ..validator import PipelineConfig
@@ -19,10 +19,12 @@ class BaseTransformEngine(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _init_utils(self) -> "BaseTransformEngine":
         if not self.utils:
             self.utils = TransformEngineUtils(db=self.db)
         self._validate_method_kwargs()
+        return self
 
     @staticmethod
     def _check_public_method_args(parameters: object) -> bool:

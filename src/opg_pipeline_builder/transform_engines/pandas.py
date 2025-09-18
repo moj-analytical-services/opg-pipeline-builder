@@ -5,10 +5,10 @@ from pathlib import Path
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
+from pydantic import model_validator
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
-from ..utils.constants import get_source_db
 from .enrich_meta import EnrichMetaTransformEngine
 from .transforms.panda import PandasTransformations
 
@@ -26,20 +26,14 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     final_partition_stage: str = "curated"
     transforms: PandasTransformations | None = None
 
-    def __post_init__(
+    @model_validator(mode="after")
+    def init_transform(
         self,
         transforms: PandasTransformations | None = None,
-    ) -> None:
-        db_name = self.db.name
-        if db_name is None:
-            _logger.debug("Setting database for engine from environment")
-            db_name = get_source_db()
-            _logger.debug(f"Engine database environment variable set to {db_name}")
-
+    ) -> "PandasTransformEngine":
         if transforms is None:
-            transforms = PandasTransformations(config=self.config, db=self.db)
-
-        self.transforms = transforms
+            self.transforms = PandasTransformations(config=self.config, db=self.db)
+        return self
 
     @classmethod
     def _remove_columns_in_meta_not_in_data(

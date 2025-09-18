@@ -25,15 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 class TransformEngineUtils(BaseModel):
-    _db: Database
+    db: Database
 
     class Config:
         underscore_attrs_are_private = True
         arbitrary_types_allowed = True
-
-    def __init__(self, db: Database):
-        super().__init__()
-        self._db = db
 
     def list_table_files(
         self,

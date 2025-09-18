@@ -26,10 +26,10 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     final_partition_stage: str = "curated"
     transforms: PandasTransformations | None = None
 
-    @model_validator(mode="after")
-    def init_transform(self) -> "PandasTransformEngine":
-        self.transforms = PandasTransformations(config=self.config, db=self.db)
-        return self
+    def model_post_init(self, __context) -> None:
+        super().model_post_init(__context)
+        if not self.transforms:
+            self.transforms = PandasTransformations(config=self.config, db=self.db)
 
     @classmethod
     def _remove_columns_in_meta_not_in_data(

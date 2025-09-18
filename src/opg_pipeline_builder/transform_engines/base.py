@@ -18,11 +18,10 @@ class BaseTransformEngine(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @model_validator(mode="after")
-    def _init_utils(self) -> "BaseTransformEngine":
-        self.utils = TransformEngineUtils(db=self.db)
+    def model_post_init(self, __context) -> None:
+        if not self.utils:
+            self.utils = TransformEngineUtils(db=self.db)
         self._validate_method_kwargs()
-        return self
 
     @staticmethod
     def _check_public_method_args(parameters: object) -> bool:

@@ -29,7 +29,13 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         super().model_post_init(__context)
         if not self.transforms:
             self.transforms = PandasTransformations(
-                config=self.config, db=self.db, utils=self.utils
+                config=self.config,
+                db=self.db,
+                utils=self.utils,
+                add_partition_column=self.add_partition_column,
+                attributes_file=self.attributes_file,
+                attributes=self.attributes,
+                extract_header_values=self.extract_header_values,
             )
 
     @classmethod

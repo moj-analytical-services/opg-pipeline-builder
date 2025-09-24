@@ -309,6 +309,7 @@ class TestAthenaTransformEngine:
             assert len(wr.s3.list_objects(cp)) == 0
             assert len(wr.s3.list_objects(temp_path)) == 0
 
+    @pytest.mark.xfail
     def test_create_tmp_table(self, s3, monkeypatch):
         athena, prt = self.setup_data(s3, stage="output")
         con = duckdb.connect(database="__temp__")

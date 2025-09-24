@@ -5,7 +5,6 @@ from pathlib import Path
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
-from pydantic import model_validator
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
@@ -209,13 +208,12 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 )
 
     def run(self, table: str, _: MetaData, stage: str) -> None:
-        output_stage = "processed"
-
+        raw_stage = "raw_hist"
         tables = [table]
 
         if self.enrich_meta:
             _logger.info("Enriching metadata based on data")
-            self._enrich_metadata(tables, meta_stage=stage, raw_data_stage=stage)
+            self._enrich_metadata(tables, meta_stage=stage, raw_data_stage=raw_stage)
 
         _logger.info("Checking for unprocessed partitions")
         unprocessed_partitions = [
@@ -223,7 +221,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 table_name,
                 self.utils.list_unprocessed_partitions(
                     table_name,
-                    input_stage=stage,
+                    input_stage=raw_stage,
                     output_stage=self.final_partition_stage,
                 ),
             )
@@ -236,14 +234,12 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             table = self.db.table(table_name)
             transform_type = table.transform_type()
 
-            input_path = table.get_table_path(stage)
-            output_path = table.get_table_path(output_stage)
+            input_path = table.get_table_path(raw_stage)
+            output_path = table.get_table_path(stage)
 
-            input_meta = table.get_table_metadata(stage)
-            output_meta = table.get_table_metadata(output_stage)
-            output_format = (
-                table.table_file_formats().get(output_stage).get("file_format")
-            )
+            input_meta = table.get_table_metadata(raw_stage)
+            output_meta = table.get_table_metadata(stage)
+            output_format = table.table_file_formats().get(stage).get("file_format")
 
             for partition in partitions:
                 partition_input_path = os.path.join(input_path, partition)

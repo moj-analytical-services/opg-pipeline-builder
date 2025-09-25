@@ -8,12 +8,13 @@ from mojap_metadata.converters.glue_converter import GlueConverter
 
 from ..utils.constants import get_full_db_name
 from .base import BaseTransformEngine
+from src.opg_pipeline_builder.models.metadata_model import MetaData
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class CatalogTransformEngine(BaseTransformEngine):
-    def run(self, tables: List[str], stage: str = "curated") -> None:
+    def run(self, table: str, _: MetaData, stage: str = "curated") -> None:
         """Overlays database over the given tables
 
         Overlays athena database over the given tables for the
@@ -34,6 +35,7 @@ class CatalogTransformEngine(BaseTransformEngine):
         glue_client = boto3.client("glue")
         db = self.db
         db_name = get_full_db_name(db_name=db.name, env=db.env)
+        tables = [table]
 
         try:
             glue_client.get_database(Name=db_name)

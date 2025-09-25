@@ -8,7 +8,7 @@ from mojap_metadata.converters.glue_converter import GlueConverter
 
 from ..utils.constants import get_full_db_name
 from .base import BaseTransformEngine
-from src.opg_pipeline_builder.models.metadata_model import MetaData
+from ..models.metadata_model import MetaData
 
 _logger: logging.Logger = logging.getLogger(__name__)
 

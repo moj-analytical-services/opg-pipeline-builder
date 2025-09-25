@@ -6,16 +6,16 @@ import awswrangler as wr
 import pydbtools as pydb
 from mojap_metadata import Metadata
 
+from opg_pipeline_builder.models.metadata_model import MetaData
+
 from ..database import Database
 from ..utils.constants import (
     get_end_date,
     get_full_db_name,
-    get_source_db,
     get_source_tbls,
     get_start_date,
 )
 from ..utils.utils import extract_mojap_timestamp
-from ..validator import PipelineConfig
 from .base import BaseTransformEngine
 from .transforms import athena as athena_transforms
 from .utils.athena import AthenaTransformEngineUtils
@@ -39,37 +39,25 @@ class AthenaTransformEngine(BaseTransformEngine):
     db_search_limit: int | None = None
     jinja_args: dict[Any, Any] | None = None
     transforms: athena_transforms.AthenaTransformations | None = None
+    transforms_type: str | None = None
 
-    def __init__(
+    def model_post_init(
         self,
-        config: PipelineConfig,
-        db_name: str = None,
-        utils: AthenaTransformEngineUtils = None,
-        transforms: athena_transforms.AthenaTransformations = None,
-        transforms_type: str | None = None,
-        **kwargs: dict[Any, Any],
+        __context,
     ) -> None:
-        if db_name is None:
-            _logger.debug("Setting database for engine from environment")
-            db_name = get_source_db()
-            _logger.debug(f"Engine database environment variable set to {db_name}")
+        self.utils = AthenaTransformEngineUtils(db=self.db)
+        super().model_post_init(__context)
 
-        self.config = config
-        db = Database(config=self.config, db_name=db_name)
-        utils = AthenaTransformEngineUtils(db=db) if utils is None else utils
-
-        super().__init__(db_name=db_name, utils=utils, **kwargs)
-
-        if transforms is None:
+        if self.transforms is None:
             transforms_type = (
-                DEFAULT_ATHENA_TRANSFORM if transforms_type is None else transforms_type
+                DEFAULT_ATHENA_TRANSFORM
+                if self.transforms_type is None
+                else self.transforms_type
             )
             formatted_transform_type = transforms_type[0].upper() + transforms_type[1:]
             transforms_class_name = f"Athena{formatted_transform_type}Transformations"
             transforms_class = getattr(athena_transforms, transforms_class_name)
-            transforms = transforms_class(utils=self.utils, db=self.db)
-
-        self.transforms = transforms
+            self.transforms = transforms_class(utils=self.utils, db=self.db)
 
     def _default_jinja_args(
         self,
@@ -403,16 +391,14 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def run(self, stages: dict[str, str], tables: list[str] | None = None) -> None:
+    def run(self, stage: str, table: str, _: MetaData) -> None:
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform transformation.
 
         Params
         ------
-        stages: Dict[str, str]
-            Dictionary of the format
-            {"input": "input_etl_stage", "output": "output_etl_stage"}
+        stages [str]: The name of the output_etl_stage
 
         tables: Union[List[str], None]
             List of tables to apply ETL processing step to. If None, then will
@@ -423,7 +409,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         ------
         None
         """
+        tables = [table]
         tables = get_source_tbls() if tables is None else tables
+
+        stages = {"input": "processed", "output": stage}
 
         db = self.db
         databases = wr.catalog.databases(limit=self.db_search_limit)

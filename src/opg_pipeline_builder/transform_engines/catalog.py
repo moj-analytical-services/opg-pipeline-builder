@@ -36,6 +36,7 @@ class CatalogTransformEngine(BaseTransformEngine):
         db = self.db
         db_name = get_full_db_name(db_name=db.name, env=db.env)
         tables = [table]
+        stage = "curated"
 
         try:
             glue_client.get_database(Name=db_name)

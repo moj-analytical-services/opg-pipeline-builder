@@ -391,7 +391,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def run(self, stage: str, table: str, _: MetaData) -> None:
+    def run(self, table: str, _: MetaData, stage: str) -> None:
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform transformation.

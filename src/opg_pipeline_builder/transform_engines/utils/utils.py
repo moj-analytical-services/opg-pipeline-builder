@@ -82,6 +82,7 @@ class TransformEngineUtils(BaseModel):
         table = self._db.table(table_name)
         etl_stages = deepcopy(table.etl_stages())
         table_paths = table.table_data_paths()
+        print(table_paths)
 
         if additional_stages is not None:
             etl_stages += list(additional_stages.keys())
@@ -98,11 +99,15 @@ class TransformEngineUtils(BaseModel):
         else:
             table_stage_path = table_paths[stage]
 
+        print(table_stage_path)
+
         files = get_modified_filepaths_from_s3_folder(
             table_stage_path,
             modified_after=modified_after,
             modified_before=modified_before,
         )
+
+        print(files)
 
         return files
 
@@ -156,6 +161,8 @@ class TransformEngineUtils(BaseModel):
                 )
                 for p in partitions
             ]
+
+        print(partitions)
 
         return partitions
 

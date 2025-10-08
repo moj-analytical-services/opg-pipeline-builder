@@ -40,6 +40,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     jinja_args: dict[Any, Any] | None = None
     transforms: athena_transforms.AthenaTransformations | None = None
     transforms_type: str | None = None
+    input_stage: str | None = "processed"
 
     def model_post_init(
         self,
@@ -412,7 +413,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         tables = [table]
         tables = get_source_tbls() if tables is None else tables
 
-        stages = {"input": "processed", "output": stage}
+        stages = {"input": self.input_stage, "output": stage}
 
         db = self.db
         databases = wr.catalog.databases(limit=self.db_search_limit)

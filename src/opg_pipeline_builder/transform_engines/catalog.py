@@ -1,14 +1,13 @@
 import logging
-from typing import List
 
 import awswrangler as wr
 import boto3
 from botocore.exceptions import ClientError
 from mojap_metadata.converters.glue_converter import GlueConverter
 
+from ..models.metadata_model import MetaData
 from ..utils.constants import get_full_db_name
 from .base import BaseTransformEngine
-from ..models.metadata_model import MetaData
 
 _logger: logging.Logger = logging.getLogger(__name__)
 

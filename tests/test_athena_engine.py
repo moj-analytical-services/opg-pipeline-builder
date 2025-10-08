@@ -13,12 +13,25 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 import sqlglot
+import yaml
 from arrow_pd_parser import reader, writer
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_aws
 
+import opg_pipeline_builder.transform_engines.athena as athena
+from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.utils.constants import get_full_db_name
+from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, set_up_s3
+
+
+def create_athena_instance() -> athena.AthenaTransformEngine:
+    with Path("tests/data/configs/testdb.yml").open(encoding="utf-8") as f:
+        config_yml = yaml.safe_load(f)
+    config = PipelineConfig(**config_yml)
+    db = Database(config)
+
+    return athena.AthenaTransformEngine(config=config, db=db)
 
 
 class DummyAthenaResponse:
@@ -34,15 +47,10 @@ class TestAthenaTransformEngine:
     table_name = "table1"
     raw_data_file = "tests/data/dummy_data/dummy_data1.csv"
     output_stage = "curated"
-    input_stage = "raw"
+    input_stage = "raw_hist"
     derived_table_name = "table2"
     temp_table_name = "table2_copy"
     temp_table_animal = "chicken"
-
-    def import_athena(self):
-        import opg_pipeline_builder.transform_engines.athena as athena
-
-        return athena
 
     def do_nothing(*args, **kwargs): ...
 
@@ -63,8 +71,7 @@ class TestAthenaTransformEngine:
             extract_mojap_timestamp,
         )
 
-        athena = self.import_athena()
-        transform = athena.AthenaTransformEngine(self.db_name)
+        transform = create_athena_instance()
         db = transform.db
         primary_partition = db.primary_partition_name()
         _ = kwargs
@@ -177,8 +184,7 @@ class TestAthenaTransformEngine:
         con.execute(augmented_sql)
 
     def setup_data(self, s3, stage="input"):
-        athena = self.import_athena()
-        transform = athena.AthenaTransformEngine(self.db_name)
+        transform = create_athena_instance()
         db = transform.db
         partition_name = db.primary_partition_name()
         table_name = self.table_name
@@ -219,7 +225,7 @@ class TestAthenaTransformEngine:
         monkeypatch.setattr(sr, "S3FileSystem", mock_get_file)
 
         athena, _ = self.setup_data(s3)
-        transform = athena.AthenaTransformEngine("athenadb")
+        transform = create_athena_instance()
         db = transform.db
         table = db.table(self.table_name)
 
@@ -314,7 +320,7 @@ class TestAthenaTransformEngine:
         athena, prt = self.setup_data(s3, stage="output")
         con = duckdb.connect(database="__temp__")
 
-        transform = athena.AthenaTransformEngine(self.db_name)
+        transform = create_athena_instance()
         db = transform.db
         partition_name = db.primary_partition_name()
         table_name = self.derived_table_name
@@ -362,7 +368,7 @@ class TestAthenaTransformEngine:
         con = duckdb.connect(database="__temp_derived__")  # noqa: F841
 
         athena, timestamp = self.setup_data(s3, stage="output")
-        transform = athena.AthenaTransformEngine("athenadb")
+        transform = create_athena_instance()
         db = transform.db
         primary_partition = db.primary_partition_name()
         table = db.table(self.derived_table_name)

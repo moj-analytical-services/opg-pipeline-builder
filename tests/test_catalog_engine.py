@@ -1,9 +1,12 @@
+from pathlib import Path
+
 import boto3
 import pytest
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_aws
 
 from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.models.metadata_model import load_metadata
 from opg_pipeline_builder.validator import PipelineConfig
 
 
@@ -24,7 +27,11 @@ class TestCatalogTransformEngine:
         monkeypatch.setattr(catalog.wr.athena, "repair_table", self.do_nothing)
         transform = catalog.CatalogTransformEngine(config=config, db=database)
         for table_name in table_names:
-            transform.run(table=table_name, stage=stage)
+            metadata = load_metadata(
+                Path("tests/data/meta_data/new_metadata"),
+                "test",
+            )
+            transform.run(table=table_name, _=metadata, stage=stage)
 
             glue_table = GlueTable()
             gc = GlueConverter()

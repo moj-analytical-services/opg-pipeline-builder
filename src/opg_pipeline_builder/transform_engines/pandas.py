@@ -24,6 +24,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     enrich_meta: bool = True
     raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"
+    raw_stage: str = "raw_hist"
     transforms: PandasTransformations | None = None
 
     def model_post_init(self, __context) -> None:

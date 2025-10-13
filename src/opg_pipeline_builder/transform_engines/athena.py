@@ -1,9 +1,16 @@
 import logging
 import os
-from typing import Dict, List, Optional, Tuple, Union
+import re
+import unicodedata
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import awswrangler as wr
+import pandas as pd
+import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import pydbtools as pydb
+from charset_normalizer import from_bytes
 from mojap_metadata import Metadata
 
 from ..database import Database
@@ -356,6 +363,294 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         return sql
 
+    def _temp_log_for_encoding_errors(self, input_path: str) -> None:
+        MAX_CELL_REPORT = 200
+        MAX_ROW_REPORT = 200
+
+        # Characters we consider "suspicious/unprintable"
+        CONTROL_OR_FORMAT = re.compile(
+            "["
+            + "\u0000-\u001f"  # C0 controls (incl \t \n \r which we will allow separately if desired)
+            "\u007f-\u009f"  # DEL + C1 controls
+            "\u200b-\u200f"  # zero-width + bidi marks
+            "\u202a-\u202e"  # embedding/override
+            "\u2060-\u206f"  # more formatting
+            "\ufeff"  # BOM
+            "]"
+        )
+
+        # Allow normal whitespace? (tabs/newlines/carriage returns often OK; Athena dislikes \x00)
+        ALLOW_TABS_NEWLINES = True
+
+        # Heuristic mojibake patterns (cp1252/UTF-8 mishaps etc.)
+        MOJIBAKE_PATTERNS = [
+            "Ã",
+            "Â",
+            "â€™",
+            "â€˜",
+            "â€“",
+            "â€”",
+            "â€œ",
+            "â€\x9d",
+            "â€¦",  # typical
+            "\ufffd",  # replacement char from broken UTF-8
+        ]
+        MOJIBAKE_REGEX = re.compile("|".join(map(re.escape, MOJIBAKE_PATTERNS)))
+
+        # ------------------------------------------------------------
+        # Helpers
+        # ------------------------------------------------------------
+        def describe_string(s: str) -> str:
+            parts = []
+            for ch in s:
+                code = f"U+{ord(ch):04X}"
+                cat = unicodedata.category(ch)
+                name = unicodedata.name(ch, "UNKNOWN")
+                parts.append(f"{repr(ch)}({code} {cat} {name})")
+            return f"raw={repr(s)} | chars=[ " + " , ".join(parts) + " ]"
+
+        def looks_unprintable(s: str) -> bool:
+            if not isinstance(s, str):
+                return False
+            if CONTROL_OR_FORMAT.search(s):
+                if ALLOW_TABS_NEWLINES:
+                    # remove \t, \n, \r before judging
+                    tmp = s.replace("\t", "").replace("\n", "").replace("\r", "")
+                    return bool(CONTROL_OR_FORMAT.search(tmp))
+                return True
+            return False
+
+        def looks_mojibake(s: str) -> bool:
+            if not isinstance(s, str):
+                return False
+            return bool(MOJIBAKE_REGEX.search(s))
+
+        def maybe_utf8_bytes(obj: Any) -> Optional[str]:
+            """
+            If a column is binary but actually holds UTF-8 text, try to decode bytes.
+            Return a short status string for reporting, not raising.
+            """
+            if isinstance(obj, (bytes, bytearray)):
+                # charset-normalizer quick guess (short-circuit if UTF-8 works)
+                try:
+                    obj.decode("utf-8")
+                    return "utf-8"
+                except Exception:
+                    pass
+                res = from_bytes(bytes(obj)).best()
+                return res.encoding if res else "unknown"
+            return None
+
+        # ------------------------------------------------------------
+        # Core scanners
+        # ------------------------------------------------------------
+        def scan_parquet_for_strings(
+            path_or_uri: str,
+            expected_columns: Optional[List[str]] = None,
+            validators: Optional[Dict[str, Callable[[object], bool]]] = None,
+            filesystem: Optional[pa.fs.FileSystem] = None,
+            batch_size: int = 100_000,
+        ) -> None:
+            """
+            - Reads a Parquet file/dataset (local path or s3://…).
+            - Reports:
+                a) cells with unprintable/control/bidi/BOM/ZWSP/etc.
+                b) cells with mojibake patterns
+                c) likely misaligned rows (failed validators across multiple columns)
+                d) binary columns that smell like text (or vice-versa)
+                e) schema vs expected (missing/extra/ordering)
+            """
+            print(f"=== Opening Parquet: {path_or_uri}")
+            try:
+                dataset = ds.dataset(
+                    path_or_uri, filesystem=filesystem, format="parquet"
+                )
+            except Exception:
+                # fallback: single parquet file
+                dataset = ds.dataset(pq.ParquetFile(path_or_uri), format="parquet")
+
+            schema = dataset.schema
+            print("\n=== Schema ===")
+            for f in schema:
+                print(f"- {f.name}: {f.type}")
+
+            # ---- Schema validation (if provided)
+            if expected_columns is not None:
+                have = [f.name for f in schema]
+                print("\n=== Expected Columns Check ===")
+                print(f"Expected ({len(expected_columns)}): {expected_columns}")
+                print(f"Actual   ({len(have)}): {have}")
+                missing = [c for c in expected_columns if c not in have]
+                extra = [c for c in have if c not in expected_columns]
+                if missing:
+                    print(f"Missing: {missing}")
+                if extra:
+                    print(f"Extra:   {extra}")
+                # order check
+                if not missing and not extra and have != expected_columns:
+                    print("Note: Same set of columns but different ORDER.")
+
+            # Identify candidate columns
+            str_cols = [
+                f.name
+                for f in schema
+                if pa.types.is_string(f.type) or pa.types.is_large_string(f.type)
+            ]
+            bin_cols = [
+                f.name
+                for f in schema
+                if pa.types.is_binary(f.type) or pa.types.is_large_binary(f.type)
+            ]
+            other_cols = [f.name for f in schema if f.name not in str_cols + bin_cols]
+
+            print("\n=== Column Categories ===")
+            print(f"String cols: {str_cols}")
+            print(f"Binary cols: {bin_cols}")
+            print(f"Other cols : {other_cols}")
+
+            # ---- Reports
+            bad_cells_unprintable: List[
+                Tuple[int, str, str]
+            ] = []  # (row, col, snippet)
+            bad_cells_mojibake: List[Tuple[int, str, str]] = []
+            binary_texty: List[Tuple[str, str]] = []  # (col, detected-encoding)
+            misaligned_rows: List[Tuple[int, Dict[str, object]]] = []
+
+            # ---- Row-level validation support
+            has_validators = validators is not None and len(validators) > 0
+            validator_cols = list(validators.keys()) if has_validators else []
+
+            # ---- Scan batches
+            print("\n=== Scanning batches ===")
+            scanner = dataset.scan(columns=None)  # all columns
+            row_base = 0
+            for record_batch in scanner.to_table().to_batches(max_chunksize=batch_size):
+                df = record_batch.to_pandas(
+                    types_mapper=pd.ArrowDtype
+                )  # pandas-friendly view
+                n = len(df)
+                # a) unprintables + b) mojibake in string columns
+                for col in str_cols:
+                    s = df[col].astype("string").fillna(pd.NA)
+                    for idx, val in s.items():
+                        if val is pd.NA:
+                            continue
+                        v = str(val)
+                        if looks_unprintable(v):
+                            bad_cells_unprintable.append((row_base + idx, col, v[:120]))
+                            if len(bad_cells_unprintable) >= MAX_CELL_REPORT:
+                                break
+                        elif looks_mojibake(v):
+                            bad_cells_mojibake.append((row_base + idx, col, v[:120]))
+                            if len(bad_cells_mojibake) >= MAX_CELL_REPORT:
+                                break
+
+                # c) likely misalignment (many validators fail on same row)
+                if has_validators:
+                    invalid_counts = pd.Series(0, index=df.index)
+                    row_samples: Dict[int, Dict[str, object]] = {}
+                    for col, fn in validators.items():
+                        if col in df.columns:
+                            col_series = df[col]
+                            mask_bad = ~col_series.map(
+                                lambda x: True if pd.isna(x) else bool(fn(x)),
+                                na_action="ignore",
+                            )
+                            invalid_counts = invalid_counts.add(
+                                mask_bad.astype(int), fill_value=0
+                            )
+                            bad_rows = col_series.index[mask_bad.fillna(False)]
+                            for r in bad_rows[:MAX_ROW_REPORT]:
+                                row_samples.setdefault(r, {})
+                                row_samples[r][col] = col_series.loc[r]
+                    # Flag rows where >=2 validators fail (tweak threshold)
+                    threshold = (
+                        max(2, len(validator_cols) // 3) if validator_cols else 2
+                    )
+                    for r, cnt in invalid_counts.items():
+                        if cnt >= threshold and len(misaligned_rows) < MAX_ROW_REPORT:
+                            misaligned_rows.append(
+                                (row_base + int(r), row_samples.get(r, {}))
+                            )
+
+                # d) binary columns that smell like text
+                for col in bin_cols:
+                    series = df[col]
+                    # sample up to first ~100 non-null values
+                    sample_vals = (
+                        x for x in series if isinstance(x, (bytes, bytearray))
+                    )
+                    checked = 0
+                    for b in sample_vals:
+                        enc = maybe_utf8_bytes(b)
+                        if enc:
+                            binary_texty.append((col, enc))
+                            break
+                        checked += 1
+                        if checked >= 100:
+                            break
+
+                row_base += n
+
+                if (
+                    len(bad_cells_unprintable) >= MAX_CELL_REPORT
+                    and len(bad_cells_mojibake) >= MAX_CELL_REPORT
+                    and len(misaligned_rows) >= MAX_ROW_REPORT
+                ):
+                    break  # enough evidence
+
+            # ---- Summaries
+            print("\n=== a) Unprintable/control chars in strings ===")
+            if not bad_cells_unprintable:
+                print("None found in scanned batches.")
+            else:
+                for r, c, v in bad_cells_unprintable[:MAX_CELL_REPORT]:
+                    print(f"row={r} col={c} -> {describe_string(v)}")
+
+            print("\n=== a2) Mojibake/replacement-char patterns ===")
+            if not bad_cells_mojibake:
+                print("None found in scanned batches.")
+            else:
+                for r, c, v in bad_cells_mojibake[:MAX_CELL_REPORT]:
+                    print(f"row={r} col={c} -> {repr(v)}")
+
+            print("\n=== b) Likely misaligned rows (validators) ===")
+            if not has_validators:
+                print("No validators provided; skipping row-level alignment inference.")
+            elif not misaligned_rows:
+                print("No rows exceeded the invalidity threshold.")
+            else:
+                for r, sample in misaligned_rows[:MAX_ROW_REPORT]:
+                    print(
+                        f"row={r} failed multiple checks. Sample of offending values: {sample}"
+                    )
+
+            print("\n=== d) Binary columns that look like text ===")
+            if not binary_texty:
+                print("No binary columns with obvious text encoding detected.")
+            else:
+                for col, enc in binary_texty:
+                    print(
+                        f"Column {col!r} appears to contain text bytes (e.g., {enc}). Consider decoding before use."
+                    )
+
+            print("\n=== Done ===")
+
+        scan_parquet_for_strings(
+            path_or_uri=input_path,
+            expected_columns=[
+                "rucind",
+                "rucdesc",
+                "nspl_download_page_url",
+                "nsple_download_url",
+                "nspl_origin_dates",
+                "geog_etl_version",
+                "nspl_published_date",
+                "nspl_modified_date",
+                "mojap_land_file_timestamp",
+            ],
+        )
+
     def _execute_load(
         self,
         sql: str,
@@ -368,6 +663,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         partitions: List[str],
     ):
         transform = getattr(self.transforms, f"{transformation_type}_transform")
+
+        if "rural_urban" in input_path:
+            print("HERE COME THE LOGS")
+            self._temp_log_for_encoding_errors(input_path)
 
         try:
             transform(sql, output_metadata, output_path, temporary_load_database_name)
@@ -395,9 +694,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def run(
-        self, stages: Dict[str, str], tables: Union[List[str], None] = None
-    ) -> None:
+    def run(self, stages: Dict[str, str], tables: Union[List[str], None] = None):
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform transformation.

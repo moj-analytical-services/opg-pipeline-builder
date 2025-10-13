@@ -37,7 +37,7 @@
       ]
     },
     {
-      "name": "opg_etl_version",
+      "name": "etl_version",
       "nullable": true,
       "stages": [
         {

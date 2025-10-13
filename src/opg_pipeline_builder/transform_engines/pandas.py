@@ -22,6 +22,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     attributes: dict | None = None
     extract_header_values: dict[str, str] | None = None
     enrich_meta: bool = True
+    raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"
     transforms: PandasTransformations | None = None
 
@@ -214,12 +215,13 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 )
 
     def run(self, table: str, _: MetaData, stage: str) -> None:
-        raw_stage = "raw_hist"
         tables = [table]
 
         if self.enrich_meta:
             _logger.info("Enriching metadata based on data")
-            self._enrich_metadata(tables, meta_stage=stage, raw_data_stage=raw_stage)
+            self._enrich_metadata(
+                tables, meta_stage=stage, raw_data_stage=self.raw_stage
+            )
 
         _logger.info("Checking for unprocessed partitions")
         unprocessed_partitions = [
@@ -227,7 +229,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 table_name,
                 self.utils.list_unprocessed_partitions(
                     table_name,
-                    input_stage=raw_stage,
+                    input_stage=self.raw_stage,
                     output_stage=self.final_partition_stage,
                 ),
             )
@@ -240,10 +242,10 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             table = self.db.table(table_name)
             transform_type = table.transform_type()
 
-            input_path = table.get_table_path(raw_stage)
+            input_path = table.get_table_path(self.raw_stage)
             output_path = table.get_table_path(stage)
 
-            input_meta = table.get_table_metadata(raw_stage)
+            input_meta = table.get_table_metadata(self.raw_stage)
             output_meta = table.get_table_metadata(stage)
             output_format = table.table_file_formats().get(stage).get("file_format")
 

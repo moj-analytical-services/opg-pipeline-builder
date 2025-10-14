@@ -55,7 +55,7 @@ class PandasTransformations(BaseTransformations):
 
             mapping = [
                 {
-                    "value": v,
+                    "value": (int(v) if isinstance(v, str) and v.isdigit() else v),
                     "fields": [
                         re.sub(header_regex, "", c)
                         for c, v0 in header_values
@@ -72,7 +72,9 @@ class PandasTransformations(BaseTransformations):
             ]
 
             header_field_value = (
-                [json.dumps(mapping)] if len(unique_values) > 0 else [None]
+                [json.dumps(mapping, ensure_ascii=False)]
+                if len(unique_values) > 0
+                else [None]
             )
             df[header_field_name] = header_field_value * df.shape[0]
             df.columns = [

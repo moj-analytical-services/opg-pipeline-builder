@@ -473,6 +473,8 @@ class AthenaTransformEngine(BaseTransformEngine):
                     temporary_database_name=temp_input_db_name,
                 )
 
+                print(sql)
+
                 _logger.info(f"Executing SQL load for {table_name}")
                 self._execute_load(
                     sql=sql,

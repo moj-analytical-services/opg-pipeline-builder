@@ -359,4 +359,11 @@ class TransformEngineUtils(BaseModel):
             c for c in common_columns if input_column_types[c] == output_column_types[c]
         ]
 
+        print(input_column_names)
+        print(output_column_names)
+        print(input_column_types)
+        print(output_column_types)
+        print(common_columns)
+        print(common_columns_with_same_types)
+
         return common_columns_with_same_types

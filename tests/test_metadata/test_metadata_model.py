@@ -595,3 +595,5 @@ def test_output_metadata_as_csv() -> None:
     exp_df = exp_df.reset_index(drop=True)
 
     pd.testing.assert_frame_equal(act_df, exp_df, check_dtype=False)
+
+    Path("tests/data/metadata.csv").unlink()

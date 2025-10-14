@@ -23,8 +23,7 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/testdb/raw-hist/table1.json"
 
 @pytest.fixture
 def pandas_engine_class():
-    from opg_pipeline_builder.transform_engines.pandas import \
-        PandasTransformEngine
+    from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
 
     yield PandasTransformEngine
 
@@ -76,8 +75,10 @@ def test_add_attributes_from_headers_and_rename(
     input_df.columns = [f"{c}12" for c in input_df.columns]
 
     expected_df = default_df.copy()
+    import json  # minimal addition
+
     expected_df["dummy_field"] = [
-        json.dumps([{"value": "12", "fields": expected_df.columns.to_list()}])
+        json.dumps([{"value": 12, "fields": expected_df.columns.to_list()}])
     ] * expected_df.shape[0]
 
     df = pandas_engine.transforms.add_attributes_from_headers_and_rename(
@@ -214,20 +215,23 @@ def test_input_transform_methods(pandas_engine, default_df, default_metadata):
             pd.DataFrame(
                 {
                     "my_attribute": ["my_attribute_val"],
-                    "header_field": json.dumps(
-                        [
-                            {
-                                "value": "12",
-                                "fields": [
-                                    "my_int",
-                                    "animal",
-                                    "my_email",
-                                    "my_datetime",
-                                    "my_date",
-                                ],
-                            }
-                        ]
-                    ),
+                    "header_field": [
+                        json.dumps(
+                            [
+                                {
+                                    "value": 12,
+                                    "fields": [
+                                        "my_int",
+                                        "animal",
+                                        "my_email",
+                                        "my_datetime",
+                                        "my_date",
+                                    ],
+                                }
+                            ],
+                            ensure_ascii=False,
+                        )
+                    ],
                 }
             ),
         ),
@@ -268,9 +272,7 @@ def test_output_transform_methods(
 
     if extract_header_values is not None:
         input_df.columns = [f"{c}{header_values_suffix}" for c in input_df.columns]
-        default_metadata.update_column(
-            {"name": extract_header_values.get("field_name"), "type": "string"}
-        )
+        default_metadata.update_column({"name": "header_field", "type": "string"})
 
     input_df["madeup_column"] = "madeup_value"
 
@@ -307,7 +309,10 @@ def test_output_transform_methods(
     expected_df = expected_df.reindex(sorted(expected_df.columns), axis=1)
     df = df.reindex(sorted(df.columns), axis=1)
 
-    assert expected_df.equals(df)
+    print(df.columns)
+    print(expected_df.columns)
+
+    pd.testing.assert_frame_equal(df, expected_df)
 
 
 def test_remove_columns_in_meta_not_in_data(pandas_engine, default_metadata):

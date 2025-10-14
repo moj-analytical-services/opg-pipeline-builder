@@ -1,16 +1,42 @@
-from pydantic import BaseModel
+from typing import Any, Literal
 
-class FileFormats(BaseModel):
+from croniter import croniter
+from pydantic import BaseModel, field_validator, model_validator
+
+from opg_pipeline_builder.utils.constants import transform_types
+
+
+class FileFormat(BaseModel):
+    file_format: Literal["parquet"]
+
+
+class ETLStages(BaseModel):
+    land: FileFormat
+    raw: FileFormat
+    curated: FileFormat
+
+
+class LintOptions(BaseModel):
+    required: bool
+    expect_header: bool
+    headers_ignore_case: bool
+    allow_missing_cols: bool
+    allow_unexpected_cols: bool
+    row_limit: int | None = None
+    pandas_kwargs: dict[str, bool] = {}
+    columns_to_cast: list[str] = []
+    columns_original_dtypes: list[str] = []
+    columns_cast_types: list[str] = []
 
 
 class TableConfig(BaseModel):
-    etl_stages: dict[str, dict[str, str]]
+    etl_stages: ETLStages
     transform_type: str
+    lint_options: LintOptions | None = None
     frequency: str
-    sql: dict[str, list[str] | bool] | None = None
-    lint_options: dict[str, Any] | None = None
+    optional_arguments: dict[str, Any] = {}
     input_data: dict[str, dict[str, str]] | None = None
-    optional_arguments: dict[str, Any] | None = None
+    sql: dict[str, list[str] | bool] | None = None
 
     @model_validator(mode="after")
     def check_transform_type_consistency(self) -> "TableConfig":
@@ -41,17 +67,6 @@ class TableConfig(BaseModel):
     def check_valid_cron(cls, v: str) -> str:
         if not croniter.is_valid(v):
             raise ValueError(f"{v} isn't a valid cron expression")
-        return v
-
-    @field_validator("etl_stages")
-    @classmethod
-    def check_valid_etl_stages(
-        cls,
-        v: dict[str, dict[str, str]],
-    ) -> dict[str, dict[str, str]]:
-        inv_stages = [stage for stage in v if stage not in etl_stages]
-        if inv_stages:
-            raise ValueError(f"ETL stages must be one of {', '.join(etl_stages)}")
         return v
 
     @field_validator("transform_type")

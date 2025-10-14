@@ -1,6 +1,20 @@
-from pydantic import BaseModel
+import os
+from copy import deepcopy
+from itertools import chain
+from pathlib import Path
 
-from opg_pipeline_builder.models.pipeline_config.table_config import TableConfig
+import yaml
+from data_linter import validation
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
+
+from opg_pipeline_builder.models.pipeline_configs.sirius.table_config import TableConfig
+from opg_pipeline_builder.utils.constants import etl_stages, sql_path, transform_types
+
+
+class MissingSQLERror(Exception):
+    def __init__(self, err: str):
+        super().__init__(err)
+        self.err = err
 
 
 class ETLStepConfig(BaseModel):
@@ -31,6 +45,20 @@ class SharedSQL(BaseModel):
     custom: str
     derived: list[str]
 
+    @field_validator("default", "custom", "derived")
+    @classmethod
+    def check_default_sql_exists(cls, v: str) -> str:
+        if not (Path(f"sql/sirius/shared/{v}.sql")).exists():
+            err = f"shared SQL file for '{v}' does not exist in sql/shared"
+            raise MissingSQLERror(err)
+
+        return v
+
+
+class OptionalArguments(BaseModel):
+    get_sirius_data_path: str
+    opg_holidats_path: str
+
 
 class PipelineConfig(BaseModel):
     db_name: str
@@ -39,30 +67,8 @@ class PipelineConfig(BaseModel):
     path_templates: PathTemplates
     db_lint_options: DBLintOptions
     shared_sql: SharedSQL
-    optional_arguments: dict[str, str]
+    optional_arguments: OptionalArguments
     tables: dict[str, TableConfig]
-
-    @model_validator(mode="after")
-    def check_shared_sql_exists(self) -> "PipelineConfig":
-        if self.shared_sql is not None:
-            shared_sql_names = list(chain(*[v for _, v in self.shared_sql.items()]))
-            shared_sql_path = os.path.join(sql_path, self.db_name, "shared")
-
-            if not os.path.exists(shared_sql_path):
-                raise ValueError("shared sql directory does not exist")
-
-            shared_sql_filenames = [Path(p).stem for p in os.listdir(shared_sql_path)]
-
-            missing_sql = [f for f in shared_sql_names if f not in shared_sql_filenames]
-            missing_sql_substr = ", ".join(missing_sql)
-            message = (
-                f"{missing_sql_substr} are missing in the database's shared sql folder"
-            )
-
-            if missing_sql:
-                raise ValueError(message)
-
-        return self
 
     @field_validator("paths")
     @classmethod
@@ -194,7 +200,7 @@ class PipelineConfig(BaseModel):
                 "log-base-path": "s3://testing-bucket/logs/",
             }
 
-            full_lint_config = {**dummy_s3_paths, **full_lint_config}
+            full_lint_config = {**dummy_s3_paths, **full_lint_config}  # type: ignore
 
             validation.load_and_validate_config(full_lint_config)
 

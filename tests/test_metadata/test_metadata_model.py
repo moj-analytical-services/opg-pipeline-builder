@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from opg_pipeline_builder.models import metadata_model as m
@@ -494,28 +496,59 @@ def test_metadata_get_table_metadata_invalid() -> None:
     )
 
 
-def test_output_metadata() -> None:
+def test_output_to_df() -> None:
     metadata = m.MetaData(
         database="test",
         tables={
             "test_table": create_table_metadata(
-                "test_table", ["id"], [create_file_format()], [create_column()]
+                "test_table",
+                ["id"],
+                [create_file_format()],
+                [
+                    create_column(
+                        stages=[create_stage(), create_stage(name="curated")]
+                    ),
+                    create_column(
+                        name="name",
+                        stages=[create_stage(name="curated", data_type="int64")],
+                    ),
+                    create_column(name="address", stages=[create_stage()]),
+                ],
             ),
             "test_table2": create_table_metadata(
                 "test_table2",
                 ["name"],
                 [create_file_format(name="processed")],
-                [create_column(name="name")],
+                [
+                    create_column(
+                        stages=[create_stage(), create_stage(name="curated")]
+                    ),
+                    create_column(
+                        name="name",
+                        stages=[create_stage(name="curated", data_type="float64")],
+                    ),
+                    create_column(name="address", stages=[create_stage()]),
+                ],
             ),
         },
     )
 
-    test_metadata_path = Path("tests/data/meta_data/test_output")
-    test_metadata_path.mkdir(exist_ok=True, parents=True)
-    metadata.output_metadata(test_metadata_path)
+    act_df = metadata.output_to_df()
+    act_df = act_df.reset_index(drop=True)
 
-    assert (test_metadata_path / "test_table.json").is_file()
-    assert (test_metadata_path / "test_table2.json").is_file()
+    exp_df = pd.DataFrame(
+        data={
+            "System": ["test", "test", "test", "test"],
+            "Dataset": ["test", "test", "test", "test"],
+            "Data Table": ["test_table", "test_table", "test_table2", "test_table2"],
+            "Data Field": ["id", "name", "id", "name"],
+            "Description": ["", "", "", ""],
+            "Data Type": ["string", "int64", "string", "float64"],
+            "Nullable": [True, True, True, True],
+        }
+    )
+
+    pd.testing.assert_frame_equal(act_df, exp_df)
 
 
 def test_load_metadata() -> None:
@@ -524,3 +557,41 @@ def test_load_metadata() -> None:
     assert list(metadata.tables.keys()) == ["test_table", "test_table2"]
     assert metadata.tables["test_table"].columns[0].name == "id"
     assert metadata.tables["test_table2"].columns[0].name == "ids"
+
+
+def test_output_metadata_as_csv() -> None:
+    m.output_metadata_as_csv(
+        Path("tests/data/meta_data/new_metadata"),
+        ["test_a", "test_b"],
+        Path("tests/data"),
+    )
+
+    act_df = pd.read_csv("tests/data/metadata.csv")
+    act_df = act_df.sort_values(["System", "Data Table", "Data Field"])
+    act_df = act_df.reset_index(drop=True)
+
+    exp_df = pd.DataFrame(
+        data={
+            "System": ["test_a"] * 6 + ["test_b"] * 3,
+            "Dataset": ["test_a"] * 6 + ["test_b"] * 3,
+            "Data Table": ["test_a"] * 3 + ["test_a2"] * 3 + ["test_b"] * 3,
+            "Data Field": [
+                "name",
+                "email",
+                "phone",
+                "id",
+                "town",
+                "phone",
+                "name",
+                "email",
+                "phone",
+            ],
+            "Description": [np.NaN] * 9,
+            "Data Type": ["string", "string", "date32"] * 3,
+            "Nullable": [True] * 9,
+        }
+    )
+    exp_df = exp_df.sort_values(["System", "Data Table", "Data Field"])
+    exp_df = exp_df.reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(act_df, exp_df, check_dtype=False)

@@ -7,29 +7,16 @@ import yaml
 from data_linter import validation
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from opg_pipeline_builder.models.pipeline_configs.sirius.table_config import TableConfig
-from opg_pipeline_builder.utils.constants import etl_stages, sql_path, transform_types
+from opg_pipeline_builder.models.pipeline_configs.core_config.pipeline_config import (
+    PipelineConfig,
+)
+from opg_pipeline_builder.utils.constants import sql_path
 
 
-class MissingSQLERror(Exception):
+class MissingSQLError(Exception):
     def __init__(self, err: str):
         super().__init__(err)
         self.err = err
-
-
-class ETLStepConfig(BaseModel):
-    step: str
-    engine_name: str
-    transform_name: str = "run"
-    transform_kwargs: dict[str, str] = {}
-
-
-class PathTemplates(BaseModel):
-    land: str = ""
-    raw: str = ""
-    raw_hist: str = ""
-    processed: str = ""
-    curated: str = ""
 
 
 class DBLintOptions(BaseModel):
@@ -50,7 +37,7 @@ class SharedSQL(BaseModel):
     def check_default_sql_exists(cls, v: str) -> str:
         if not (Path(f"sql/sirius/shared/{v}.sql")).exists():
             err = f"shared SQL file for '{v}' does not exist in sql/shared"
-            raise MissingSQLERror(err)
+            raise MissingSQLError(err)
 
         return v
 
@@ -60,33 +47,10 @@ class OptionalArguments(BaseModel):
     opg_holidats_path: str
 
 
-class PipelineConfig(BaseModel):
-    db_name: str
-    description: str
-    etl_step_config: dict[str, ETLStepConfig]
-    path_templates: PathTemplates
+class SiriusPipelineConfig(PipelineConfig):
     db_lint_options: DBLintOptions
     shared_sql: SharedSQL
     optional_arguments: OptionalArguments
-    tables: dict[str, TableConfig]
-
-    @field_validator("paths")
-    @classmethod
-    def check_in_etl_stages(cls, v: dict[str, str]) -> dict[str, str]:
-        stage = [k for k in v][0]
-        if stage not in etl_stages:
-            raise ValueError(f"{stage} is not a valid ETL stage")
-        return v
-
-    @field_validator("shared_sql")
-    @classmethod
-    def check_in_transform_types(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
-        transform_type = [k for k, _ in v.items()][0]
-        valid_type = transform_type in transform_types
-        error_message = f"{transform_type} is not one of {', '.join(transform_types)}"
-        if not valid_type:
-            raise ValueError(error_message)
-        return v
 
     @model_validator(mode="after")
     def check_derived_inputs(self) -> "PipelineConfig":
@@ -178,7 +142,7 @@ class PipelineConfig(BaseModel):
     @model_validator(mode="after")
     def check_data_linter_config(self) -> "PipelineConfig":
         full_lint_config = deepcopy(self.db_lint_options)
-        etl_engines = [e.engine_name for e in self.etl]
+        etl_engines = [e.engine_name for e in self.etl_step_config.values()]
         if full_lint_config is not None:
             full_lint_config["tables"] = {}
 
@@ -210,21 +174,3 @@ class PipelineConfig(BaseModel):
             )
 
         return self
-
-    @property
-    def etl_steps(self) -> list[str]:
-        """Set of all etl steps configured for this pipeline."""
-        return [step.step for step in self.etl]
-
-
-def read_pipeline_config(db_name: str) -> PipelineConfig:
-    try:
-        with open(os.path.join("configs", f"{db_name}.yml")) as config_file:
-            raw_pipeline_config = yaml.safe_load(config_file)
-
-    except FileNotFoundError:
-        raise ValueError(f"{db_name} config does not exist.")
-
-    pipeline_config = PipelineConfig(**raw_pipeline_config)
-
-    return pipeline_config

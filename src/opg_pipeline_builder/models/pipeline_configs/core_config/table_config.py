@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from croniter import croniter
 from pydantic import BaseModel, field_validator, model_validator
@@ -7,12 +7,14 @@ from opg_pipeline_builder.utils.constants import transform_types
 
 
 class FileFormat(BaseModel):
-    file_format: Literal["parquet"]
+    file_format: str = ""
 
 
 class ETLStages(BaseModel):
     land: FileFormat
     raw: FileFormat
+    raw_hist: FileFormat
+    processed: FileFormat
     curated: FileFormat
 
 

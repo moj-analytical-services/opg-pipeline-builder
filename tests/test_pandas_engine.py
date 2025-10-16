@@ -13,6 +13,8 @@ from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
 
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, mock_reader_read, mock_writer_write
 
 log = getLogger()
@@ -29,8 +31,8 @@ def pandas_engine_class():
 
 
 @pytest.fixture
-def pandas_engine(pandas_engine_class):
-    yield pandas_engine_class()
+def pandas_engine(pandas_engine_class, config: PipelineConfig, database: Database):
+    yield pandas_engine_class(config=config, db=database)
 
 
 @pytest.fixture
@@ -63,12 +65,16 @@ def test_add_attributes_from_headers_and_rename(
     pandas_engine_class,
     default_df,
     default_metadata,
+    config: PipelineConfig,
+    database: Database,
 ):
     pandas_engine = pandas_engine_class(
         extract_header_values={
             "field_name": "dummy_field",
             "header_regex": "[0-9]{2}",
         },
+        config=config,
+        db=database,
     )
 
     input_df = default_df.copy()
@@ -88,13 +94,14 @@ def test_add_attributes_from_headers_and_rename(
 
 
 def test_add_primary_partition_column(
-    pandas_engine_class,
-    default_df,
+    pandas_engine_class, default_df, config: PipelineConfig, database: Database
 ):
     ts = int(datetime.utcnow().timestamp())
     partition_value = f"mojap_file_land_timestamp={str(ts)}"
 
-    pandas_engine = pandas_engine_class(add_partition_column=True)
+    pandas_engine = pandas_engine_class(
+        add_partition_column=True, config=config, db=database
+    )
 
     expected_df = default_df.copy()
     expected_df["mojap_file_land_timestamp"] = ts
@@ -134,9 +141,17 @@ def test_add_etl_column(pandas_engine, default_df):
     ],
 )
 def test_add_attributes_from_config(
-    pandas_engine_class, default_df, attributes, error, new_column
+    pandas_engine_class,
+    default_df,
+    attributes,
+    error,
+    new_column,
+    config: PipelineConfig,
+    database: Database,
 ):
-    pandas_engine = pandas_engine_class(attributes=attributes)
+    pandas_engine = pandas_engine_class(
+        attributes=attributes, config=config, db=database
+    )
 
     if error:
         with pytest.raises(ValueError):
@@ -248,11 +263,15 @@ def test_output_transform_methods(
     attributes,
     header_values_suffix,
     new_columns,
+    config: PipelineConfig,
+    database: Database,
 ) -> None:
     pandas_engine = pandas_engine_class(
         attributes=attributes,
         extract_header_values=extract_header_values,
         add_partition_column=add_partition_column,
+        config=config,
+        db=database,
     )
 
     default_metadata.update_column({"name": "string_column", "type": "string"})

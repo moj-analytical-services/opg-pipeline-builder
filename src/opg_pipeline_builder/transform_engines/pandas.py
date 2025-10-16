@@ -1,18 +1,15 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 
-from ..database import Database
-from ..utils.constants import get_source_db
-from ..validator import PipelineConfig
+from opg_pipeline_builder.models.metadata_model import MetaData
+
 from .enrich_meta import EnrichMetaTransformEngine
 from .transforms.panda import PandasTransformations
-from .utils.utils import TransformEngineUtils
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
@@ -26,30 +23,21 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     extract_header_values: dict[str, str] | None = None
     enrich_meta: bool = True
     final_partition_stage: str = "curated"
+    raw_stage: str = "raw_hist"
     transforms: PandasTransformations | None = None
 
-    def __init__(
-        self,
-        config: PipelineConfig,
-        db_name: str | None = None,
-        utils: TransformEngineUtils | None = None,
-        transforms: PandasTransformations | None = None,
-        **kwargs: dict[Any, Any],
-    ) -> None:
-        if db_name is None:
-            _logger.debug("Setting database for engine from environment")
-            db_name = get_source_db()
-            _logger.debug(f"Engine database environment variable set to {db_name}")
-
-        db = Database(config=config)
-        utils = TransformEngineUtils(db=db) if utils is None else utils
-
-        super().__init__(db_name=db_name, utils=utils, **kwargs)
-
-        if transforms is None:
-            transforms = PandasTransformations(**self.dict())
-
-        self.transforms = transforms
+    def model_post_init(self, __context) -> None:
+        super().model_post_init(__context)
+        if not self.transforms:
+            self.transforms = PandasTransformations(
+                config=self.config,
+                db=self.db,
+                utils=self.utils,
+                add_partition_column=self.add_partition_column,
+                attributes_file=self.attributes_file,
+                attributes=self.attributes,
+                extract_header_values=self.extract_header_values,
+            )
 
     @classmethod
     def _remove_columns_in_meta_not_in_data(
@@ -226,14 +214,13 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                     output_meta,
                 )
 
-    def run(self, tables: list[str], stages: dict[str, str]) -> None:
-        input_stage = stages.get("input")
-        output_stage = stages.get("output")
+    def run(self, table: str, _: MetaData, stage: str) -> None:
+        tables = [table]
 
         if self.enrich_meta:
             _logger.info("Enriching metadata based on data")
             self._enrich_metadata(
-                tables, meta_stage=input_stage, raw_data_stage=input_stage
+                tables, meta_stage=stage, raw_data_stage=self.raw_stage
             )
 
         _logger.info("Checking for unprocessed partitions")
@@ -242,7 +229,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 table_name,
                 self.utils.list_unprocessed_partitions(
                     table_name,
-                    input_stage=input_stage,
+                    input_stage=self.raw_stage,
                     output_stage=self.final_partition_stage,
                 ),
             )
@@ -255,14 +242,12 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             table = self.db.table(table_name)
             transform_type = table.transform_type()
 
-            input_path = table.get_table_path(input_stage)
-            output_path = table.get_table_path(output_stage)
+            input_path = table.get_table_path(self.raw_stage)
+            output_path = table.get_table_path(stage)
 
-            input_meta = table.get_table_metadata(input_stage)
-            output_meta = table.get_table_metadata(output_stage)
-            output_format = (
-                table.table_file_formats().get(output_stage).get("file_format")
-            )
+            input_meta = table.get_table_metadata(self.raw_stage)
+            output_meta = table.get_table_metadata(stage)
+            output_format = table.table_file_formats().get(stage).get("file_format")
 
             for partition in partitions:
                 partition_input_path = os.path.join(input_path, partition)

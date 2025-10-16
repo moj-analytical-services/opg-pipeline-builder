@@ -25,15 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 class TransformEngineUtils(BaseModel):
-    _db: Database
+    db: Database
 
     class Config:
         underscore_attrs_are_private = True
         arbitrary_types_allowed = True
-
-    def __init__(self, **data: dict[Any, Any]):
-        super().__init__(**data)
-        self._db = data.get("db")
 
     def list_table_files(
         self,
@@ -83,7 +79,7 @@ class TransformEngineUtils(BaseModel):
         if modified_before is None and disable_environment is False:
             modified_before = get_end_date()
 
-        table = self._db.table(table_name)
+        table = self.db.table(table_name)
         etl_stages = deepcopy(table.etl_stages())
         table_paths = table.table_data_paths()
 
@@ -144,7 +140,7 @@ class TransformEngineUtils(BaseModel):
             List of partitions for the table at the given ETL stage.
         """
         files = self.list_table_files(stage=stage, table_name=table_name, **kwargs)
-        primary_partition_name = self._db.primary_partition_name()
+        primary_partition_name = self.db.primary_partition_name()
 
         partitions = [
             extract_mojap_partition(f, timestamp_partition_name=primary_partition_name)
@@ -242,7 +238,7 @@ class TransformEngineUtils(BaseModel):
             the tables passed, given the ETL stages specified.
         """
         stages_list = [v for _, v in stages.items()]
-        tables_to_use = self._db.tables_to_use(
+        tables_to_use = self.db.tables_to_use(
             tables, stages=stages_list, tf_types=tf_types
         )
         transform_partitions_dict = {}
@@ -281,7 +277,7 @@ class TransformEngineUtils(BaseModel):
         """
         transform_stage_args = {table_name: stages}
 
-        tf_args = self._db.transform_args([table_name], **transform_stage_args)
+        tf_args = self.db.transform_args([table_name], **transform_stage_args)
 
         tf_type = tf_args["transforms"][table_name]["transform_type"]
         output_path = tf_args["transforms"][table_name]["output"]["path"]

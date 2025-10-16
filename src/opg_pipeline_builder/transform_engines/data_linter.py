@@ -217,9 +217,11 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     old_prt = old_prts[0]
 
                     if len(set(old_prts)) > 1:
-                        msg = "Process is designed to only run on a single partition of"
-                        "raw data. More than one partition was found. Partitions:"
-                        f"{','.join(old_prts)}"
+                        msg = (
+                            "Process is designed to only run on a single partition of"
+                            "raw data. More than one partition was found. Partitions:"
+                            f"{','.join(old_prts)}"
+                        )
                         raise ValueError(msg)
 
                     new_prt = f"{timestamp_partition_name}={dag_timestamp}"

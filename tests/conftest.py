@@ -22,8 +22,12 @@ import botocore.awsrequest
 import botocore.model
 import pandas as pd
 import pytest
+import yaml
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 from moto import mock_aws
+
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.validator import PipelineConfig
 
 logging.getLogger("boto3").setLevel(logging.WARNING)
 logging.getLogger("botocore").setLevel(logging.WARNING)
@@ -73,6 +77,18 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     path = Path("tests/data/meta_data/test_output")
     if path.is_dir():
         shutil.rmtree(path)
+
+
+@pytest.fixture(name="config")
+def create_config() -> PipelineConfig:
+    with Path("tests/data/configs/testdb.yml").open(encoding="utf-8") as f:
+        config_yml = yaml.safe_load(f)
+    return PipelineConfig(**config_yml)
+
+
+@pytest.fixture(name="database")
+def create_database(config: PipelineConfig) -> Database:
+    return Database(config)
 
 
 @pytest.fixture(scope="module", autouse=True)

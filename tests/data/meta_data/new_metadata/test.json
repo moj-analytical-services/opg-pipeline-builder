@@ -1,0 +1,129 @@
+{
+  "columns": [
+    {
+      "name": "status",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw_hist",
+          "type": "string"
+        },
+        {
+          "name": "processed",
+          "type": "string"
+        },
+        {
+          "name": "curated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "kilo_kim_responsible",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw_hist",
+          "type": "string"
+        },
+        {
+          "name": "processed",
+          "type": "string"
+        },
+        {
+          "name": "curated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "etl_version",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "processed",
+          "type": "string"
+        },
+        {
+          "name": "curated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "mojap_extract_date",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "date32"
+        }
+      ]
+    },
+    {
+      "name": "mojap_extract_datetime",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "timestamp(ns)"
+        }
+      ]
+    },
+    {
+      "name": "mojap_file_land_timestamp",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "mojap_extract_year",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "mojap_extract_month",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "int64"
+        }
+      ]
+    }
+  ],
+  "converted_from": "arrow_schema",
+  "description": "",
+  "file_formats": [
+    {
+      "format": "csv",
+      "name": "raw_hist"
+    },
+    {
+      "format": "parquet",
+      "name": "processed"
+    },
+    {
+      "format": "parquet",
+      "name": "curated"
+    }
+  ],
+  "name": "information_assurance",
+  "partitions": [
+    "mojap_file_land_timestamp",
+    "mojap_extract_year",
+    "mojap_extract_month"
+  ],
+  "primary_key": [],
+  "schema_link": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.4.0.json",
+  "sensitive": false
+}

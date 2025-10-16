@@ -22,6 +22,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     attributes: dict | None = None
     extract_header_values: dict[str, str] | None = None
     enrich_meta: bool = True
+    raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"
     raw_stage: str = "raw_hist"
     transforms: PandasTransformations | None = None

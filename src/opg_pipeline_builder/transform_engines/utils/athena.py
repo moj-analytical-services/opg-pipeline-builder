@@ -52,7 +52,34 @@ class AthenaTransformEngineUtils(TransformEngineUtils):
             database_name=database_name,
             table_location=table_data_path,
         )
+        print("SPEC:")
+        print(spec)
 
         glue_client = boto3.client("glue")
         glue_client.create_table(**spec)
         wr.athena.repair_table(table=table_name, database=database_name)
+
+        athena_path = "s3://alpha-geography/dev/nspl_reference/athena/"
+
+        # 1) columns (in order) + types
+        schema_df = wr.athena.read_sql_query(
+            sql=f'DESCRIBE "{database_name}"."{table_name}"',
+            database=database_name,
+            ctas_approach=False,
+            s3_output=athena_path,
+        )
+        # schema_df has: col_name | data_type | comment
+        print("=== SCHEMA (ORDERED) ===")
+        print(schema_df[["col_name", "data_type"]].to_string(index=False))
+
+        # 2) print ALL values (streamed). Adjust chunksize if you like.
+        print("\n=== TABLE ROWS ===")
+        for chunk in wr.athena.read_sql_query(
+            sql=f'SELECT * FROM "{database_name}"."{table_name}"',
+            database=database_name,
+            ctas_approach=False,
+            s3_output=athena_path,
+            chunksize=50000,  # number of rows per chunk to fetch/print
+        ):
+            # pretty print this chunk
+            print(chunk.to_string(index=False))

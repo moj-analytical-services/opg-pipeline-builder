@@ -439,10 +439,16 @@ class AthenaTransformEngine(BaseTransformEngine):
                 input_meta = self._prepare_input_metadata_for_load(
                     table_name, ipt_stage
                 )
+                print(table_name)
+                print("input meta data")
+                print(input_meta)
 
                 input_path, output_path, tf_type = self.utils.tf_args(
                     table_name, stages=stages
                 )
+                print(input_path)
+                print(output_path)
+                print(tf_type)
 
                 _logger.info(
                     f"Creating / recreating temporary database for {table_name} load"

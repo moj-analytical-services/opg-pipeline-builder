@@ -328,9 +328,6 @@ def test_output_transform_methods(
     expected_df = expected_df.reindex(sorted(expected_df.columns), axis=1)
     df = df.reindex(sorted(df.columns), axis=1)
 
-    print(df.columns)
-    print(expected_df.columns)
-
     pd.testing.assert_frame_equal(df, expected_df)
 
 

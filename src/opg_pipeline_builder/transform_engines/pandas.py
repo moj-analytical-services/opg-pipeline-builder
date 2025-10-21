@@ -56,10 +56,8 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         metadata: Metadata,
     ) -> Metadata:
         data_column_names = cls._get_column_names(filepath)
-        print("Data columns:", data_column_names)
 
         for meta_column_name in metadata.column_names:
-            print(meta_column_name)
             if meta_column_name not in data_column_names:
                 if meta_column_name.lower() in data_column_names:
                     column = metadata.get_column(meta_column_name)
@@ -147,10 +145,6 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         updated_input_meta = self._remove_columns_in_meta_not_in_data(
             filepath, input_meta
         )
-
-        print(input_meta.column_names)
-        print(updated_input_meta.column_names)
-        print(output_meta.column_names)
 
         _logger.info(f"Reading filepath {filepath} for {table_name}")
         df = reader.read(filepath, metadata=updated_input_meta)

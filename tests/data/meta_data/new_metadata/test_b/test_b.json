@@ -1,7 +1,7 @@
 {
   "columns": [
     {
-      "name": "status",
+      "name": "name",
       "nullable": true,
       "stages": [
         {
@@ -19,7 +19,7 @@
       ]
     },
     {
-      "name": "kilo_kim_responsible",
+      "name": "address",
       "nullable": true,
       "stages": [
         {
@@ -29,15 +29,11 @@
         {
           "name": "processed",
           "type": "string"
-        },
-        {
-          "name": "curated",
-          "type": "string"
         }
       ]
     },
     {
-      "name": "etl_version",
+      "name": "email",
       "nullable": true,
       "stages": [
         {
@@ -51,52 +47,12 @@
       ]
     },
     {
-      "name": "mojap_extract_date",
+      "name": "phone",
       "nullable": true,
       "stages": [
         {
           "name": "curated",
           "type": "date32"
-        }
-      ]
-    },
-    {
-      "name": "mojap_extract_datetime",
-      "nullable": true,
-      "stages": [
-        {
-          "name": "curated",
-          "type": "timestamp(ns)"
-        }
-      ]
-    },
-    {
-      "name": "mojap_file_land_timestamp",
-      "nullable": true,
-      "stages": [
-        {
-          "name": "curated",
-          "type": "int64"
-        }
-      ]
-    },
-    {
-      "name": "mojap_extract_year",
-      "nullable": true,
-      "stages": [
-        {
-          "name": "curated",
-          "type": "int64"
-        }
-      ]
-    },
-    {
-      "name": "mojap_extract_month",
-      "nullable": true,
-      "stages": [
-        {
-          "name": "curated",
-          "type": "int64"
         }
       ]
     }
@@ -117,12 +73,8 @@
       "name": "curated"
     }
   ],
-  "name": "test",
-  "partitions": [
-    "mojap_file_land_timestamp",
-    "mojap_extract_year",
-    "mojap_extract_month"
-  ],
+  "name": "test_b",
+  "partitions": [],
   "primary_key": [],
   "schema_link": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.4.0.json",
   "sensitive": false

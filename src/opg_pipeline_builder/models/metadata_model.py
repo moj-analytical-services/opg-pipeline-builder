@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from pydantic import BaseModel, field_validator, model_validator
 
 from opg_pipeline_builder.constants import (
@@ -266,22 +267,32 @@ class MetaData(BaseModel):
 
         return table
 
-    def output_metadata(self, folder_path: Path) -> None:
-        """Output the metadata object into individual files for each table.
-
-        Args:
-            folder_path (Path): Metadata folder path to write the files into
+    def output_to_df(self) -> pd.DataFrame:
+        """Combine the metadata for each table into a single dataframe
 
         Returns:
-            None
+            pd.DataFrame: Combined metadata as adataframe
         """
-        folder_path.mkdir(exist_ok=True, parents=True)
+        output_dfs: list[pd.DataFrame] = []
 
         for table in self.tables.values():
-            with (folder_path / f"{table.name}.json").open(
-                encoding="UTF-8", mode="w"
-            ) as file:
-                json.dump(table.model_dump(), file)
+            data: list[dict[str, Any]] = []
+            for column in table.columns:
+                if column.has_stage("curated"):
+                    data.append(
+                        {
+                            "System": self.database,
+                            "Dataset": self.database,
+                            "Data Table": table.name,
+                            "Data Field": column.name,
+                            "Description": "",
+                            "Data Type": column.get_stage_for_column("curated").type,
+                            "Nullable": column.nullable,
+                        }
+                    )
+            output_dfs.append(pd.DataFrame(data=data))
+
+        return pd.concat(output_dfs)
 
 
 def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
@@ -304,3 +315,28 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
             metadata_file = json.load(json_file)
             database_metadata[file.stem] = TableMetaData(**metadata_file)
     return MetaData(database=database_name, tables=database_metadata)
+
+
+def output_metadata_as_csv(
+    metadata_path: Path, metadata_files: list[str], output_path: Path
+) -> None:
+    """Output metadata for all pipelines as a single CSV file.
+
+    Args:
+        metadata_path (Path): The folder path containing all the database specific metadata folders
+        metadata_files (list[str]): Folder names within the metadata path to be output
+        output_path (Path): The folder to write them metadata to
+
+    Returns:
+        None
+    """
+
+    metadata_dfs: list[pd.DataFrame] = []
+
+    for database_name in metadata_files:
+        metadata = load_metadata(metadata_path, database_name)
+        metadata_dfs.append(metadata.output_to_df())
+
+    metadata_df = pd.concat(metadata_dfs)
+
+    metadata_df.to_csv(output_path / "metadata.csv", index=False)

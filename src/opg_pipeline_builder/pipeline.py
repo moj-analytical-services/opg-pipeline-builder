@@ -70,6 +70,8 @@ class Pipeline:
 
         all_etl_steps = {**pipeline_etl_steps, **missing_etl_steps}
 
+        print(all_etl_steps)
+
         for etl_step, etl_step_func in all_etl_steps.items():
             if etl_step not in etl_steps:
                 raise KeyError(f"{etl_step} is not a valid ETL step")

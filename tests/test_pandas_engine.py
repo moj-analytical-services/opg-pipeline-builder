@@ -75,7 +75,6 @@ def test_add_attributes_from_headers_and_rename(
     input_df.columns = [f"{c}12" for c in input_df.columns]
 
     expected_df = default_df.copy()
-    import json  # minimal addition
 
     expected_df["dummy_field"] = [
         json.dumps([{"value": 12, "fields": expected_df.columns.to_list()}])

@@ -58,9 +58,9 @@ def get_env() -> str:
         Database environment (e.g. dev, prod)
     """
     try:
-        db_env = os.environ["DEFAULT_DB_ENV"]
+        db_env = os.environ["DATABASE_VERSION"]
     except KeyError:
-        raise KeyError("DEFAULT_DB_ENV env_var needs to be set")
+        raise KeyError("DATABASE_VERSION env_var needs to be set")
     return db_env
 
 
@@ -77,9 +77,9 @@ def get_source_db() -> str:
         Database (e.g. sirius, surveys)
     """
     try:
-        source_env = os.environ["SOURCE_DB_ENV"]
+        source_env = os.environ["DATABASE"]
     except KeyError:
-        raise KeyError("SOURCE_DB_ENV env_var needs to be set")
+        raise KeyError("DATABASE env_var needs to be set")
     return source_env
 
 
@@ -115,9 +115,9 @@ def get_etl_stage() -> str:
         ETL stage
     """
     try:
-        etl_stage = os.environ["ETL_STAGE_ENV"]
+        etl_stage = os.environ["STEP"]
     except KeyError:
-        raise KeyError("ETL_STAGE_ENV env_var needs to be set")
+        raise KeyError("STEP env_var needs to be set")
     return etl_stage
 
 

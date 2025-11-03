@@ -13,7 +13,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class CatalogTransformEngine(BaseTransformEngine):
-    def run(self, table: str, _: MetaData, stage: str = "curated") -> None:
+    def run(self, table: str, _: MetaData, __: str = "curated") -> None:
         """Overlays database over the given tables
 
         Overlays athena database over the given tables for the
@@ -56,9 +56,9 @@ class CatalogTransformEngine(BaseTransformEngine):
             _logger.info(f"Updating {db_name}.{table}")
             db_table = db.table(table)
 
-            stage_meta = db_table.get_table_metadata(stage)
+            stage_meta = db_table.get_table_metadata("curated")
             stage_meta.force_partition_order = "start"
-            stage_s3_path = db_table.get_table_path(stage)
+            stage_s3_path = db_table.get_table_path("curated")
 
             if table != stage_meta.name:
                 raise ValueError(

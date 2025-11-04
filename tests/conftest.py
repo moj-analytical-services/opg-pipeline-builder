@@ -330,3 +330,21 @@ def mock_reader_read(path, metadata, *args, **kwargs):
                 df[colname] = df[colname].astype(lower_coltype)
 
     return [df] if "chunksize" in kwargs else df
+
+
+@pytest.fixture(autouse=True, scope="session")
+def fix_set_log_level() -> None:
+    """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
+    logging.getLogger("botocore").setLevel(logging.CRITICAL)
+    logging.getLogger("awswrangler").setLevel(logging.CRITICAL)
+    logging.getLogger("opg_pipeline_builder").setLevel(logging.CRITICAL)
+    logging.getLogger("boto3").setLevel(logging.CRITICAL)
+    logging.getLogger("s3transfer").setLevel(logging.CRITICAL)
+    logging.getLogger().setLevel(logging.CRITICAL)
+
+    yield
+    logging.getLogger("botocore").setLevel(logging.DEBUG)
+    logging.getLogger("awswrangler").setLevel(logging.DEBUG)
+    logging.getLogger("opg_pipeline_builder").setLevel(logging.DEBUG)
+    logging.getLogger("boto3").setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)

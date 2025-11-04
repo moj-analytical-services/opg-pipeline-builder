@@ -55,6 +55,7 @@ class AthenaParquetTransformations(AthenaTransformations):
                 temp_path = temp_path.replace(stage, "temp")
 
             _logger.info("Performing unload")
+
             response = wr.athena.unload(
                 sql=sql,
                 path=temp_path,

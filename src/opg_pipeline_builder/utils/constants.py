@@ -23,6 +23,7 @@ etl_steps = [
     "create_curated_database",
     "create_derived",
     "export_extracts",
+    "land_to_processed",
 ]
 aws_loggers = {
     "boto",
@@ -372,10 +373,9 @@ def get_dag_timestamp() -> int | None:
     Union[int, None]
         Timestamp int for DAG run or None, if not applicable
     """
-    mp_args = get_multiprocessing_settings()
+    # mp_args = get_multiprocessing_settings()
 
-    raise_error = False
-
+    # raise_error = False
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
         return dag_ts

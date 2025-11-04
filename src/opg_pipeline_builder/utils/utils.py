@@ -125,7 +125,8 @@ def extract_mojap_partition(
         str: Hive partition of the format
              'mojap_file_land_timestamp=XXXXXXXXXX'
     """
-    regex_pattern = f"""{timestamp_partition_name}=[0-9]{{{10}}}"""
+    # Attempt to match 10 digit string first
+    regex_pattern = rf"{timestamp_partition_name}=(?:\d{{10}}|\d{{8}})"
     stamp_str = re.search(regex_pattern, filepath)
 
     if stamp_str is None:
@@ -159,8 +160,8 @@ def extract_mojap_timestamp(
 
     timestamp_str = partition.replace(result[0], "")
 
-    check_regex = "^[0-9]{10}$"
-    check_result = re.search(check_regex, timestamp_str)
+    check_regex = r"^(?:\d{10}|\d{8})$"
+    check_result = re.fullmatch(check_regex, timestamp_str)
 
     if check_result is None:
         raise ValueError(f"{partition} is not in the correct format")

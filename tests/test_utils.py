@@ -159,6 +159,16 @@ def test_remove_lint_timestamp(test_input, expected):
             "my_funky_partition",
             "my_funky_partition=1651237709",
         ),
+        (
+            "bucket/my_funky_partition=20250101/file.snappy.parquet",
+            "my_funky_partition",
+            "my_funky_partition=20250101",
+        ),
+        (
+            "bucket/mojap_file_land_timestamp=20250101/part=hello/t.snappy.parquet",
+            None,
+            "mojap_file_land_timestamp=20250101",
+        ),
     ],
 )
 def test_extract_mojap_partition(test_input, timestamp_partition_name, expected):
@@ -190,6 +200,8 @@ def test_extract_mojap_partition(test_input, timestamp_partition_name, expected)
         ("mojap_file_land_timestamp=1651237709", None, 1651237709),
         ("gibberish", None, None),
         ("my_funky_partition=1651237707", "my_funky_partition", 1651237707),
+        ("my_funky_partition=16512377", "my_funky_partition", 16512377),
+        ("mojap_file_land_timestamp=16512377", None, 16512377),
     ],
 )
 def test_extract_mojap_timestamp(partition, timestamp_partition_name, expected):

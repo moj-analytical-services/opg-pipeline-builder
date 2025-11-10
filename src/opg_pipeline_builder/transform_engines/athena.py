@@ -364,6 +364,109 @@ class AthenaTransformEngine(BaseTransformEngine):
         temporary_load_database_name: str,
         partitions: list[str],
     ) -> None:
+        # === DIAGNOSTICS (pre-run) ===
+        import json
+        import re
+
+        import boto3
+        import pyarrow.fs as pafs
+        import pyarrow.parquet as pq
+
+        def _extract_from(sql_txt: str):
+            try:
+                m = re.search(
+                    r'FROM\s+"([^"]+)"\."([^"]+)"', sql_txt, flags=re.IGNORECASE
+                )
+                return (m.group(1), m.group(2)) if m else (None, None)
+            except Exception:
+                return (None, None)
+
+        def _dump_glue(db: str, tbl: str):
+            if not db or not tbl:
+                print(
+                    "[DIAG] Could not extract FROM db.table from SQL; skipping Glue dump."
+                )
+                return
+            try:
+                glue = boto3.client("glue")
+                t = glue.get_table(DatabaseName=db, Name=tbl)["Table"]
+                sd = t["StorageDescriptor"]
+                cols = [(c["Name"], c["Type"]) for c in sd["Columns"]]
+                print(f"[DIAG] Query source: {db}.{tbl}")
+                print(
+                    f"[DIAG]   TableType={t.get('TableType')} Location={sd.get('Location')}"
+                )
+                print(f"[DIAG]   Columns={cols}")
+            except Exception as e:
+                print(f"[DIAG] Failed to read Glue {db}.{tbl}: {e}")
+
+        def _dump_parquet_prefix(
+            uri: str,
+            focus_col: str = "address_lines",
+            max_files: int = 5,
+            sample_rows: int = 3,
+        ):
+            try:
+                fs, path = pafs.FileSystem.from_uri(uri)
+                info = fs.get_file_info([path])[0]
+                files = []
+                if info.is_file:
+                    files = [path]
+                else:
+                    sel = pafs.FileSelector(path, recursive=True)
+                    files = [
+                        fi.path
+                        for fi in fs.get_file_info(sel)
+                        if fi.is_file and fi.path.lower().endswith(".parquet")
+                    ]
+                files = files[:max_files]
+                print(
+                    f"[DIAG] Inspecting up to {len(files)} Parquet file(s) under {uri}"
+                )
+                for p in files:
+                    with fs.open_input_file(p) as f:
+                        pf = pq.ParquetFile(f)
+                        sch = pf.schema_arrow
+                        flds = {fld.name: str(fld.type) for fld in sch}
+                        print(f"[DIAG] File: {p}")
+                        print(f"[DIAG]   Schema: {flds}")
+                        if focus_col in flds:
+                            arr = pf.read(columns=[focus_col]).column(0).to_pylist()
+                            shown = 0
+                            for v in arr:
+                                if v is not None:
+                                    val = (
+                                        json.dumps(v, ensure_ascii=False)
+                                        if isinstance(v, (list, dict))
+                                        else str(v)
+                                    )
+                                    print(
+                                        f"[DIAG]   Sample {focus_col}: {val} :: {type(v).__name__}"
+                                    )
+                                    shown += 1
+                                    if shown >= sample_rows:
+                                        break
+                            if shown == 0:
+                                print(f"[DIAG]   No non-null samples for {focus_col}")
+                        else:
+                            print(f"[DIAG]   Column {focus_col} not present")
+            except Exception as e:
+                print(f"[DIAG] Failed to inspect Parquet at {uri}: {e}")
+
+        print("[DIAG] ---- BEGIN LOAD DIAGNOSTICS ----")
+        print(f"[DIAG] transformation_type={transformation_type}")
+        print(f"[DIAG] temporary_load_database_name={temporary_load_database_name}")
+        print(f"[DIAG] input_stage={input_stage} input_path={input_path}")
+        print(f"[DIAG] output_path={output_path}")
+        print(
+            f"[DIAG] output_meta partitions={getattr(output_metadata, 'partitions', None)}"
+        )
+
+        src_db, src_tbl = _extract_from(sql)
+        print(f"[DIAG] Extracted FROM: db={src_db} table={src_tbl}")
+        _dump_glue(src_db, src_tbl)
+        _dump_parquet_prefix(input_path)
+
         transform = getattr(self.transforms, f"{transformation_type}_transform")
 
         try:

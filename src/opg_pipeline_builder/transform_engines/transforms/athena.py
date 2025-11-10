@@ -56,6 +56,19 @@ class AthenaParquetTransformations(AthenaTransformations):
 
             _logger.info("Performing unload")
 
+            # === DIAGNOSTICS (pre-unload expectations) ===
+            cols = (
+                [(c.name, c.type) for c in getattr(output_meta, "columns", [])]
+                if hasattr(output_meta, "columns")
+                else None
+            )
+            print(f"[DIAG] Expected output schema (from metadata): {cols}")
+            print(
+                f"[DIAG] Expected output partitions: {getattr(output_meta, 'partitions', None)}"
+            )
+            print(f"[DIAG] UNLOAD target (temp) path: {temp_path}")
+            print(f"[DIAG] Running in temp DB: {database_name}")
+
             response = wr.athena.unload(
                 sql=sql,
                 path=temp_path,

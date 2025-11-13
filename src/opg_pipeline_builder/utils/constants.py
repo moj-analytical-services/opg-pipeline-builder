@@ -378,6 +378,7 @@ def get_dag_timestamp() -> int | None:
     # raise_error = False
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
+        print(f"Fetched DAG Run Timestamp: {dag_ts}")
         return dag_ts
     except Exception:  # pylint: disable=broad-exception-caught
         return None

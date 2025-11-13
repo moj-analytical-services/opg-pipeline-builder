@@ -39,6 +39,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     mp_args: dict | None = None
     dag_timestamp: int | None = get_dag_timestamp()
+    print("Retrieved DAG Timestamp in DataLinterTransformEngine:", dag_timestamp)
 
     @staticmethod
     def _callback(future: Future, worker: int) -> None:
@@ -225,6 +226,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
                         raise ValueError(msg)
 
                     new_prt = f"{timestamp_partition_name}={dag_timestamp}"
+                    print(f"Moving data to partition: {new_prt}")
 
                     tbl_perm_files = tbl_tmp_files[0].replace("temp/", "")
                     tbl_perm_dag_files = tbl_perm_files.replace(old_prt, new_prt)
@@ -281,6 +283,8 @@ class DataLinterTransformEngine(BaseTransformEngine):
         if dag_timestamp is None:
             _logger.info("Setting run timestamp from environment")
             dag_timestamp = get_dag_timestamp()
+
+        print("Passing in DAG Timestamp to Data Linter run:", dag_timestamp)
 
         _logger.info("Validating multiprocessing arguments")
         self._validate_mp_args(mp_args)

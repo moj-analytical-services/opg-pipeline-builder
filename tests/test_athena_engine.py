@@ -116,7 +116,7 @@ class TestAthenaTransformEngine:
                 extract_mojap_partition(p, timestamp_partition_name=primary_partition)
             )
 
-            con.execute(
+            con.execute(  # nosec
                 f"""
                 CREATE TABLE {table} AS
                 SELECT
@@ -169,7 +169,7 @@ class TestAthenaTransformEngine:
             "FROM [a-zA-Z0-9_]+\\.[a-zA-Z0-9]+", "FROM mocked_table", duckdb_sql[0]
         )
 
-        con.execute(
+        con.execute(  # nosec
             f"""
             CREATE TABLE mocked_table AS
             SELECT
@@ -345,7 +345,7 @@ class TestAthenaTransformEngine:
 
         transform._create_temporary_tables(table_name, snapshot_timestamps=str(prt))
 
-        con.execute(f"SELECT * FROM {self.temp_table_name}")
+        con.execute(f"SELECT * FROM {self.temp_table_name}")  # nosec
 
         tmp_df = con.df()
         os.remove("__temp__")

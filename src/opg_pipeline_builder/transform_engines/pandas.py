@@ -240,15 +240,15 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
 
         for table_name, partitions in unprocessed_partitions:
             _logger.info(f"Starting job for {table_name}")
-            table = self.db.table(table_name)
-            transform_type = table.transform_type()
+            table_obj = self.db.table(table_name)
+            transform_type = table_obj.transform_type()
 
-            input_path = table.get_table_path(self.raw_stage)
-            output_path = table.get_table_path(stage)
+            input_path = table_obj.get_table_path(self.raw_stage)
+            output_path = table_obj.get_table_path(stage)
 
-            input_meta = table.get_table_metadata(self.raw_stage)
-            output_meta = table.get_table_metadata(stage)
-            output_format = table.table_file_formats().get(stage).get("file_format")
+            input_meta = table_obj.get_table_metadata(self.raw_stage)
+            output_meta = table_obj.get_table_metadata(stage)
+            output_format = table_obj.table_file_formats().get(stage).get("file_format")
 
             for partition in partitions:
                 partition_input_path = os.path.join(input_path, partition)

@@ -641,7 +641,7 @@ class DatabaseTable:
 
         table_meta_paths = {
             type: os.path.join(
-                f"src/opg_pipeline/temp_metadata/{type}", f"{self._name}.json"
+                f"/opt/airflow/temp_metadata/{type}", f"{self._name}.json"
             )
             for type in used_stages
         }

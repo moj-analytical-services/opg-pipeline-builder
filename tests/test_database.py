@@ -16,7 +16,7 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                 "name": "testdb",
                 "env": "test",
                 "tables": ["table1", "table2", "table3"],
-                "metadata_path": "/opt/airflow/temp_metadata/",
+                "metadata_path": "src/opg_pipeline/old_metadata/",
                 "lint_config": {
                     "land-base-path": "s3://mojap-land/dep/test/testdb/",
                     "fail-base-path": "s3://mojap-raw-hist/dep/test/testdb/fail/",
@@ -33,14 +33,14 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                             "expect-header": True,
                             "headers-ignore-case": False,
                             "allow-missing-cols": True,
-                            "metadata": "/opt/airflow/temp_metadata/raw_hist/table1.json",
+                            "metadata": "src/opg_pipeline/old_metadata/raw_hist/table1.json",
                         },
                         "table2": {
                             "required": False,
                             "expect-header": True,
                             "headers-ignore-case": False,
                             "allow-missing-cols": True,
-                            "metadata": "/opt/airflow/temp_metadata/raw_hist/table2.json",
+                            "metadata": "src/opg_pipeline/old_metadata/raw_hist/table2.json",
                         },
                     },
                 },
@@ -209,8 +209,8 @@ def test_db_primary_partition(db_fixt):
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table1",
                 },
                 "table_meta_paths": {
-                    "raw_hist": "/opt/airflow/temp_metadata/raw_hist/table1.json",
-                    "curated": "/opt/airflow/temp_metadata/curated/table1.json",
+                    "raw_hist": "src/opg_pipeline/old_metadata/raw_hist/table1.json",
+                    "curated": "src/opg_pipeline/old_metadata/curated/table1.json",
                 },
                 "input_data": None,
                 "lint_config": {
@@ -218,7 +218,7 @@ def test_db_primary_partition(db_fixt):
                     "expect-header": True,
                     "headers-ignore-case": False,
                     "allow-missing-cols": True,
-                    "metadata": "/opt/airflow/temp_metadata/raw_hist/table1.json",
+                    "metadata": "src/opg_pipeline/old_metadata/raw_hist/table1.json",
                 },
                 "transform_args": {
                     "transform_type": "default",
@@ -251,8 +251,8 @@ def test_db_primary_partition(db_fixt):
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table2",
                 },
                 "table_meta_paths": {
-                    "raw_hist": "/opt/airflow/temp_metadata/raw_hist/table2.json",
-                    "curated": "/opt/airflow/temp_metadata/curated/table2.json",
+                    "raw_hist": "src/opg_pipeline/old_metadata/raw_hist/table2.json",
+                    "curated": "src/opg_pipeline/old_metadata/curated/table2.json",
                 },
                 "input_data": None,
                 "lint_config": {
@@ -260,7 +260,7 @@ def test_db_primary_partition(db_fixt):
                     "expect-header": True,
                     "headers-ignore-case": False,
                     "allow-missing-cols": True,
-                    "metadata": "/opt/airflow/temp_metadata/raw_hist/table2.json",
+                    "metadata": "src/opg_pipeline/old_metadata/raw_hist/table2.json",
                 },
                 "transform_args": {
                     "transform_type": "custom",
@@ -287,7 +287,7 @@ def test_db_primary_partition(db_fixt):
                     "derived": "s3://alpha-dep-etl/test/testdb/derived/table3"
                 },
                 "table_meta_paths": {
-                    "derived": "/opt/airflow/temp_metadata/derived/table3.json"
+                    "derived": "src/opg_pipeline/old_metadata/derived/table3.json"
                 },
                 "input_data": {
                     "testdb": {

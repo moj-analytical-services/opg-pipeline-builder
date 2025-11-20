@@ -641,7 +641,7 @@ class DatabaseTable:
 
         table_meta_paths = {
             type: os.path.join(
-                f"src/opg_pipeline/old_metadata/{type}", f"{self._name}.json"
+                get_metadata_path(self._db_name), type, f"{self._name}.json"
             )
             for type in used_stages
         }

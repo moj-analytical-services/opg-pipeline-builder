@@ -16,7 +16,7 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                 "name": "testdb",
                 "env": "test",
                 "tables": ["table1", "table2", "table3"],
-                "metadata_path": "src/opg_pipeline/old_metadata/",
+                "metadata_path": "meta_data/testdb/",
                 "lint_config": {
                     "land-base-path": "s3://mojap-land/dep/test/testdb/",
                     "fail-base-path": "s3://mojap-raw-hist/dep/test/testdb/fail/",
@@ -33,14 +33,14 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                             "expect-header": True,
                             "headers-ignore-case": False,
                             "allow-missing-cols": True,
-                            "metadata": "src/opg_pipeline/old_metadata/raw_hist/table1.json",
+                            "metadata": "meta_data/testdb/raw_hist/table1.json",
                         },
                         "table2": {
                             "required": False,
                             "expect-header": True,
                             "headers-ignore-case": False,
                             "allow-missing-cols": True,
-                            "metadata": "src/opg_pipeline/old_metadata/raw_hist/table2.json",
+                            "metadata": "meta_data/testdb/raw_hist/table2.json",
                         },
                     },
                 },
@@ -209,8 +209,8 @@ def test_db_primary_partition(db_fixt):
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table1",
                 },
                 "table_meta_paths": {
-                    "raw_hist": "src/opg_pipeline/old_metadata/raw_hist/table1.json",
-                    "curated": "src/opg_pipeline/old_metadata/curated/table1.json",
+                    "raw_hist": "meta_data/testdb/raw_hist/table1.json",
+                    "curated": "meta_data/testdb/curated/table1.json",
                 },
                 "input_data": None,
                 "lint_config": {
@@ -218,7 +218,7 @@ def test_db_primary_partition(db_fixt):
                     "expect-header": True,
                     "headers-ignore-case": False,
                     "allow-missing-cols": True,
-                    "metadata": "src/opg_pipeline/old_metadata/raw_hist/table1.json",
+                    "metadata": "meta_data/testdb/raw_hist/table1.json",
                 },
                 "transform_args": {
                     "transform_type": "default",
@@ -251,8 +251,8 @@ def test_db_primary_partition(db_fixt):
                     "curated": "s3://alpha-dep-etl/test/testdb/curated/table2",
                 },
                 "table_meta_paths": {
-                    "raw_hist": "src/opg_pipeline/old_metadata/raw_hist/table2.json",
-                    "curated": "src/opg_pipeline/old_metadata/curated/table2.json",
+                    "raw_hist": "meta_data/testdb/raw_hist/table2.json",
+                    "curated": "meta_data/testdb/curated/table2.json",
                 },
                 "input_data": None,
                 "lint_config": {
@@ -260,7 +260,7 @@ def test_db_primary_partition(db_fixt):
                     "expect-header": True,
                     "headers-ignore-case": False,
                     "allow-missing-cols": True,
-                    "metadata": "src/opg_pipeline/old_metadata/raw_hist/table2.json",
+                    "metadata": "meta_data/testdb/raw_hist/table2.json",
                 },
                 "transform_args": {
                     "transform_type": "custom",
@@ -286,9 +286,7 @@ def test_db_primary_partition(db_fixt):
                 "table_paths": {
                     "derived": "s3://alpha-dep-etl/test/testdb/derived/table3"
                 },
-                "table_meta_paths": {
-                    "derived": "src/opg_pipeline/old_metadata/derived/table3.json"
-                },
+                "table_meta_paths": {"derived": "meta_data/testdb/derived/table3.json"},
                 "input_data": {
                     "testdb": {
                         "table1": {

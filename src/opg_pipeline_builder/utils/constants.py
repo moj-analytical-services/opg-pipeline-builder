@@ -327,7 +327,7 @@ def get_metadata_path(db_name: str = None, env: str = None) -> str:
     if env is None:
         env = get_env()
 
-    mp = os.path.join(meta_data_base_path, env, db_name)
+    mp = os.path.join(meta_data_base_path, db_name)
     return mp
 
 

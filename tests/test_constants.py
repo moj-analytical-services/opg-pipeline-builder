@@ -194,6 +194,7 @@ def test_get_metadata_path():
 
     assert get_metadata_path() == os.path.join(
         "meta_data",
+        os.environ["DATABASE_VERSION"],
         os.environ["DATABASE"],
     )
 

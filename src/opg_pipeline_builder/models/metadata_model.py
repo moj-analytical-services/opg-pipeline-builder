@@ -81,7 +81,7 @@ class Column(BaseModel):
     """Pydantic model representing a column that exists in the metadata for a specific table."""
 
     name: str
-    nullable: bool
+    nullable: bool = False
     enum: list[str | int] = []
     stages: list[Stage]
 

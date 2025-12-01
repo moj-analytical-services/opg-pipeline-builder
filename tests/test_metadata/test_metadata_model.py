@@ -379,6 +379,7 @@ def test_create_old_style_metadata() -> None:
                     create_stage(data_type="date32"),
                     create_stage(name="curated", data_type="string", pattern="blah"),
                 ],
+                nullable=False,
             ),
             create_column(
                 name="name",
@@ -388,6 +389,7 @@ def test_create_old_style_metadata() -> None:
                         name="curated", data_type="float64", pattern="nrettap"
                     ),
                 ],
+                enum=["C", "D"],
             ),
         ],
     )
@@ -396,33 +398,55 @@ def test_create_old_style_metadata() -> None:
     raw_output = table_metadata.create_old_style_metadata("raw")
 
     assert curated_output == {
-        "columns": [
-            {"name": "id", "type": "string"},
-            {"name": "name", "type": "float64"},
-        ],
-        "_converted_from": "arrow_schema",
         "$schema": "https://link-to-schema.com",
-        "name": "test_table",
+        "_converted_from": "arrow_schema",
+        "columns": [
+            {
+                "enum": ["A", "B"],
+                "name": "id",
+                "pattern": "blah",
+                "type": "string",
+            },
+            {
+                "enum": ["C", "D"],
+                "name": "name",
+                "nullable": True,
+                "pattern": "nrettap",
+                "type": "float64",
+            },
+        ],
         "description": "description",
         "file_format": "csv",
-        "sensitive": False,
-        "primary_key": [],
+        "name": "test_table",
         "partitions": ["id"],
+        "primary_key": [],
+        "sensitive": False,
     }
 
     assert raw_output == {
-        "columns": [
-            {"name": "id", "type": "date32"},
-            {"name": "name", "type": "int32"},
-        ],
         "_converted_from": "arrow_schema",
         "$schema": "https://link-to-schema.com",
-        "name": "test_table",
+        "columns": [
+            {
+                "enum": ["A", "B"],
+                "name": "id",
+                "pattern": "pattern",
+                "type": "date32",
+            },
+            {
+                "enum": ["C", "D"],
+                "name": "name",
+                "nullable": True,
+                "pattern": "pattern",
+                "type": "int32",
+            },
+        ],
         "description": "description",
         "file_format": "parquet",
-        "sensitive": False,
-        "primary_key": [],
+        "name": "test_table",
         "partitions": [],
+        "primary_key": [],
+        "sensitive": False,
     }
 
 

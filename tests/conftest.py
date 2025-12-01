@@ -42,10 +42,10 @@ def tests_env_setup_and_teardown():
         test_env = "local"
 
     TEMP_ENV_VARS = {
-        "DEFAULT_DB_ENV": "test",
-        "SOURCE_DB_ENV": "testdb",
+        "DATABASE_VERSION": "test",
+        "DATABASE": "testdb",
         "SOURCE_TBLS_ENV": "table1;table2;table3",
-        "ETL_STAGE_ENV": "raw_hist_to_curated",
+        "STEP": "raw_hist_to_curated",
         "GITHUB_TAG": "testing",
         "TEST_ENV": test_env,
         "AWS_ACCESS_KEY_ID": "testing",

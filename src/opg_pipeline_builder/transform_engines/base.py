@@ -2,7 +2,7 @@ import logging
 from inspect import getmembers, isfunction, signature
 from typing import Optional
 
-from pydantic import BaseModel, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict
 
 from ..database import Database
 from ..validator import PipelineConfig

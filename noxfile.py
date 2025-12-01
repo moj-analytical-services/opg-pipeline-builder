@@ -4,7 +4,7 @@ import nox
 nox.options.reuse_existing_virtualenvs = True
 nox.options.sessions = ["lint", "typecheck", "security", "test", "yamllint"]
 
-PYTHON_VERSIONS = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+PYTHON_VERSIONS = ["3.12", "3.13"]
 
 # targets
 TARGETS = ["src", "tests"]

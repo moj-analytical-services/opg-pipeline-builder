@@ -640,7 +640,9 @@ class DatabaseTable:
         used_stages = stages if transform_type in ["default", "custom"] else ["derived"]
 
         table_meta_paths = {
-            type: os.path.join("src/opg_pipeline/temp_metadata", f"{self._name}.json")
+            type: os.path.join(
+                get_metadata_path(self._db_name), type, f"{self._name}.json"
+            )
             for type in used_stages
         }
 

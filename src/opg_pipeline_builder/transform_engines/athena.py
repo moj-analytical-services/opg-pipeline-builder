@@ -653,7 +653,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     def run_derived(
         self,
         tables: list[str],
-        stage: str = "derived",
+        stage: str = "create_derived",
         jinja_args: dict[str, Any] = None,
     ) -> None:
         """Creates derived tables for db using Athena
@@ -674,7 +674,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         **jinja_args:
             Jinja args to pass to pydbtools calls.
         """
-        if stage != "derived":
+        if stage != "create_derived":
             raise ValueError("Expecting derived ETL step for this transform")
 
         if jinja_args is None:
@@ -684,7 +684,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         primary_partition = db.primary_partition_name()
         db_derived_name = get_full_db_name(db_name=db.name, env=db.env, derived=True)
         tables_to_use = db.tables_to_use(
-            tables, stages=["derived"], tf_types=["derived"]
+            tables, stages=["create_derived"], tf_types=["create_derived"]
         )
 
         databases = wr.catalog.databases(self.db_search_limit)
@@ -700,8 +700,11 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         tf_args = db.transform_args(
             tables_to_use,
-            tf_types=["derived"],
-            **{tbl: {"input": "curated", "output": "derived"} for tbl in tables_to_use},
+            tf_types=["create_derived"],
+            **{
+                tbl: {"input": "curated", "output": "create_derived"}
+                for tbl in tables_to_use
+            },
         )
 
         for tbl in tables_to_use:

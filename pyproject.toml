@@ -50,11 +50,11 @@ dev = [
 addopts = "--cov=src --cov-report=term-missing"
 
 [tool.lint.coverage.paths]
-source = ["src"]
+source = ["src", "tests"]
 
 [tool.lint.coverage.run]
 branch = true
-source = ["src"]
+source = ["src", "tests"]
 
 [tool.lint.coverage.report]
 show_missing = true
@@ -148,7 +148,7 @@ exclude = ["typings", "playground"]
 convention = "google"
 
 [tool.lint.ruff.isort]
-known-first-party = ["src"]
+known-first-party = ["src", "tests"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -159,7 +159,7 @@ line-ending = "auto"
 [tool.lint.isort]
 profile = "black"
 line_length = 88
-known_first_party = ["src"]
+known_first_party = ["src", "tests"]
 
 [tool.lint.bandit]
 skips = [

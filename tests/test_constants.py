@@ -10,12 +10,12 @@ def test_get_env():
 
     assert get_env() == "test"
 
-    orig_env = os.environ["DEFAULT_DB_ENV"]
-    del os.environ["DEFAULT_DB_ENV"]
+    orig_env = os.environ["DATABASE_VERSION"]
+    del os.environ["DATABASE_VERSION"]
     with pytest.raises(KeyError):
         get_env()
 
-    os.environ["DEFAULT_DB_ENV"] = orig_env
+    os.environ["DATABASE_VERSION"] = orig_env
 
 
 def test_get_source_db():
@@ -23,12 +23,12 @@ def test_get_source_db():
 
     assert get_source_db() == "testdb"
 
-    orig_env = os.environ["SOURCE_DB_ENV"]
-    del os.environ["SOURCE_DB_ENV"]
+    orig_env = os.environ["DATABASE"]
+    del os.environ["DATABASE"]
     with pytest.raises(KeyError):
         get_source_db()
 
-    os.environ["SOURCE_DB_ENV"] = orig_env
+    os.environ["DATABASE"] = orig_env
 
 
 def test_get_source_tbls():
@@ -49,13 +49,13 @@ def test_get_etl_stage():
 
     assert get_etl_stage() == "raw_hist_to_curated"
 
-    orig_env = os.environ["ETL_STAGE_ENV"]
-    del os.environ["ETL_STAGE_ENV"]
+    orig_env = os.environ["STEP"]
+    del os.environ["STEP"]
 
     with pytest.raises(KeyError):
         get_etl_stage()
 
-    os.environ["ETL_STAGE_ENV"] = orig_env
+    os.environ["STEP"] = orig_env
 
 
 @pytest.mark.parametrize(
@@ -194,8 +194,8 @@ def test_get_metadata_path():
 
     assert get_metadata_path() == os.path.join(
         "meta_data",
-        os.environ["DEFAULT_DB_ENV"],
-        os.environ["SOURCE_DB_ENV"],
+        os.environ["DATABASE_VERSION"],
+        os.environ["DATABASE"],
     )
 
 

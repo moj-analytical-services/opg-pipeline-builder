@@ -81,7 +81,7 @@ class Column(BaseModel):
     """Pydantic model representing a column that exists in the metadata for a specific table."""
 
     name: str
-    nullable: bool
+    nullable: bool = False
     enum: list[str | int] = []
     stages: list[Stage]
 
@@ -229,18 +229,30 @@ class TableMetaData(BaseModel):
     def create_old_style_metadata(self, stage: str) -> dict[Any, Any]:
         output_metadata: dict[Any, Any] = {}
 
-        output_metadata["columns"] = [
-            {"name": column.name, "type": column.get_stage_for_column(stage).type}
-            for column in self.get_columns_for_stage(stage)
-        ]
-        output_metadata["_converted_from"] = self.converted_from
         output_metadata["$schema"] = self.schema_link
-        output_metadata["name"] = self.name
+        output_metadata["_converted_from"] = self.converted_from
+
+        output_metadata["columns"] = []
+
+        for column in self.get_columns_for_stage(stage):
+            column_data: dict[str, str | bool | list[str | int]] = {}
+            if column.enum:
+                column_data["enum"] = column.enum
+            column_data["name"] = column.name
+            if column.nullable:
+                column_data["nullable"] = column.nullable
+            if column.get_stage_for_column(stage).pattern:
+                column_data["pattern"] = column.get_stage_for_column(stage).pattern
+            column_data["type"] = column.get_stage_for_column(stage).type
+
+            output_metadata["columns"].append(column_data)
+
         output_metadata["description"] = self.description
         output_metadata["file_format"] = self.get_file_format_for_stage(stage).format
-        output_metadata["sensitive"] = self.sensitive
-        output_metadata["primary_key"] = self.primary_key
+        output_metadata["name"] = self.name
         output_metadata["partitions"] = self.partitions if stage == "curated" else []
+        output_metadata["primary_key"] = self.primary_key
+        output_metadata["sensitive"] = self.sensitive
 
         return output_metadata
 

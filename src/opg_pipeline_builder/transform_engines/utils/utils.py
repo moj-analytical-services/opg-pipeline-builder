@@ -2,16 +2,20 @@ import logging
 import os
 from copy import deepcopy
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import awswrangler as wr
 from dataengineeringutils3.s3 import _add_slash
 from mojap_metadata import Metadata
 from pydantic import BaseModel
 
-from ...database import Database
-from ...utils.constants import get_end_date, get_source_tbls, get_start_date
-from ...utils.utils import (
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.utils.constants import (
+    get_end_date,
+    get_source_tbls,
+    get_start_date,
+)
+from opg_pipeline_builder.utils.utils import (
     extract_mojap_partition,
     extract_mojap_timestamp,
     get_modified_filepaths_from_s3_folder,
@@ -21,25 +25,21 @@ logger = logging.getLogger(__name__)
 
 
 class TransformEngineUtils(BaseModel):
-    _db: Database
+    db: Database
 
     class Config:
         underscore_attrs_are_private = True
         arbitrary_types_allowed = True
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        self._db = data.get("db")
-
     def list_table_files(
         self,
         stage: str,
         table_name: str,
-        modified_after: Optional[Union[datetime, None]] = None,
-        modified_before: Optional[Union[datetime, None]] = None,
-        additional_stages: Optional[Union[Dict[str, str], None]] = None,
-        disable_environment: Optional[bool] = False,
-    ) -> List[str]:
+        modified_after: datetime | None = None,
+        modified_before: datetime | None = None,
+        additional_stages: dict[str, str] | None = None,
+        disable_environment: bool = False,
+    ) -> list[str]:
         """Lists files in S3 for a given table
 
         Lists all files in S3 for a given table, at the given ETL stage.
@@ -55,22 +55,22 @@ class TransformEngineUtils(BaseModel):
         table_name: str
             Name of the table to fetch data for.
 
-        modified_after: Optional[Union[datetime, None]]
+        modified_after: Optional[datetime, None]
             Specify a datetime for ensuring returned files
             have been modified after that point.
 
-        modified_before: Optional[Union[datetime, None]]
+        modified_before: Optional[datetime, None]
             Specify a datetime for ensuring returned files
             have been modified before that point.
 
-        additional_stages: Optional[Union[Dict[str, str], None]]
+        additional_stages: Optional[dict[str, str], None]
             Additional valid stages to pass to function e.g. source
             S3 location of files. Should be a dictionary of the form
             {stage_name: stage_s3_data_path}.
 
         Return
         ------
-        List[str]
+        list[str]
             List of S3 paths for the table's data
         """
         if modified_after is None:
@@ -79,7 +79,7 @@ class TransformEngineUtils(BaseModel):
         if modified_before is None and disable_environment is False:
             modified_before = get_end_date()
 
-        table = self._db.table(table_name)
+        table = self.db.table(table_name)
         etl_stages = deepcopy(table.etl_stages())
         table_paths = table.table_data_paths()
 
@@ -98,7 +98,7 @@ class TransformEngineUtils(BaseModel):
         else:
             table_stage_path = table_paths[stage]
 
-        files = get_modified_filepaths_from_s3_folder(
+        files: list[str] = get_modified_filepaths_from_s3_folder(
             table_stage_path,
             modified_after=modified_after,
             modified_before=modified_before,
@@ -110,9 +110,9 @@ class TransformEngineUtils(BaseModel):
         self,
         table_name: str,
         stage: str,
-        extract_timestamp: Optional[bool] = False,
-        **kwargs,
-    ) -> Union[List[str], List[int]]:
+        extract_timestamp: bool = False,
+        **kwargs: dict[Any, Any],
+    ) -> list[str] | list[int]:
         """Lists partitions for table in S3 at ETL stage
 
         Lists default MoJ partitions located for table at the given
@@ -131,16 +131,16 @@ class TransformEngineUtils(BaseModel):
         extract_timestamp: Optional[bool]
             True to retrieve the timestamp only. Defaults to False.
 
-        kwargs:
+        kwargs: dict[Any, Any]
             Passed onto _list_table_files
 
         Return
         ------
-        Union[List[str], List[int]]
+        list[str] | list[int]
             List of partitions for the table at the given ETL stage.
         """
         files = self.list_table_files(stage=stage, table_name=table_name, **kwargs)
-        primary_partition_name = self._db.primary_partition_name()
+        primary_partition_name = self.db.primary_partition_name()
 
         partitions = [
             extract_mojap_partition(f, timestamp_partition_name=primary_partition_name)
@@ -162,10 +162,10 @@ class TransformEngineUtils(BaseModel):
     def list_unprocessed_partitions(
         self,
         table_name: str,
-        input_stage: str = "raw-hist",
+        input_stage: str = "raw_hist",
         output_stage: str = "curated",
-        **kwargs,
-    ) -> Union[List[str], List[int]]:
+        **kwargs: dict[Any, Any],
+    ) -> list[str] | list[int]:
         """Lists unprocessed partitions for table in S3 at ETL stage
 
         Returns table's partitions in the input ETL stage set
@@ -183,12 +183,12 @@ class TransformEngineUtils(BaseModel):
         output_stage: str
             Output ETL stage for the table.
 
-        kwargs:
+        kwargs: dict[Any, Any]
             Passed onto _list_unprocessed_partitions.
 
         Return
         ------
-        Union[List[str], List[int]]
+        list[str] | list[int]]
             List of unprocessed partitions for the table at the
             given ETL stage.
         """
@@ -202,16 +202,16 @@ class TransformEngineUtils(BaseModel):
 
         new_partitions = [f for f in input_partitions if f not in output_partitions]
 
-        new_partitions_list = sorted(list(set(new_partitions)), reverse=True)
+        new_partitions_list: list[str] = sorted(list(set(new_partitions)), reverse=True)
 
         return new_partitions_list
 
     def transform_partitions(
         self,
-        tables: Union[List[str], None] = get_source_tbls(),
-        stages: Dict[str, str] = {"input": "raw-hist", "output": "curated"},
-        tf_types: List[str] = ["default", "custom"],
-    ) -> Dict[str, Union[List[str], List[int]]]:
+        tables: list[str] | None = get_source_tbls(),
+        stages: dict[str, str] = {"input": "raw_hist", "output": "curated"},
+        tf_types: list[str] = ["default", "custom"],
+    ) -> dict[str, list[str] | list[int]]:
         """Lists unprocessed partitions for a set of tables
 
         Returns a dictionary of unprocessed partitions for the
@@ -221,24 +221,24 @@ class TransformEngineUtils(BaseModel):
 
         Params
         ------
-        tables: Union[List[str], None]
+        tables: list[str] | None
             List of table names. None to pass all db tables.
 
-        stages: Dict[str, str]
+        stages: dict[str, str]
             Dictionary of the form
             {"input": "input_stage_name", "output": "output_stage_name"}
 
-        tf_types: List[str]
+        tf_types: list[str]
             List of table transform types to filter given table names on.
 
         Return
         ------
-        Dict[str, Union[List[str], List[int]]]
+        dict[str, list[str] | list[int]]
             Dictionary conatining list of unprocessed partitions for
             the tables passed, given the ETL stages specified.
         """
         stages_list = [v for _, v in stages.items()]
-        tables_to_use = self._db.tables_to_use(
+        tables_to_use = self.db.tables_to_use(
             tables, stages=stages_list, tf_types=tf_types
         )
         transform_partitions_dict = {}
@@ -252,8 +252,8 @@ class TransformEngineUtils(BaseModel):
     def tf_args(
         self,
         table_name: str,
-        stages: Dict[str, str] = {"input": "raw-hist", "output": "curated"},
-    ) -> Tuple[str, str, str]:
+        stages: dict[str, str] = {"input": "raw_hist", "output": "curated"},
+    ) -> tuple[str, str, str]:
         """Transformation arguments for specified table
 
         Returns a tuple consisting of the
@@ -265,19 +265,19 @@ class TransformEngineUtils(BaseModel):
         table_name: str
             Name of the table to create temp tables for.
 
-        stages: Dict[str, str]
+        stages: dict[str, str]
             Dictionary of the form
             {"input": "input_stage_name", "output": "output_stage_name"}
 
         Return
         ------
-        Tuple[str, str, str]
+        tuple[str, str, str]
             transform type, input S3 path and output S3 path
             for the given table and stages.
         """
         transform_stage_args = {table_name: stages}
 
-        tf_args = self._db.transform_args([table_name], **transform_stage_args)
+        tf_args = self.db.transform_args([table_name], **transform_stage_args)
 
         tf_type = tf_args["transforms"][table_name]["transform_type"]
         output_path = tf_args["transforms"][table_name]["output"]["path"]
@@ -318,7 +318,7 @@ class TransformEngineUtils(BaseModel):
         return secret
 
     @staticmethod
-    def cleanup_partitions(base_data_path: str, partitions: List[str]):
+    def cleanup_partitions(base_data_path: str, partitions: list[str]) -> None:
         """Deletes partitions data
 
         Deletes data against partitions specified
@@ -328,7 +328,7 @@ class TransformEngineUtils(BaseModel):
         base_data_path: str
             Base directory for partitions in S3
 
-        partitions: List[str]
+        partitions: list[str]
             List of s3 partitions to delete
         """
         for prt in partitions:
@@ -339,7 +339,7 @@ class TransformEngineUtils(BaseModel):
     def get_common_columns(
         input_metadata: Metadata,
         output_metadata: Metadata,
-    ) -> List[str]:
+    ) -> list[str]:
         input_columns = input_metadata.columns
         output_columns = output_metadata.columns
 

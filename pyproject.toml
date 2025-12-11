@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "opg_pipeline_builder"
-version = "0.3.1"
+version = "0.4.0"
 description = "Provides common re-usable components for building OPG data pipelines"
 readme = "README.md"
 requires-python = ">=3.12, <3.13"
@@ -25,9 +25,9 @@ dependencies = [
 [tool.uv]
 package = true
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
-    "bandit>=1.8.3",
+    "bandit>=1.8.6",
     "detect-secrets>=1.5.0",
     "duckdb>=1.2.2",
     "isort>=6.0.1",
@@ -35,37 +35,38 @@ dev = [
     "mkdocstrings>=0.29.1",
     "mkdocstrings-python>=1.16.10",
     "moto>=5.1.4",
-    "mypy>=1.15.0",
+    "mypy>=1.16.1",
     "nox>=2025.5.1",
     "pre-commit>=4.2.0",
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
     "pytest-mock>=3.14.0",
-    "ruff>=0.11.8",
+    "ruff>=0.12.2",
     "safety>=3.2.9",
     "sqlglot>=26.16.4",
 ]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src"
+addopts = "--cov=src --cov-report=term-missing"
 
 [tool.lint.coverage.paths]
-source = ["src"]
+source = ["src", "tests"]
 
 [tool.lint.coverage.run]
 branch = true
-source = ["src"]
+source = ["src", "tests"]
 
 [tool.lint.coverage.report]
 show_missing = true
 
 [tool.mypy]
 strict = true
-exclude = "migrations|tests|dist|build|typings"
+exclude = "migrations|dist|build|typings"
 explicit_package_bases = true
 warn_unused_ignores = true
 show_error_codes = true
 ignore_missing_imports = true
+
 
 [tool.lint.ruff]
 select = [
@@ -147,7 +148,7 @@ exclude = ["typings", "playground"]
 convention = "google"
 
 [tool.lint.ruff.isort]
-known-first-party = ["src"]
+known-first-party = ["src", "tests"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -158,7 +159,7 @@ line-ending = "auto"
 [tool.lint.isort]
 profile = "black"
 line_length = 88
-known_first_party = ["src"]
+known_first_party = ["src", "tests"]
 
 [tool.lint.bandit]
 skips = [

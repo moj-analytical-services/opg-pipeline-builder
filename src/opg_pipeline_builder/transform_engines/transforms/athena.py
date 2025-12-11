@@ -5,9 +5,9 @@ from copy import deepcopy
 import awswrangler as wr
 from mojap_metadata import Metadata
 
-from ...utils.constants import etl_stages
-from ...utils.schema_reader import SchemaReader
-from .base import BaseTransformations
+from opg_pipeline_builder.transform_engines.transforms.base import BaseTransformations
+from opg_pipeline_builder.utils.constants import etl_stages
+from opg_pipeline_builder.utils.schema_reader import SchemaReader
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class AthenaTransformations(BaseTransformations, ABC):
     @abstractmethod
     def default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str
-    ): ...
+    ) -> None: ...
 
 
 class AthenaParquetTransformations(AthenaTransformations):

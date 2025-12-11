@@ -14,7 +14,7 @@ class TestSchemaReader:
 
     sr_utils = srutils
     aws_region = aws_region
-    meta = Metadata.from_json("tests/data/meta_data/testdb/raw-hist/table2.json")
+    meta = Metadata.from_json("tests/data/meta_data/test/testdb/raw_hist/table2.json")
     data = pd.DataFrame.from_dict(
         {"my_int": [0, 1, 2, 3, 4], "hobby": ["jump", "hop", "skip", "walk", "run"]}
     )

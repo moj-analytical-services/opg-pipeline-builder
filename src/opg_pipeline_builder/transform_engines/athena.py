@@ -1,16 +1,17 @@
 import logging
 import os
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import awswrangler as wr
 import pydbtools as pydb
 from mojap_metadata import Metadata
 
+from opg_pipeline_builder.models.metadata_model import MetaData
+
 from ..database import Database
 from ..utils.constants import (
     get_end_date,
     get_full_db_name,
-    get_source_db,
     get_source_tbls,
     get_start_date,
 )
@@ -34,46 +35,37 @@ class AthenaTransformEngine(BaseTransformEngine):
         Optional jinja args to pass onto the pydbtools SQL call.
     """
 
-    sql_table_filter: Optional[bool] = False
-    db_search_limit: Optional[Union[int, None]] = None
-    jinja_args: Optional[Union[dict, None]] = None
-    transforms: Optional[Union[athena_transforms.AthenaTransformations, None]] = None
+    sql_table_filter: bool = False
+    db_search_limit: int | None = None
+    jinja_args: dict[Any, Any] | None = None
+    transforms: athena_transforms.AthenaTransformations | None = None
+    transforms_type: str | None = None
+    input_stage: str | None = "processed"
 
-    def __init__(
+    def model_post_init(
         self,
-        db_name: Optional[str] = None,
-        utils: Optional[AthenaTransformEngineUtils] = None,
-        transforms: Optional[athena_transforms.AthenaTransformations] = None,
-        transforms_type: Optional[Union[str, None]] = None,
-        **kwargs,
-    ):
-        if db_name is None:
-            _logger.debug("Setting database for engine from environment")
-            db_name = get_source_db()
-            _logger.debug(f"Engine database environment variable set to {db_name}")
+        __context,
+    ) -> None:
+        self.utils = AthenaTransformEngineUtils(db=self.db)
+        super().model_post_init(__context)
 
-        db = Database(db_name=db_name)
-        utils = AthenaTransformEngineUtils(db=db) if utils is None else utils
-
-        super().__init__(db_name=db_name, utils=utils, **kwargs)
-
-        if transforms is None:
+        if self.transforms is None:
             transforms_type = (
-                DEFAULT_ATHENA_TRANSFORM if transforms_type is None else transforms_type
+                DEFAULT_ATHENA_TRANSFORM
+                if self.transforms_type is None
+                else self.transforms_type
             )
             formatted_transform_type = transforms_type[0].upper() + transforms_type[1:]
             transforms_class_name = f"Athena{formatted_transform_type}Transformations"
             transforms_class = getattr(athena_transforms, transforms_class_name)
-            transforms = transforms_class(utils=self.utils, db=self.db)
-
-        self.transforms = transforms
+            self.transforms = transforms_class(utils=self.utils, db=self.db)
 
     def _default_jinja_args(
         self,
-        snapshot_timestamps: Optional[Union[str, None]] = None,
-        database_name: Optional[Union[str, None]] = None,
-        environment: Optional[Union[str, None]] = None,
-    ) -> Dict[str, str]:
+        snapshot_timestamps: str | None = None,
+        database_name: str | None = None,
+        environment: str | None = None,
+    ) -> dict[str, str]:
         environment = self.db.env if environment is None else environment
 
         database_name = (
@@ -98,8 +90,8 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _check_shared_temporary_table_snapshots(
         self,
         temporary_table_name: str,
-        expected_snapshots: List[str],
-    ) -> Tuple[bool, bool]:
+        expected_snapshots: list[str],
+    ) -> tuple[bool, bool]:
         primary_partition = self.db.primary_partition_name()
         try:
             check_prts_sql = pydb.render_sql_template(
@@ -133,10 +125,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         temp_table_name: str,
         table_sql_filepath: str,
-        base_database_name: Optional[Union[str, None]] = None,
-        environment: Optional[Union[str, None]] = None,
-        **additional_jinja_args,
-    ):
+        base_database_name: str | None = None,
+        environment: str | None = None,
+        **additional_jinja_args: dict[Any, Any],
+    ) -> None:
         sql = pydb.get_sql_from_file(
             table_sql_filepath,
             jinja_args={
@@ -151,7 +143,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         pydb.create_temp_table(sql, table_name=temp_table_name)
 
     def _create_shared_temporary_tables(
-        self, tf_types: List[str], snapshot_timestamps: str, **jinja_args
+        self,
+        tf_types: list[str],
+        snapshot_timestamps: str,
+        **jinja_args: dict[Any, Any],
     ) -> None:
         """Create db shared temp tables
 
@@ -212,7 +207,9 @@ class AthenaTransformEngine(BaseTransformEngine):
                 _logger.info(f"Validating shared intermediate temp table {sql_tbl}")
                 self.utils.check_table_is_not_empty(table_name=sql_tbl)
 
-    def _create_temporary_tables(self, table_name: str, **jinja_args):
+    def _create_temporary_tables(
+        self, table_name: str, **jinja_args: dict[Any, Any]
+    ) -> None:
         """Create temp tables for the given db table
 
         Creates temporary tables for the given table as specified
@@ -266,7 +263,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         primary_partition = self.db.primary_partition_name()
 
-        if input_stage in ["raw", "raw-hist"]:
+        if input_stage in ["raw", "raw_hist"]:
             tbl_cast_args = tbl.get_cast_cols()
 
             meta_cast_args = [
@@ -298,7 +295,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         return input_meta
 
-    def _get_sql_partitions(self, partitions: List[str]) -> str:
+    def _get_sql_partitions(self, partitions: list[str]) -> str:
         prts_timestamps = [
             str(
                 extract_mojap_timestamp(
@@ -325,7 +322,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _get_sql(
         self,
         table_name: str,
-        partitions: List[str],
+        partitions: list[str],
         transformation_type: str,
         input_metadata: Metadata,
         output_metadata: Metadata,
@@ -365,15 +362,15 @@ class AthenaTransformEngine(BaseTransformEngine):
         output_metadata: Metadata,
         output_path: str,
         temporary_load_database_name: str,
-        partitions: List[str],
-    ):
+        partitions: list[str],
+    ) -> None:
         transform = getattr(self.transforms, f"{transformation_type}_transform")
 
         try:
             transform(sql, output_metadata, output_path, temporary_load_database_name)
 
             wr.catalog.delete_database(temporary_load_database_name)
-            if input_stage != "raw-hist":
+            if input_stage != "raw_hist":
                 self.utils.cleanup_partitions(
                     base_data_path=input_path, partitions=partitions
                 )
@@ -395,18 +392,14 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             raise
 
-    def run(
-        self, stages: Dict[str, str], tables: Union[List[str], None] = None
-    ) -> None:
+    def run(self, table: str, _: MetaData, stage: str) -> None:
         """Use AWS Athena to perform data transformation
 
         Implements SQL via AWS Athena to perform transformation.
 
         Params
         ------
-        stages: Dict[str, str]
-            Dictionary of the format
-            {"input": "input_etl_stage", "output": "output_etl_stage"}
+        stages [str]: The name of the output_etl_stage
 
         tables: Union[List[str], None]
             List of tables to apply ETL processing step to. If None, then will
@@ -417,7 +410,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         ------
         None
         """
+        tables = [table]
         tables = get_source_tbls() if tables is None else tables
+
+        stages = {"input": self.input_stage, "output": stage}
 
         db = self.db
         databases = wr.catalog.databases(limit=self.db_search_limit)
@@ -493,9 +489,9 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _new_derived_table_partitions(
         self,
         table_name: str,
-        transform_args: Dict,
+        transform_args: dict[Any, Any],
         primary_partition: str,
-    ) -> List[str]:
+    ) -> list[str]:
         cutoff_sql_clause = self._create_derived_cutoff_sql_clause()
         ipt_args = transform_args["transforms"][table_name]["input"]
         db_ipts = list(ipt_args.keys())
@@ -510,7 +506,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         db_tbl_tf_ipts = [
-            (db, tbl, Database(db).table(tbl).transform_type()) for db, tbl in db_tbls
+            (db, tbl, Database(self.config).table(tbl).transform_type())
+            for db, tbl in db_tbls
         ]
 
         db_tbl_ipts = [
@@ -561,9 +558,9 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _create_intermediate_tables_for_derived_table(
         self,
         table_name: str,
-        partitions: List[str],
-        jinja_args: Dict,
-    ):
+        partitions: list[str],
+        jinja_args: dict[Any, Any],
+    ) -> None:
         prts_arg = ",".join(partitions)
 
         table = self.db.table(table_name)
@@ -582,9 +579,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         table_name: str,
         primary_partition: str,
-        partitions: List[str],
-        transform_args: Dict,
-        jinja_args: Dict,
+        partitions: list[str],
+        transform_args: dict[Any, Any],
+        jinja_args: dict[Any, Any],
     ) -> Metadata:
         table = self.db.table(table_name)
         prts_arg = ",".join(partitions)
@@ -655,9 +652,9 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def run_derived(
         self,
-        tables: List[str],
-        stage: Optional[str] = "derived",
-        jinja_args: Optional[dict] = None,
+        tables: list[str],
+        stage: str = "create_derived",
+        jinja_args: dict[str, Any] = None,
     ) -> None:
         """Creates derived tables for db using Athena
 
@@ -677,7 +674,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         **jinja_args:
             Jinja args to pass to pydbtools calls.
         """
-        if stage != "derived":
+        if stage != "create_derived":
             raise ValueError("Expecting derived ETL step for this transform")
 
         if jinja_args is None:
@@ -687,7 +684,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         primary_partition = db.primary_partition_name()
         db_derived_name = get_full_db_name(db_name=db.name, env=db.env, derived=True)
         tables_to_use = db.tables_to_use(
-            tables, stages=["derived"], tf_types=["derived"]
+            tables, stages=["create_derived"], tf_types=["create_derived"]
         )
 
         databases = wr.catalog.databases(self.db_search_limit)
@@ -703,8 +700,11 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         tf_args = db.transform_args(
             tables_to_use,
-            tf_types=["derived"],
-            **{tbl: {"input": "curated", "output": "derived"} for tbl in tables_to_use},
+            tf_types=["create_derived"],
+            **{
+                tbl: {"input": "curated", "output": "create_derived"}
+                for tbl in tables_to_use
+            },
         )
 
         for tbl in tables_to_use:

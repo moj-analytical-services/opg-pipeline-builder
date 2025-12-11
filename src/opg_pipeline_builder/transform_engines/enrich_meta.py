@@ -2,7 +2,6 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
 
 import pandas as pd
 from jinja2 import Template
@@ -14,10 +13,10 @@ from .base import BaseTransformEngine
 
 
 class EnrichMetaTransformEngine(BaseTransformEngine):
-    raw_data_stage: Optional[str] = "land"
+    raw_data_stage: str = "land"
 
     @staticmethod
-    def _get_meta_template_path(table_meta_path: str):
+    def _get_meta_template_path(table_meta_path: str) -> str:
         table_meta_pathlib = Path(table_meta_path)
         table_meta_template_path = os.path.join(
             table_meta_pathlib.parent.as_posix(), "templates", table_meta_pathlib.name
@@ -25,28 +24,28 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
         return table_meta_template_path
 
     @staticmethod
-    def _get_column_names_from_csv(filepath: str) -> List[str]:
+    def _get_column_names_from_csv(filepath: str) -> list[str]:
         table_head_df = pd.read_csv(filepath, nrows=0)
-        table_columns = table_head_df.columns.to_list()
+        table_columns: list[str] = table_head_df.columns.to_list()
         return table_columns
 
     @staticmethod
-    def _get_column_names_from_parquet(filepath: str) -> List[str]:
+    def _get_column_names_from_parquet(filepath: str) -> list[str]:
         sr = SchemaReader()
         meta = sr.read_schema(s3_path=filepath, moj_meta=True)
-        table_columns = meta.column_names
+        table_columns: list[str] = meta.column_names
         return table_columns
 
     @classmethod
-    def _get_column_names(cls, filepath: str) -> List[str]:
+    def _get_column_names(cls, filepath: str) -> str:
         ext = Path(filepath).suffix.replace(".", "")
         method_name = f"_get_column_names_from_{ext}"
         method = getattr(cls, method_name)
         return method(filepath)
 
     def _extract_jinja_values_from_column_names(
-        self, table_name: str, raw_data_stage: Optional[str] = "land"
-    ):
+        self, table_name: str, raw_data_stage: str = "land"
+    ) -> dict[str, str]:
         table_files = sorted(
             self.utils.list_table_files(
                 stage=raw_data_stage,
@@ -85,10 +84,10 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
 
     def _enrich_metadata(
         self,
-        tables: List[str],
-        meta_stage: Optional[str] = "raw-hist",
-        raw_data_stage: Optional[str] = "land",
-    ):
+        tables: list[str],
+        meta_stage: str = "raw_hist",
+        raw_data_stage: str = "land",
+    ) -> None:
         for table_name in tables:
             table = self.db.table(table_name)
 

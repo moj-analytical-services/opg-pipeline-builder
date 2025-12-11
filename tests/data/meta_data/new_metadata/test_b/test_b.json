@@ -1,0 +1,81 @@
+{
+  "columns": [
+    {
+      "name": "name",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw_hist",
+          "type": "string"
+        },
+        {
+          "name": "processed",
+          "type": "string"
+        },
+        {
+          "name": "curated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "address",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "raw_hist",
+          "type": "string"
+        },
+        {
+          "name": "processed",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "processed",
+          "type": "string"
+        },
+        {
+          "name": "curated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "phone",
+      "nullable": true,
+      "stages": [
+        {
+          "name": "curated",
+          "type": "date32"
+        }
+      ]
+    }
+  ],
+  "converted_from": "arrow_schema",
+  "description": "",
+  "file_formats": [
+    {
+      "format": "csv",
+      "name": "raw_hist"
+    },
+    {
+      "format": "parquet",
+      "name": "processed"
+    },
+    {
+      "format": "parquet",
+      "name": "curated"
+    }
+  ],
+  "name": "test_b",
+  "partitions": [],
+  "primary_key": [],
+  "schema_link": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.4.0.json",
+  "sensitive": false
+}

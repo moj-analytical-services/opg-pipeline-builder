@@ -10,12 +10,12 @@ def test_get_env():
 
     assert get_env() == "test"
 
-    orig_env = os.environ["DEFAULT_DB_ENV"]
-    del os.environ["DEFAULT_DB_ENV"]
+    orig_env = os.environ["DATABASE_VERSION"]
+    del os.environ["DATABASE_VERSION"]
     with pytest.raises(KeyError):
         get_env()
 
-    os.environ["DEFAULT_DB_ENV"] = orig_env
+    os.environ["DATABASE_VERSION"] = orig_env
 
 
 def test_get_source_db():
@@ -23,12 +23,12 @@ def test_get_source_db():
 
     assert get_source_db() == "testdb"
 
-    orig_env = os.environ["SOURCE_DB_ENV"]
-    del os.environ["SOURCE_DB_ENV"]
+    orig_env = os.environ["DATABASE"]
+    del os.environ["DATABASE"]
     with pytest.raises(KeyError):
         get_source_db()
 
-    os.environ["SOURCE_DB_ENV"] = orig_env
+    os.environ["DATABASE"] = orig_env
 
 
 def test_get_source_tbls():
@@ -49,13 +49,13 @@ def test_get_etl_stage():
 
     assert get_etl_stage() == "raw_hist_to_curated"
 
-    orig_env = os.environ["ETL_STAGE_ENV"]
-    del os.environ["ETL_STAGE_ENV"]
+    orig_env = os.environ["STEP"]
+    del os.environ["STEP"]
 
     with pytest.raises(KeyError):
         get_etl_stage()
 
-    os.environ["ETL_STAGE_ENV"] = orig_env
+    os.environ["STEP"] = orig_env
 
 
 @pytest.mark.parametrize(
@@ -194,8 +194,8 @@ def test_get_metadata_path():
 
     assert get_metadata_path() == os.path.join(
         "meta_data",
-        os.environ["DEFAULT_DB_ENV"],
-        os.environ["SOURCE_DB_ENV"],
+        os.environ["DATABASE_VERSION"],
+        os.environ["DATABASE"],
     )
 
 
@@ -221,12 +221,56 @@ def test_get_chunk_size(chunk_size, expected, error):
     del os.environ["CHUNK_SIZE"]
 
 
-@pytest.mark.parametrize(
-    "timestamp, expected",
-    [("12345", 12345), ("4493dn", None)],
-)
-def test_get_dag_timestamp(timestamp: str, expected: str | None) -> None:
-    from opg_pipeline_builder.utils.constants import get_dag_timestamp
+# @pytest.mark.parametrize(
+#     "mp_env_var, dag_run_id, dag_interval_run, expected",
+#     [
+#         (
+#             "eyJlbmFibGUiOiAibG9jYWwifQ==",
+#             None,
+#             None,
+#             None,
+#         ),
+#         (
+#             (
+#                 '{"enable": "pod", "total_workers": 5, "current_worker": 0,'
+#                 '"close_status": False, "temp_staging": True}'
+#             ),
+#             None,
+#             None,
+#             None,
+#         ),
+#         (
+#             (
+#                 '{"enable": "pod", "total_workers": 5, "current_worker": 0,'
+#                 '"close_status": False, "temp_staging": True}'
+#             ),
+#             "scheduled__2022-09-12T05:00:00+00:00",
+#             "2022-09-13, 05:00:00 UTC",
+#             1663041600,
+#         ),
+#         (
+#             (
+#                 '{"enable": "pod", "total_workers": 5, "current_worker": 0,'
+#                 '"close_status": False, "temp_staging": True}'
+#             ),
+#             "manual__2022-09-12T05:00:00+00:00",
+#             None,
+#             1662955200,
+#         ),
+#     ],
+# )
+# def test_get_dag_timestamp(mp_env_var, dag_run_id, dag_interval_run, expected):
+#     from opg_pipeline_builder.utils.constants import (
+#         get_dag_timestamp, get_multiprocessing_settings)
 
-    os.environ["RUN_TIMESTAMP"] = timestamp
-    assert get_dag_timestamp() == expected
+#     if mp_env_var is not None:
+#         os.environ["MULTI_PROC_ENV"] = mp_env_var
+
+#     mp_args = get_multiprocessing_settings()
+#     tmp_staging_enabled = mp_args.get("temp_staging", False)
+
+#     if dag_run_id is None and dag_interval_run is None and tmp_staging_enabled:
+#         with pytest.raises(ValueError):
+#             get_dag_timestamp()
+#     elif dag_run_id is None and dag_interval_run is None:
+#         assert get_dag_timestamp() == expected

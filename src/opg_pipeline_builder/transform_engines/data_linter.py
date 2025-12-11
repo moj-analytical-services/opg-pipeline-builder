@@ -3,16 +3,23 @@ import os
 from concurrent.futures import Future, ProcessPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import List, Optional, Union
+from typing import Any
 
 import awswrangler as wr
 from data_linter import validation
 from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
 
-from ..utils.constants import get_dag_timestamp, get_multiprocessing_settings
-from ..utils.utils import (extract_mojap_partition,
-                           get_modified_filepaths_from_s3_folder)
+from opg_pipeline_builder.models.metadata_model import MetaData
+from opg_pipeline_builder.utils.constants import (
+    get_dag_timestamp,
+    get_multiprocessing_settings,
+)
+from opg_pipeline_builder.utils.utils import (
+    extract_mojap_partition,
+    get_modified_filepaths_from_s3_folder,
+)
+
 from .base import BaseTransformEngine
 
 _logger: logging.Logger = logging.getLogger(__name__)
@@ -20,21 +27,21 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 class DataLinterTransformEngine(BaseTransformEngine):
     """
-    mp_args: Optional[Union[dict, None]]
+    mp_args: dict | None
         Multiprocessing arguments for data_linter. See validator
         in opg_etl.utils.linter_utils for structure of the dictionary
         to pass.
 
-    dag_timestamp: Optional[Union[int, None]]
+    dag_timestamp: int | None
         Integer timestamp for the pipeline run. Only needs to be specified
         if temp_staging is set to True in mp_args.
     """
 
-    mp_args: Optional[Union[dict, None]] = None
-    dag_timestamp: Optional[Union[int, None]] = get_dag_timestamp()
+    mp_args: dict | None = None
+    dag_timestamp: int | None = get_dag_timestamp()
 
     @staticmethod
-    def _callback(future: Future, worker: int):
+    def _callback(future: Future, worker: int) -> None:
         _logger.info(f"Worker {worker} complete")
 
     @staticmethod
@@ -81,7 +88,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     raise ValueError("Current worker is out of range.")
 
     @staticmethod
-    def _start_linter(config, mp_args: dict) -> None:
+    def _start_linter(config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
         if mp_args is not None:
             mp_enable = mp_args["enable"]
 
@@ -115,13 +122,13 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 raise ValueError("Unknown mp_args error")
 
     @classmethod
-    def _run_linter(cls, config, mp_args: dict) -> None:
+    def _run_linter(cls, config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
         if mp_args is None:
             _logger.info("Running validation with no multiprocessing")
             validation.run_validation(config)
 
         elif mp_args["enable"] == "local":
-            max_workers = os.cpu_count()
+            max_workers: int = os.cpu_count()
             workers = range(0, max_workers)
             config_dc = [deepcopy(config) for _ in workers]
             _logger.info(f"Running validation with {max_workers} workers")
@@ -151,7 +158,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             raise ValueError("Invalid multiprocessing enable argument")
 
     @staticmethod
-    def _close_linter(config, mp_args: dict) -> None:
+    def _close_linter(config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
         if mp_args is not None:
             mp_enable = mp_args["enable"]
             if mp_enable == "local":
@@ -172,10 +179,10 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @staticmethod
     def _move_from_tmp_to_pass(
-        config,
-        mp_args,
+        config: str | dict[Any, Any],
+        mp_args: dict[Any, Any],
         dag_timestamp: int,
-        timestamp_partition_name: Optional[str] = "mojap_file_land_timestamp",
+        timestamp_partition_name: str = "mojap_file_land_timestamp",
     ) -> None:
         proceed = False
         if mp_args is not None:
@@ -210,9 +217,11 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     old_prt = old_prts[0]
 
                     if len(set(old_prts)) > 1:
-                        msg = "Process is designed to only run on a single partition of"
-                        "raw data. More than one partition was found. Partitions:"
-                        f"{','.join(old_prts)}"
+                        msg = (
+                            "Process is designed to only run on a single partition of"
+                            "raw data. More than one partition was found. Partitions:"
+                            f"{','.join(old_prts)}"
+                        )
                         raise ValueError(msg)
 
                     new_prt = f"{timestamp_partition_name}={dag_timestamp}"
@@ -232,13 +241,13 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 wr.s3.delete_objects(tbl_tmp_files)
 
     def _get_database_linter_config(
-        self, tables: List[str], stage: str, temporary_staging: bool
-    ) -> dict:
+        self, tables: list[str], stage: str, temporary_staging: bool
+    ) -> dict[Any, Any]:
         return self.db.lint_config(
             tables, meta_stage=stage, tmp_staging=temporary_staging
         )
 
-    def run(self, tables: List[str], stage: str = "raw-hist") -> None:
+    def run(self, table: str, metadata: MetaData, stage: str = "raw_hist") -> None:
         """Runs data_linter based on db config over the given tables
 
         Runs data_linter over data in land and moves it to
@@ -263,6 +272,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         """
         mp_args = self.mp_args
         dag_timestamp = self.dag_timestamp
+        tables = [table]
 
         if mp_args is None:
             _logger.info("Setting multiprocessing arguments from environment")

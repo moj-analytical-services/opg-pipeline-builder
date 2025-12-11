@@ -11,7 +11,7 @@ tables:
     etl_stages: &default_etl
       land:
         file_format: parquet
-      raw-hist:
+      raw_hist:
         file_format: parquet
       curated:
         file_format: parquet

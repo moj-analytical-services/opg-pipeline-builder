@@ -2,65 +2,60 @@ import nox
 
 # options
 nox.options.reuse_existing_virtualenvs = True
-SILENT_DEFAULT = True
-SILENT_CODE_MODIFIERS = False
-RUNNER = "uv"
+nox.options.sessions = ["lint", "typecheck", "security", "test", "yamllint"]
+
+PYTHON_VERSIONS = ["3.12", "3.13"]
 
 # targets
-PACKAGE_LOCATION = "."
+TARGETS = ["src", "tests"]
 
 
-@nox.session(python="3.12", tags=["lint"])
-def ruff(session: nox.Session) -> None:
-    """Lint with ruff."""
-    _install(session)
-    _run(session, "ruff", "check", PACKAGE_LOCATION)
+def install_with_tools(session: nox.Session, *tools: str) -> None:
+    """Install project and specified tools."""
+    session.install(".")
+    if tools:
+        session.install(*tools)
 
 
-@nox.session(python="3.12", tags=["format"])
-def isort(session: nox.Session) -> None:
-    """Sort imports with isort."""
-    _install(session)
-    _run(session, "isort", PACKAGE_LOCATION)
+def run_tool(session: nox.Session, tool: str, *args: str) -> None:
+    """Run a tool with optional args or posargs override."""
+    args = session.posargs or list(args) or TARGETS
+    session.run(tool, *args)
 
 
-@nox.session(python="3.12", tags=["test"])
-def pytest(session: nox.Session) -> None:
-    """Run the test suite with pytest."""
-    args = session.posargs or ("--cov", "-m", "not e2e")
-    _install(session)
-    _run(session, "pytest", *args)
+@nox.session(tags=["lint"])
+def lint(session: nox.Session) -> None:
+    """Run ruff (lint + format) and isort."""
+    install_with_tools(session, "ruff", "isort")
+    run_tool(session, "ruff", "check", *TARGETS)
+    run_tool(session, "isort", *TARGETS)
 
 
-@nox.session(python="3.12", tags=["typecheck"])
-def mypy(session: nox.Session) -> None:
-    """Verify types using mypy (so it is static)."""
-    _install(session)
-    _run(session, "mypy", PACKAGE_LOCATION)
+@nox.session(tags=["typecheck"])
+def typecheck(session: nox.Session) -> None:
+    """Run mypy on source code."""
+    install_with_tools(session, "mypy")
+    run_tool(session, "mypy", "--config-file=.github/linters/.mypy.ini", *TARGETS)
 
 
-@nox.session(python="3.12", tags=["security"])
-def bandit(session: nox.Session) -> None:
-    _install(session)
-    _run(session, "bandit", "-r", "src")
+@nox.session(tags=["security"])
+def security(session: nox.Session) -> None:
+    """Run Bandit security checks."""
+    install_with_tools(session, "bandit")
+    session.run("bandit", "-r", *TARGETS, "--skip", "B101")
 
 
-@nox.session(python="3.12", tags=["lint"])
+@nox.session(tags=["test"])
+def test(session: nox.Session) -> None:
+    """Run pytest test suite."""
+    install_with_tools(session, "pytest", "pytest-cov", "moto", "duckdb", "sqlglot")
+    args = session.posargs or []
+    session.run("pytest", *args)
+
+
+@nox.session(tags=["lint"])
 def yamllint(session: nox.Session) -> None:
-    _install(session, "yamllint")
-    _run(session, "yamllint", "src/", ".pre-commit-config.yaml")
-
-
-def _install(session: nox.Session, *args: str) -> None:
-    session.run(
-        RUNNER, "pip", "install", ".", *args, external=True, silent=SILENT_DEFAULT
-    )
-
-
-def _run(
-    session: nox.Session,
-    target: str,
-    *args: str,
-    silent: bool = SILENT_DEFAULT,
-) -> None:
-    session.run(RUNNER, "run", target, *args, external=True, silent=silent)
+    """Run YAML linter."""
+    install_with_tools(session, "yamllint")
+    args = session.posargs or ["src", "tests"]
+    session.run("yamllint", *args)

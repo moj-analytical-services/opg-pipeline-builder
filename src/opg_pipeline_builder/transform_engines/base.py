@@ -2,43 +2,25 @@ import logging
 from inspect import getmembers, isfunction, signature
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from ..database import Database
-from ..utils.constants import get_source_db
+from ..validator import PipelineConfig
 from .utils.utils import TransformEngineUtils
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class BaseTransformEngine(BaseModel):
+    config: PipelineConfig
     db: Database
-    utils: TransformEngineUtils
+    utils: Optional[TransformEngineUtils] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def __init__(
-        self,
-        db_name: Optional[str] = None,
-        utils: Optional[TransformEngineUtils] = None,
-        **kwargs,
-    ):
-        if db_name is None:
-            _logger.debug("Setting database for engine from environment")
-            db_name = get_source_db()
-            _logger.debug(f"Engine database environment variable set to {db_name}")
-
-        _logger.debug("Creating database object for engine")
-        db = Database(db_name=db_name)
-
-        _logger.debug("Creating utils object for engine")
-        utils = TransformEngineUtils(db=db) if utils is None else utils
-
-        _logger.debug(f"Creating engine with database {db.name}")
-        super().__init__(db=db, utils=utils, **kwargs)
-
-        _logger.debug("Validating engine public method arguments")
+    def model_post_init(self, __context) -> None:
+        if not self.utils:
+            self.utils = TransformEngineUtils(db=self.db)
         self._validate_method_kwargs()
 
     @staticmethod
@@ -49,7 +31,7 @@ class BaseTransformEngine(BaseModel):
         if "stages" or "stage" in parameters:
             return True
 
-    def _validate_method_kwargs(self):
+    def _validate_method_kwargs(self) -> None:
         methods = [
             signature(getattr(self, method_name)).parameters
             for method_name, _ in getmembers(self, predicate=isfunction)
@@ -65,5 +47,5 @@ class BaseTransformEngine(BaseModel):
 
         if not validation:
             raise AssertionError(
-                "Transform engine public methods have invalid" " arguments."
+                "Transform engine public methods have invalid arguments."
             )

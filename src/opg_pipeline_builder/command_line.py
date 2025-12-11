@@ -141,8 +141,7 @@ def main():
             run_full_pipeline(pipeline)
     elif args.step is None:
         print(
-            f"{bcolors.BOLD}\tRunning full pipeline for "
-            f"{args.database}{bcolors.ENDC}"
+            f"{bcolors.BOLD}\tRunning full pipeline for {args.database}{bcolors.ENDC}"
         )
         run_full_pipeline(pipeline)
     else:

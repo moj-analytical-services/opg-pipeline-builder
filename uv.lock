@@ -1122,6 +1122,7 @@ dependencies = [
     { name = "pydbtools" },
     { name = "s3fs" },
     { name = "ssm-parameter-store" },
+    { name = "types-croniter" },
 ]
 
 [package.optional-dependencies]
@@ -1161,7 +1162,7 @@ requires-dist = [
     { name = "mkdocstrings", marker = "extra == 'dev'", specifier = ">=0.29.1" },
     { name = "mkdocstrings-python", marker = "extra == 'dev'", specifier = ">=1.16.10" },
     { name = "moto", marker = "extra == 'dev'", specifier = ">=5.1.4" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.1" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.0" },
     { name = "nox", marker = "extra == 'dev'", specifier = ">=2025.5.1" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2.0" },
     { name = "pyarrow", specifier = ">=18.1.0" },
@@ -1170,11 +1171,12 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.1.1" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.2" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.8" },
     { name = "s3fs", specifier = "==2025.3.2" },
     { name = "safety", marker = "extra == 'dev'", specifier = ">=3.2.9" },
     { name = "sqlglot", marker = "extra == 'dev'", specifier = ">=26.16.4" },
     { name = "ssm-parameter-store", specifier = ">=19.11.0" },
+    { name = "types-croniter", specifier = ">=6.0.0.20250809" },
 ]
 provides-extras = ["dev"]
 
@@ -1860,6 +1862,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/28/7c85c8032b91dbe79725b6f17d2fffc595dff06a35c7a30a37bef73a1ab4/typer-0.20.0.tar.gz", hash = "sha256:1aaf6494031793e4876fb0bacfa6a912b551cf43c1e63c800df8b1a866720c37", size = 106492, upload-time = "2025-10-20T17:03:49.445Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/64/7713ffe4b5983314e9d436a90d5bd4f63b6054e2aca783a3cfc44cb95bbf/typer-0.20.0-py3-none-any.whl", hash = "sha256:5b463df6793ec1dca6213a3cf4c0f03bc6e322ac5e16e13ddd622a889489784a", size = 47028, upload-time = "2025-10-20T17:03:47.617Z" },
+]
+
+[[package]]
+name = "types-croniter"
+version = "6.0.0.20250809"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/ac/7b26a9b19cc2b137293b14af71402ba83d13674c208b141474b6887465ae/types_croniter-6.0.0.20250809.tar.gz", hash = "sha256:c829295d4d65eaddcfafec905b0fbab59e72c3c91ee934a4d504dcafad79ff95", size = 11745, upload-time = "2025-08-09T03:14:10.729Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/99/e8e40592fbecb6671b32e4dab4cca2a1d4fa7d5b2f54aece134ccb42e839/types_croniter-6.0.0.20250809-py3-none-any.whl", hash = "sha256:d9f53f3e837eb6af509e2090fd2f5bb29b38425dd78f77d7b3bf37ccd2b2bf93", size = 9712, upload-time = "2025-08-09T03:14:09.966Z" },
 ]
 
 [[package]]

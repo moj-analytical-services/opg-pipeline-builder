@@ -20,6 +20,7 @@ dependencies = [
     "pydbtools>=5.8.1",
     "s3fs==2025.3.2",
     "ssm-parameter-store>=19.11.0",
+    "types-croniter>=6.0.0.20250809",
 ]
 
 [tool.uv]

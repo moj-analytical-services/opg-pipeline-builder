@@ -84,7 +84,7 @@ def get_source_db() -> str:
     return source_env
 
 
-def get_source_tbls() -> str | None:
+def get_source_tbls() -> list[str]:
     """Retrieves source database
 
     Retrieved source database tables to use
@@ -99,7 +99,7 @@ def get_source_tbls() -> str | None:
     try:
         source_tables = os.environ["SOURCE_TBLS_ENV"].split(";")
     except KeyError:
-        source_tables = None
+        source_tables = [""]
     return source_tables
 
 

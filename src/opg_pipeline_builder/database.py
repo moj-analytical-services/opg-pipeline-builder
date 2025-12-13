@@ -207,7 +207,7 @@ class Database:
             list[str]): Filtered list of table names.
         """
         if table_list is None:
-            table_list = self.tables if get_source_tbls() is None else get_source_tbls()
+            table_list = self.tables if not get_source_tbls() else get_source_tbls()
 
         up_tbl_list = self._validate_tables(table_list, stages, tf_types)
 
@@ -327,7 +327,10 @@ class Database:
             table_list=tables, stages=db_stages, tf_types=tf_types
         )
 
-        transform_args = {"db": self._name, "tables": tables}
+        transform_args: dict[str, str | list[str] | dict[str, str]] = {
+            "db": self._name,
+            "tables": tables,
+        }
 
         transform_args["transforms"] = {}
         for table_name in tables:
@@ -354,7 +357,7 @@ class Database:
                                      shared sql table name and path.
         """
         db_config = self.config
-        shsql_config = db_config.get("shared_sql", {})
+        shsql_config: dict[str, str | list[str]] = db_config.get("shared_sql", {})
 
         sql_base_path = os.path.join("sql", self.name, "shared")
 
@@ -474,7 +477,9 @@ class DatabaseTable:
             self._name = table_name
             self._db = db
             db_config = db._config
-            self._config: dict[str, Any] = db_config["tables"][table_name]
+            self._config: dict[str, str | dict[str, dict[str, str | bool | int]]] = (
+                db_config["tables"][table_name]
+            )
 
         else:
             err = (
@@ -502,7 +507,7 @@ class DatabaseTable:
         return self._db_name
 
     @property
-    def config(self) -> dict[str, str]:
+    def config(self) -> dict[str, str | dict[str, dict[str, str | bool | int]]]:
         return self._config
 
     @property
@@ -510,7 +515,7 @@ class DatabaseTable:
         return self._db
 
     @property
-    def optional_arguments(self) -> dict[str, Any] | None:
+    def optional_arguments(self) -> dict[str, str] | None:
         return self._config.get("optional_arguments")
 
     def transform_type(self) -> str:
@@ -660,9 +665,9 @@ class DatabaseTable:
         list[tuple[str, str]]
             [(sql_table_name, sql_table_path)]
         """
-        tbl_config = self.config
-        tbl_sql = tbl_config.get("sql", {})
-        tbl_sql_type = tbl_sql.get(type, [])
+
+        tbl_sql = self.config.get("sql", {})
+        tbl_sql_type: dict[str, list[str]] = tbl_sql.get(type, [])
 
         sql_dir = os.path.join("sql", self.db_name, self.name)
 
@@ -699,7 +704,7 @@ class DatabaseTable:
         if transform_type == "derived":
             config = self._config
             try:
-                input_data = config["input_data"]
+                input_data: dict[str, dict[str, str]] = config["input_data"]
             except KeyError:
                 raise KeyError("Derived table should have inputs listed in config.")
 
@@ -708,7 +713,7 @@ class DatabaseTable:
                 db = Database(self.config)
                 tables = input_data[db_name]
                 table_names = list(tables.keys())
-                all_data_paths[db_name]: dict[str, str] = {}
+                all_data_paths[db_name] = {}
 
                 for table_name in table_names:
                     if table_name == self._name:
@@ -730,10 +735,9 @@ class DatabaseTable:
                         **data_formats,
                     }
 
-        else:
-            all_data_paths = None
+            return all_data_paths
 
-        return all_data_paths
+        return None
 
     @staticmethod
     def _convert_pandas_kwargs_in_config(
@@ -816,7 +820,7 @@ class DatabaseTable:
 
     def transform_args(
         self, input_stage: str | None, output_stage: str = "curated"
-    ) -> dict:
+    ) -> dict[str, str | dict[str, str]]:
         """Transformation arguments for the database table
 
         Returns a dictionary containing transformation parameters
@@ -849,7 +853,7 @@ class DatabaseTable:
             }
         """
         transform_type = self.transform_type()
-        transform_args = {}
+        transform_args: dict[str, str | dict[str, str]] = {}
         transform_args["transform_type"] = transform_type
 
         if transform_type == "derived":

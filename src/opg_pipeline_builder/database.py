@@ -335,7 +335,7 @@ class Database:
         transform_args["transforms"] = {}
         for table_name in tables:
             table = self.table(table_name)
-            transform_args["transforms"][table_name] = table.transform_args(
+            transform_args["transforms"][table_name] = table.transform_args(  # type: ignore
                 stages[table_name]["input"], stages[table_name]["output"]
             )
 
@@ -357,7 +357,7 @@ class Database:
                                      shared sql table name and path.
         """
         db_config = self.config
-        shsql_config: dict[str, str | list[str]] = db_config.get("shared_sql", {})
+        shsql_config: dict[str, str | list[str]] = db_config.get("shared_sql", {})  # type: ignore
 
         sql_base_path = os.path.join("sql", self.name, "shared")
 
@@ -516,7 +516,7 @@ class DatabaseTable:
 
     @property
     def optional_arguments(self) -> dict[str, str] | None:
-        return self._config.get("optional_arguments")
+        return self._config.get("optional_arguments")  # type: ignore
 
     def transform_type(self) -> str:
         """Returns table transform type
@@ -530,7 +530,7 @@ class DatabaseTable:
         str
             One of default, custom or derived
         """
-        transform_type: str = self._config["transform_type"]
+        transform_type: str = self._config["transform_type"]  # type: ignore
 
         if transform_type not in ["default", "custom", "derived"]:
             raise ValueError(
@@ -551,7 +551,7 @@ class DatabaseTable:
         str
             Table's update frequency
         """
-        frequency: str = self._config["frequency"]
+        frequency: str = self._config["frequency"]  # type: ignore
 
         if croniter.is_valid(frequency) is False:
             raise ValueError("Frequency should be a valid cron expression")
@@ -569,7 +569,7 @@ class DatabaseTable:
         list[str]
             Table's ETL stages
         """
-        etl_stages = list(self._config["etl_stages"].keys())
+        etl_stages = list(self._config["etl_stages"].keys())  # type: ignore
         return etl_stages
 
     def table_file_formats(self) -> dict[str, str]:
@@ -584,7 +584,7 @@ class DatabaseTable:
             Key: ETL stage, Value: File format
         """
         table_config = self._config
-        input_file_format: dict[str, str] = table_config["etl_stages"]
+        input_file_format: dict[str, str] = table_config["etl_stages"]  # type: ignore
 
         return input_file_format
 
@@ -667,7 +667,7 @@ class DatabaseTable:
         """
 
         tbl_sql = self.config.get("sql", {})
-        tbl_sql_type: dict[str, list[str]] = tbl_sql.get(type, [])
+        tbl_sql_type: dict[str, list[str]] = tbl_sql.get(type, [])  # type: ignore
 
         sql_dir = os.path.join("sql", self.db_name, self.name)
 
@@ -678,7 +678,7 @@ class DatabaseTable:
     def table_uses_shared_sql(self) -> bool:
         tbl_config = self.config
         tbl_sql = tbl_config.get("sql", {})
-        return tbl_sql.get("shared", False)
+        return tbl_sql.get("shared", False)  # type: ignore
 
     def input_data(self) -> dict[str, dict[str, str]] | None:
         """Returns the table's input dataset paths
@@ -704,13 +704,13 @@ class DatabaseTable:
         if transform_type == "derived":
             config = self._config
             try:
-                input_data: dict[str, dict[str, str]] = config["input_data"]
+                input_data: dict[str, dict[str, str]] = config["input_data"]  # type: ignore
             except KeyError:
                 raise KeyError("Derived table should have inputs listed in config.")
 
             all_data_paths: dict[str, dict[str, str]] = {}
             for db_name in input_data:
-                db = Database(self.config)
+                db = Database(self.config)  # type: ignore
                 tables = input_data[db_name]
                 table_names = list(tables.keys())
                 all_data_paths[db_name] = {}
@@ -731,8 +731,8 @@ class DatabaseTable:
                     table_freq = table.frequency()
 
                     all_data_paths[db_name][table_name] = {
-                        **{"path": data_paths, "frequency": table_freq},
-                        **data_formats,
+                        **{"path": data_paths, "frequency": table_freq},  # type: ignore
+                        **data_formats,  # type: ignore
                     }
 
             return all_data_paths
@@ -799,7 +799,7 @@ class DatabaseTable:
             original_config = deepcopy(table_lint_config["lint_options"])
 
             updated_config = self._convert_pandas_kwargs_in_config(
-                config=original_config,
+                config=original_config,  # type: ignore
                 metadata_path=table_meta_stage,
             )
 
@@ -857,10 +857,10 @@ class DatabaseTable:
         transform_args["transform_type"] = transform_type
 
         if transform_type == "derived":
-            transform_args["input"] = self.input_data()
+            transform_args["input"] = self.input_data()  # type: ignore
             transform_args["output"] = {
                 "path": self.table_data_paths()[output_stage],
-                **self.table_file_formats()[output_stage],
+                **self.table_file_formats()[output_stage],  # type: ignore
             }
 
         else:
@@ -874,17 +874,17 @@ class DatabaseTable:
             tdps = self.table_data_paths()
             tdff = self.table_file_formats()
 
-            transform_args["input"] = {"path": tdps[input_stage], **tdff[input_stage]}
+            transform_args["input"] = {"path": tdps[input_stage], **tdff[input_stage]}  # type: ignore
 
             transform_args["output"] = {
                 "path": tdps[output_stage],
-                **tdff[output_stage],
+                **tdff[output_stage],  # type: ignore
             }
 
         return transform_args
 
     def get_table_metadata(
-        self, stage: str, updates: list[dict[str, str] | None] = None
+        self, stage: str, updates: list[dict[str, str] | None] = []
     ) -> Metadata:
         """Fetches MoJ Metadata for the table
 
@@ -914,7 +914,7 @@ class DatabaseTable:
         meta = Metadata.from_json(stage_meta_path)
         meta.set_col_type_category_from_types()
 
-        if updates is not None:
+        if updates:
             for col_dict in updates:
                 meta.update_column(col_dict)
 
@@ -957,8 +957,8 @@ class DatabaseTable:
             ]
         """
         tbl_lint = self.config["lint_options"]
-        tbl_cast_cols = tbl_lint.get("columns_to_cast", [])
-        tbl_cast_dtype = tbl_lint.get("columns_original_dtypes", [])
-        tbl_cast_vals = tbl_lint.get("columns_cast_types", [])
+        tbl_cast_cols = tbl_lint.get("columns_to_cast", [])  # type: ignore
+        tbl_cast_dtype = tbl_lint.get("columns_original_dtypes", [])  # type: ignore
+        tbl_cast_vals = tbl_lint.get("columns_cast_types", [])  # type: ignore
         tbl_cast_args = list(zip(tbl_cast_cols, tbl_cast_dtype, tbl_cast_vals))
         return tbl_cast_args

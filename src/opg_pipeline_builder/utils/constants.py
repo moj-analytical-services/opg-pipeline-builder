@@ -140,7 +140,7 @@ def get_multiprocessing_settings() -> dict[str, str] | None:
         mp_settings_str = os.environ["MULTI_PROC_ENV"]
         try:
             mp_decode = base64.b64decode(mp_settings_str.encode("ascii"))
-            mp_settings = json.loads(mp_decode.decode("ascii"))
+            mp_settings: dict[str, str] = json.loads(mp_decode.decode("ascii"))
 
         except (UnicodeDecodeError, Error):
             mp_settings = literal_eval(mp_settings_str)
@@ -150,10 +150,10 @@ def get_multiprocessing_settings() -> dict[str, str] | None:
                     "as a string, or as a base64 encoded string"
                 )
 
-    except KeyError:
-        mp_settings = None
+        return mp_settings
 
-    return mp_settings
+    except KeyError:
+        return None
 
 
 def get_start_date() -> datetime | None:
@@ -220,7 +220,7 @@ def get_use_glue() -> bool:
         Indicator of whether to use AWS Glue jobs or not.
     """
     try:
-        glue_enable = literal_eval(os.environ["USE_GLUE"])
+        glue_enable: bool = literal_eval(os.environ["USE_GLUE"])
         if not isinstance(glue_enable, bool):
             raise ValueError(
                 "Expecting True or False for 'USE_GLUE' environment variable"
@@ -256,9 +256,9 @@ def get_no_glue_workers() -> int | None:
 
 
 def get_full_db_name(
-    db_name: str = None,
-    env: str = None,
-    prefix: str = None,
+    db_name: str = "",
+    env: str = "",
+    prefix: str = "",
     derived: bool = False,
 ) -> str:
     """Returns full database name
@@ -281,13 +281,13 @@ def get_full_db_name(
     str
         Full database name
     """
-    if db_name is None:
+    if not db_name:
         db_name = get_source_db()
 
-    if env is None:
+    if not env:
         env = get_env()
 
-    if prefix is None:
+    if not prefix:
         prefix = os.environ.get("ATHENA_DB_PREFIX", "")
 
     env_suffix = f"derived_{env}" if derived else env
@@ -300,7 +300,7 @@ def get_full_db_name(
     return full_db_name
 
 
-def get_metadata_path(db_name: str = None, env: str = None) -> str:
+def get_metadata_path(db_name: str = "", env: str = "") -> str:
     """Returns metadata base path
 
     Returns the base path for the specified
@@ -321,10 +321,10 @@ def get_metadata_path(db_name: str = None, env: str = None) -> str:
     str
         Base metadata path for db in specified env
     """
-    if db_name is None:
+    if not db_name:
         db_name = get_source_db()
 
-    if env is None:
+    if not env:
         env = get_env()
 
     mp = os.path.join(meta_data_base_path, env, db_name)
@@ -346,7 +346,7 @@ def get_chunk_size() -> int | bool:
     """
     try:
         chunk_str = os.environ["CHUNK_SIZE"]
-        chunk = literal_eval(chunk_str)
+        chunk: int = literal_eval(chunk_str)
 
         if not isinstance(chunk, bool) and not isinstance(chunk, int):
             raise ValueError(
@@ -373,51 +373,9 @@ def get_dag_timestamp() -> int | None:
     Union[int, None]
         Timestamp int for DAG run or None, if not applicable
     """
-    # mp_args = get_multiprocessing_settings()
 
-    # raise_error = False
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
         return dag_ts
     except Exception:  # pylint: disable=broad-exception-caught
         return None
-
-    # if mp_args is not None:
-    #     tmp_staging = mp_args.get("temp_staging", False)
-    #     if tmp_staging is True:
-    #         raise_error = True
-
-    # try:
-    #     dag_run_id = os.environ["DAG_RUN_ID"]
-    #     dag_interval_end = os.environ["DAG_INTERVAL_END"]
-
-    #     manual_run = re.search("manual__", dag_run_id)
-
-    #     try:
-    #         if manual_run is not None:
-    #             dag_ts = int(
-    #                 datetime.fromisoformat(
-    #                     dag_run_id.replace("manual__", "")
-    #                 ).timestamp()
-    #             )
-
-    #         else:
-    #             dag_ts = int(datetime.fromisoformat(dag_interval_end).timestamp())
-
-    #     except Exception as e:
-    #         raise ValueError(
-    #             f"""
-    #             DAG_RUN_TIMESTAMP must be a string in ISO format.
-    #             Error: {e}
-    #             """
-    #         )
-
-    # except KeyError:
-    #     if raise_error:
-    #         raise ValueError(
-    #             "DAG_RUN_ID and DAG_INTERVAL_END must be set when temp staging enabled."
-    #         )
-    #     else:
-    #         dag_ts = None
-
-    # return dag_ts

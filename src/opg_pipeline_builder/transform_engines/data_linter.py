@@ -123,7 +123,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @classmethod
     def _run_linter(cls, config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
-        if mp_args is None:
+        if not mp_args:
             _logger.info("Running validation with no multiprocessing")
             validation.run_validation(config)
 
@@ -274,7 +274,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         dag_timestamp = self.dag_timestamp
         tables = [table]
 
-        if mp_args is None:
+        if not mp_args:
             _logger.info("Setting multiprocessing arguments from environment")
             mp_args = get_multiprocessing_settings()
 

@@ -30,7 +30,7 @@ def lint(session: nox.Session) -> None:
         session,
         "ruff",
     )
-    run_tool(session, "ruff", "check", "--select", "I", *TARGETS)
+    run_tool(session, "ruff", "check", "--select", "I", "--fix", *TARGETS)
 
 
 @nox.session(tags=["typecheck"])

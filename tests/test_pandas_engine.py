@@ -2,6 +2,7 @@ import json
 from copy import deepcopy
 from datetime import datetime
 from logging import getLogger
+from typing import Generator
 
 import awswrangler as wr
 import boto3
@@ -12,12 +13,11 @@ import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
-from typing import Generator
 
 from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
 from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, mock_reader_read, mock_writer_write
-from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
 
 log = getLogger()
 

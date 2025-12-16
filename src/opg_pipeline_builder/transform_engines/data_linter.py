@@ -57,7 +57,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             },
         }
 
-        if mp_args is not None:
+        if mp_args:
             if "enable" not in mp_args.keys():
                 raise KeyError('mp_args must contain an "enable" key-value pair')
 
@@ -89,7 +89,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @staticmethod
     def _start_linter(config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
-        if mp_args is not None:
+        if mp_args:
             mp_enable = mp_args["enable"]
 
             if mp_enable == "local":
@@ -159,7 +159,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @staticmethod
     def _close_linter(config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
-        if mp_args is not None:
+        if mp_args:
             mp_enable = mp_args["enable"]
             if mp_enable == "local":
                 config_dc = deepcopy(config)
@@ -185,7 +185,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         timestamp_partition_name: str = "mojap_file_land_timestamp",
     ) -> None:
         proceed = False
-        if mp_args is not None:
+        if mp_args:
             mp_enable = mp_args["enable"]
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
@@ -286,7 +286,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         self._validate_mp_args(mp_args)
 
         tmp_staging = False
-        if mp_args is not None:
+        if mp_args:
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
             _logger.info(f"Using temporary staging directory: {tmp_staging}")

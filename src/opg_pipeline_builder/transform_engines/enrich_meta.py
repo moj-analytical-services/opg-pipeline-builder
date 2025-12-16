@@ -47,7 +47,7 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
         self, table_name: str, raw_data_stage: str = "land"
     ) -> dict[str, str]:
         table_files = sorted(
-            self.utils.list_table_files(
+            self.utils.list_table_files(  # type: ignore
                 stage=raw_data_stage,
                 table_name=table_name,
             ),

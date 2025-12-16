@@ -108,13 +108,11 @@ class PandasTransformations(BaseTransformations):  # type: ignore
             _logger.info("Adding attributes to data from file")
             attributes_fp = (
                 Template(self.attributes_file).render(db=self.db.name, env=self.db.env)
-                if self.attributes_file is not None
+                if self.attributes_file
                 else None
             )
 
-            attr_dict = (
-                read_json_from_s3(attributes_fp) if attributes_fp is not None else {}
-            )
+            attr_dict = read_json_from_s3(attributes_fp) if attributes_fp else {}  # type: ignore
 
             for k, v in attr_dict.items():
                 if k in df.columns.to_list():
@@ -125,7 +123,7 @@ class PandasTransformations(BaseTransformations):  # type: ignore
 
     def add_attributes_from_config(self, df: pd.DataFrame) -> pd.DataFrame:
         _logger.info("Adding attributes to data from config")
-        attr_dict = self.attributes if self.attributes is not None else {}
+        attr_dict = self.attributes if self.attributes else {}
         for k, v in attr_dict.items():
             if k in df.columns.to_list():
                 raise ValueError(f"{k} already set")

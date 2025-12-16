@@ -35,7 +35,7 @@ logging.getLogger("moto").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="module", autouse=True)
-def tests_env_setup_and_teardown() -> Generator[None]:
+def tests_env_setup_and_teardown() -> Generator[None, None, None]:
     if "TEST_ENV" in os.environ:
         test_env = os.environ["TEST_ENV"]
     else:
@@ -92,7 +92,7 @@ def create_database(config: PipelineConfig) -> Database:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def copy_files() -> Generator[None]:
+def copy_files() -> Generator[None, None, None]:
     test_directories = {"configs", "meta_data/test", "glue_jobs", "pipelines", "sql"}
 
     for dir in test_directories:
@@ -112,20 +112,10 @@ def copy_files() -> Generator[None]:
     copy("tests/data/meta_data", "meta_data/test")
     copy("tests/data/glue_jobs", "glue_jobs")
 
-    test_py_files = os.listdir("tests/data/python_scripts")
-    for py_file in test_py_files:
-        shutil.copyfile(
-            src=os.path.join("tests/data/python_scripts", py_file),
-            dst=os.path.join("pipelines", py_file),
-        )
-
     yield
 
     for config_file in test_config_files:
         os.remove(os.path.join("configs", config_file))
-
-    for py_file in test_py_files:
-        os.remove(os.path.join("pipelines", py_file))
 
     _ = [shutil.rmtree(dir) for dir in test_directories]
     shutil.rmtree("meta_data")
@@ -337,7 +327,7 @@ def mock_reader_read(
 
 
 @pytest.fixture(autouse=True, scope="session")
-def fix_set_log_level() -> Generator[None]:
+def fix_set_log_level() -> Generator[None, None, None]:
     """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
     logging.getLogger("botocore").setLevel(logging.CRITICAL)
     logging.getLogger("awswrangler").setLevel(logging.CRITICAL)

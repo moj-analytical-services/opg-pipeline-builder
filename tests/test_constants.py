@@ -39,7 +39,7 @@ def test_get_source_tbls() -> None:
     orig_env = os.environ["SOURCE_TBLS_ENV"]
     del os.environ["SOURCE_TBLS_ENV"]
 
-    assert get_source_tbls() is None
+    assert get_source_tbls() == [""]
 
     os.environ["SOURCE_TBLS_ENV"] = orig_env
 
@@ -82,7 +82,7 @@ def test_get_multiprocessing_settings(
 ) -> None:
     from opg_pipeline_builder.utils.constants import get_multiprocessing_settings
 
-    assert get_multiprocessing_settings() is None
+    assert not get_multiprocessing_settings()
 
     os.environ["MULTI_PROC_ENV"] = env_var
 
@@ -94,7 +94,7 @@ def test_get_multiprocessing_settings(
 def test_get_start_date() -> None:
     from opg_pipeline_builder.utils.constants import get_start_date
 
-    assert get_start_date() is None
+    assert not get_start_date()
 
     os.environ["START_DATE"] = "2022-09-01"
 
@@ -106,7 +106,7 @@ def test_get_start_date() -> None:
 def test_get_end_date() -> None:
     from opg_pipeline_builder.utils.constants import get_end_date
 
-    assert get_end_date() is None
+    assert not get_end_date()
 
     os.environ["END_DATE"] = "2022-09-30"
 

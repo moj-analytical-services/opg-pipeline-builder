@@ -329,7 +329,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         output_metadata: Metadata,
         temporary_database_name: str,
     ) -> str:
-        common_columns_with_same_types = self.utils.get_common_columns(
+        common_columns_with_same_types = self.utils.get_common_columns(  # type: ignore
             input_metadata=input_metadata,
             output_metadata=output_metadata,
         )
@@ -372,7 +372,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
             wr.catalog.delete_database(temporary_load_database_name)
             if input_stage != "raw_hist":
-                self.utils.cleanup_partitions(
+                self.utils.cleanup_partitions(  # type: ignore
                     base_data_path=input_path, partitions=partitions
                 )
 
@@ -385,7 +385,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 )
             )
 
-            self.utils.cleanup_partitions(
+            self.utils.cleanup_partitions(  # type: ignore
                 base_data_path=output_path, partitions=partitions
             )
 
@@ -420,7 +420,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         databases = wr.catalog.databases(limit=self.db_search_limit)  # type: ignore
         existing_databases = databases.Database.to_list()
 
-        tbl_prts = self.utils.transform_partitions(tables, stages=stages)
+        tbl_prts = self.utils.transform_partitions(tables, stages=stages)  # type: ignore
 
         ipt_stage = stages["input"]
         out_stage = stages["output"]
@@ -437,7 +437,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     table_name, ipt_stage
                 )
 
-                input_path, output_path, tf_type = self.utils.tf_args(
+                input_path, output_path, tf_type = self.utils.tf_args(  # type: ignore
                     table_name, stages=stages
                 )
 
@@ -517,7 +517,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         ]
 
         existing_prts = set(
-            self.utils.list_partitions(
+            self.utils.list_partitions(  # type: ignore
                 table_name=table_name,
                 stage="derived",
                 extract_timestamp=True,

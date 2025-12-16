@@ -4,7 +4,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import boto3
 from dataengineeringutils3.s3 import (
@@ -35,7 +35,7 @@ def get_last_modified(obj: dict[Any, Any]) -> int:
 
 
 def s3_copy(
-    copy_args: tuple[str, str], client: boto3.client | None = None
+    copy_args: tuple[str, str], client: Optional[boto3.client] = None
 ) -> dict[Any, Any]:
     """
     Function to copy objects from one S3 location to another S3 location

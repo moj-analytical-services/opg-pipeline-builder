@@ -1,12 +1,11 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
-from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
@@ -26,7 +25,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     enrich_meta: bool = True
     raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"
-    transforms: PandasTransformations = Field(init=False)
+    transforms: Optional[PandasTransformations] = None
 
     def model_post_init(self, __context) -> None:  # type: ignore
         super().model_post_init(__context)
@@ -91,12 +90,12 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         for df in dfs:
             _logger.info(f"Transforming chunk {i}")
             if transform_type == "custom":
-                tf_df = self.transforms.custom_transform(
+                tf_df = self.transforms.custom_transform(  # type: ignore
                     df, table_name, partition, updated_input_meta, output_meta
                 )
             else:
                 _logger.info(df)
-                tf_df = self.transforms.default_transform(
+                tf_df = self.transforms.default_transform(  # type: ignore
                     df, partition, updated_input_meta, output_meta
                 )
 
@@ -144,14 +143,14 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             _logger.info(
                 f"Applying custom transformation to {filepath} for {table_name}"
             )
-            df = self.transforms.custom_transform(
+            df = self.transforms.custom_transform(  # type: ignore
                 df, table_name, partition, updated_input_meta, output_meta
             )
         else:
             _logger.info(
                 f"Applying default transformation to {filepath} for {table_name}"
             )
-            df = self.transforms.default_transform(
+            df = self.transforms.default_transform(  # type: ignore
                 df, partition, updated_input_meta, output_meta
             )
 
@@ -228,7 +227,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         unprocessed_partitions = [
             (
                 table_name,
-                self.utils.list_unprocessed_partitions(
+                self.utils.list_unprocessed_partitions(  # type: ignore
                     table_name,
                     input_stage=self.raw_stage,
                     output_stage=self.final_partition_stage,

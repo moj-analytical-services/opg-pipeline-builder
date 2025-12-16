@@ -2,7 +2,6 @@ import json
 from copy import deepcopy
 from datetime import datetime
 from logging import getLogger
-from typing import Generator
 
 import awswrangler as wr
 import boto3
@@ -13,11 +12,12 @@ import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
+from typing import Generator
 
 from opg_pipeline_builder.database import Database
-from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
 from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, mock_reader_read, mock_writer_write
+from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
 
 log = getLogger()
 
@@ -26,20 +26,26 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine(
-    config: PipelineConfig,
-    database: Database,
-) -> Generator[PandasTransformEngine]:
-    yield PandasTransformEngine(config=config, db=database)
+def pandas_engine_class() -> Generator[PandasTransformEngine, None, None]:
+    yield PandasTransformEngine
 
 
 @pytest.fixture
-def default_metadata() -> Generator[Metadata]:
+def pandas_engine(
+    pandas_engine_class: PandasTransformEngine,
+    config: PipelineConfig,
+    database: Database,
+) -> Generator[PandasTransformEngine, None, None]:
+    yield pandas_engine_class(config=config, db=database)
+
+
+@pytest.fixture
+def default_metadata() -> Generator[Metadata, None, None]:
     yield Metadata.from_json(DEFAULT_METADATA_FILE)
 
 
 @pytest.fixture
-def default_df() -> Generator[pd.DataFrame]:
+def default_df() -> Generator[pd.DataFrame, None, None]:
     yield pd.read_csv(DEFAULT_DATA_FILE)
 
 
@@ -269,9 +275,9 @@ def test_input_transform_methods(
             ),
         ),
         (
-            None,
+            {},
             False,
-            None,
+            {},
             None,
             None,
         ),
@@ -300,14 +306,14 @@ def test_output_transform_methods(
     default_metadata.update_column({"name": "string_column", "type": "string"})
     default_metadata.update_column({"name": "testdb_etl_version", "type": "string"})
 
-    if attributes is not None:
+    if attributes:
         default_metadata.update_column(
             {"name": list(attributes.keys())[0], "type": "string"}
         )
 
     input_df = default_df.copy()
 
-    if extract_header_values is not None:
+    if extract_header_values:
         input_df.columns = [f"{c}{header_values_suffix}" for c in input_df.columns]
         default_metadata.update_column({"name": "header_field", "type": "string"})
 

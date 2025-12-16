@@ -189,7 +189,7 @@ class PipelineConfig(BaseModel):
                     missing_tables = [
                         tbl
                         for tbl, _ in input_table_dict.items()
-                        if tbl not in db_tables
+                        if tbl not in db_tables  # type: ignore
                     ]
                     if missing_tables:
                         raise ValueError(

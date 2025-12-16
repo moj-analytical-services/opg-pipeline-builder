@@ -248,12 +248,9 @@ class TestBaseEngineTransform:
         transform.utils.cleanup_partitions(
             f"s3://{self.land_bucket}/dep/{env}/{db_name}/table1", prts
         )
-        assert (
-            s3_client.list_objects(
-                Bucket=self.land_bucket, Prefix=f"dep/{env}/{db_name}/table1"
-            ).get("Contents")
-            is None
-        )
+        assert not s3_client.list_objects(
+            Bucket=self.land_bucket, Prefix=f"dep/{env}/{db_name}/table1"
+        ).get("Contents")
 
     @pytest.mark.parametrize(
         "stages_map, expected",

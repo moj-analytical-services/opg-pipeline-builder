@@ -21,6 +21,8 @@ dependencies = [
     "s3fs==2025.3.2",
     "ssm-parameter-store>=19.11.0",
     "types-croniter>=6.0.0.20250809",
+    "types-python-dateutil>=2.9.0.20251115",
+    "types-pyyaml>=6.0.12.20250915",
 ]
 
 [tool.uv]

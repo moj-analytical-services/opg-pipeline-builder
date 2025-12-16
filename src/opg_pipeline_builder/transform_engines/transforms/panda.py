@@ -15,11 +15,11 @@ from opg_pipeline_builder.transform_engines.transforms.base import BaseTransform
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
-class PandasTransformations(BaseTransformations):
+class PandasTransformations(BaseTransformations):  # type: ignore
     add_partition_column: bool = False
     attributes_file: str = ""
     attributes: dict[Any, Any] = {}
-    extract_header_values: dict[str, str] | None = None
+    extract_header_values: dict[str, str] = {}
 
     @staticmethod
     def remove_columns_not_in_metadata(
@@ -40,15 +40,15 @@ class PandasTransformations(BaseTransformations):
         self, df: pd.DataFrame, output_meta: Metadata
     ) -> pd.DataFrame:
         extract_header_values = self.extract_header_values
-        if extract_header_values is not None:
+        if extract_header_values:
             _logger.info("Adding attributes to data from column headers")
-            header_field_name = extract_header_values.get("field_name")
-            header_regex: str = extract_header_values.get("header_regex")
+            header_field_name = extract_header_values.get("field_name", "")
+            header_regex = extract_header_values.get("header_regex", "")
             headers = df.columns.to_list()
 
             header_values = [(c, re.search(header_regex, c)) for c in headers]
 
-            header_values = [(c, v[0]) for c, v in header_values if v is not None]
+            header_values = [(c, v[0]) for c, v in header_values if v is not None]  # type: ignore
             headers_in_scope = [c for c, _ in header_values]
 
             unique_values = set([v for _, v in header_values])
@@ -74,7 +74,7 @@ class PandasTransformations(BaseTransformations):
             header_field_value = (
                 [json.dumps(mapping, ensure_ascii=False)]
                 if len(unique_values) > 0
-                else [None]
+                else [None]  # type: ignore
             )
             df[header_field_name] = header_field_value * df.shape[0]
             df.columns = [

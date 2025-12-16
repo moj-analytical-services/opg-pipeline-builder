@@ -111,7 +111,7 @@ class TransformEngineUtils(BaseModel):
         table_name: str,
         stage: str,
         extract_timestamp: bool = False,
-        **kwargs: dict[Any, Any],
+        **kwargs: Any,
     ) -> list[str] | list[int]:
         """Lists partitions for table in S3 at ETL stage
 
@@ -131,7 +131,7 @@ class TransformEngineUtils(BaseModel):
         extract_timestamp: Optional[bool]
             True to retrieve the timestamp only. Defaults to False.
 
-        kwargs: dict[Any, Any]
+        kwargs: Any
             Passed onto _list_table_files
 
         Return

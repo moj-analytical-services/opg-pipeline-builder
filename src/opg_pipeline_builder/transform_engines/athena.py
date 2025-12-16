@@ -5,6 +5,7 @@ from typing import Any
 import awswrangler as wr
 import pydbtools as pydb
 from mojap_metadata import Metadata
+from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
@@ -38,13 +39,13 @@ class AthenaTransformEngine(BaseTransformEngine):
     sql_table_filter: bool = False
     db_search_limit: int | None = None
     jinja_args: dict[Any, Any] | None = None
-    transforms: athena_transforms.AthenaTransformations | None = None
+    transforms: athena_transforms.AthenaTransformations = Field(init=False)
     transforms_type: str | None = None
-    input_stage: str | None = "processed"
+    input_stage: str = "processed"
 
     def model_post_init(
         self,
-        __context,
+        __context: Any,
     ) -> None:
         self.utils = AthenaTransformEngineUtils(db=self.db)
         super().model_post_init(__context)
@@ -127,7 +128,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         table_sql_filepath: str,
         base_database_name: str | None = None,
         environment: str | None = None,
-        **additional_jinja_args: dict[Any, Any],
+        **additional_jinja_args: Any,
     ) -> None:
         sql = pydb.get_sql_from_file(
             table_sql_filepath,
@@ -145,8 +146,8 @@ class AthenaTransformEngine(BaseTransformEngine):
     def _create_shared_temporary_tables(
         self,
         tf_types: list[str],
-        snapshot_timestamps: str,
-        **jinja_args: dict[Any, Any],
+        snapshot_timestamps: list[str],
+        **jinja_args: Any,
     ) -> None:
         """Create db shared temp tables
 
@@ -160,7 +161,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         tf_types: List[str]
             List of table transform types (e.g. default, custom)
 
-        snapshot_timestamps: str
+        snapshot_timestamps: list[str]
             Timestamps should be a string of the
             form "timestamp1,timestamp2,timestamp3,....".
 
@@ -205,7 +206,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 )
 
                 _logger.info(f"Validating shared intermediate temp table {sql_tbl}")
-                self.utils.check_table_is_not_empty(table_name=sql_tbl)
+                self.utils.check_table_is_not_empty(table_name=sql_tbl)  # type: ignore
 
     def _create_temporary_tables(
         self, table_name: str, **jinja_args: dict[Any, Any]
@@ -239,7 +240,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 temp_table_name=sql_tmp_tbl,
                 table_sql_filepath=sql_tpt,
                 base_database_name=db_name,
-                **jinja_args,
+                **jinja_args,  # type: ignore
             )
 
     def _temporary_database_name_for_load(
@@ -283,7 +284,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     "nullable": False,
                     "type_category": "integer",
                 },
-                *meta_cast_args,
+                *meta_cast_args,  # type: ignore
             ],
         )
 
@@ -351,7 +352,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             },
         )
 
-        return sql
+        return sql  # type: ignore
 
     def _execute_load(
         self,
@@ -413,10 +414,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         tables = [table]
         tables = get_source_tbls() if tables is None else tables
 
-        stages = {"input": self.input_stage, "output": stage}
+        stages: dict[str, str] = {"input": self.input_stage, "output": stage}
 
         db = self.db
-        databases = wr.catalog.databases(limit=self.db_search_limit)
+        databases = wr.catalog.databases(limit=self.db_search_limit)  # type: ignore
         existing_databases = databases.Database.to_list()
 
         tbl_prts = self.utils.transform_partitions(tables, stages=stages)
@@ -443,13 +444,13 @@ class AthenaTransformEngine(BaseTransformEngine):
                 _logger.info(
                     f"Creating / recreating temporary database for {table_name} load"
                 )
-                self.utils.recreate_database(
+                self.utils.recreate_database(  # type: ignore
                     database_name=temp_input_db_name,
                     existing_databases=existing_databases,
                 )
 
                 _logger.info(f"Re-freshing and repairing temporary {table_name} table")
-                self.utils.refresh_and_repair_table(
+                self.utils.refresh_and_repair_table(  # type: ignore
                     table_name=table_name,
                     database_name=temp_input_db_name,
                     table_metadata=input_meta,
@@ -462,7 +463,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 _logger.info(f"Generating SQL for {table_name} load")
                 sql = self._get_sql(
                     table_name=table_name,
-                    partitions=prts,
+                    partitions=prts,  # type: ignore
                     transformation_type=tf_type,
                     input_metadata=input_meta,
                     output_metadata=output_meta,
@@ -478,7 +479,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                     output_metadata=output_meta,
                     output_path=output_path,
                     temporary_load_database_name=temp_input_db_name,
-                    partitions=prts,
+                    partitions=prts,  # type: ignore
                 )
 
                 _logger.info(f"Load complete for {table_name}")
@@ -633,10 +634,10 @@ class AthenaTransformEngine(BaseTransformEngine):
         primary_partition = self.db.primary_partition_name()
 
         cutoff_min = (
-            int(get_start_date().timestamp()) if get_start_date() is not None else 0
+            int(get_start_date().timestamp()) if get_start_date() is not None else 0  # type: ignore
         )
         cutoff_max = (
-            int(get_end_date().timestamp()) if get_end_date() is not None else None
+            int(get_end_date().timestamp()) if get_end_date() is not None else None  # type: ignore
         )
 
         max_cutoff_clause = f"{primary_partition} <= {cutoff_max}"
@@ -654,7 +655,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         tables: list[str],
         stage: str = "create_derived",
-        jinja_args: dict[str, Any] = None,
+        jinja_args: dict[str, Any] = {},
     ) -> None:
         """Creates derived tables for db using Athena
 
@@ -671,14 +672,11 @@ class AthenaTransformEngine(BaseTransformEngine):
         tables: List[str]
             List of table names.
 
-        **jinja_args:
+        **jinja_args: dict[str, Any]
             Jinja args to pass to pydbtools calls.
         """
         if stage != "create_derived":
             raise ValueError("Expecting derived ETL step for this transform")
-
-        if jinja_args is None:
-            jinja_args = {}
 
         db = self.db
         primary_partition = db.primary_partition_name()
@@ -687,7 +685,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             tables, stages=["create_derived"], tf_types=["create_derived"]
         )
 
-        databases = wr.catalog.databases(self.db_search_limit)
+        databases = wr.catalog.databases(self.db_search_limit)  # type: ignore
         if db_derived_name not in databases.Database.to_list():
             _logger.info(
                 f"Derived database {db_derived_name} doesn't exist. "
@@ -738,7 +736,7 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             _logger.info(f"Refreshing and repairing {tbl}")
-            self.utils.refresh_and_repair_table(
+            self.utils.refresh_and_repair_table(  # type: ignore
                 table_name=output_meta.name,
                 database_name=db_derived_name,
                 table_metadata=output_meta,

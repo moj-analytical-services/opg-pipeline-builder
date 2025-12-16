@@ -884,7 +884,7 @@ class DatabaseTable:
         return transform_args
 
     def get_table_metadata(
-        self, stage: str, updates: list[dict[str, str] | None] = []
+        self, stage: str, updates: list[dict[str, str | bool] | None] = []
     ) -> Metadata:
         """Fetches MoJ Metadata for the table
 

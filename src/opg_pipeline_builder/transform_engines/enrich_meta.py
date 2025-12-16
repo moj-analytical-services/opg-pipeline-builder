@@ -41,7 +41,7 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
         ext = Path(filepath).suffix.replace(".", "")
         method_name = f"_get_column_names_from_{ext}"
         method = getattr(cls, method_name)
-        return method(filepath)
+        return method(filepath)  # type: ignore
 
     def _extract_jinja_values_from_column_names(
         self, table_name: str, raw_data_stage: str = "land"
@@ -91,7 +91,7 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
         for table_name in tables:
             table = self.db.table(table_name)
 
-            table_meta_path = table.table_meta_paths().get(meta_stage)
+            table_meta_path = table.table_meta_paths().get(meta_stage, "")
             table_meta_template_path = self._get_meta_template_path(table_meta_path)
 
             jinja_kwargs = self._extract_jinja_values_from_column_names(

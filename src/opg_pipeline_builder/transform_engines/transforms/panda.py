@@ -17,8 +17,8 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 class PandasTransformations(BaseTransformations):
     add_partition_column: bool = False
-    attributes_file: str | None = None
-    attributes: dict[Any, Any] | None = None
+    attributes_file: str = ""
+    attributes: dict[Any, Any] = {}
     extract_header_values: dict[str, str] | None = None
 
     @staticmethod
@@ -104,7 +104,7 @@ class PandasTransformations(BaseTransformations):
         return df
 
     def add_attributes_from_json_file(self, df: pd.DataFrame) -> pd.DataFrame:
-        if self.attributes_file is not None:
+        if not self.attributes_file:
             _logger.info("Adding attributes to data from file")
             attributes_fp = (
                 Template(self.attributes_file).render(db=self.db.name, env=self.db.env)

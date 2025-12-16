@@ -5,7 +5,7 @@ import pytest
 from dateutil.tz import tzutc
 
 
-def test_get_env():
+def test_get_env() -> None:
     from opg_pipeline_builder.utils.constants import get_env
 
     assert get_env() == "test"
@@ -18,7 +18,7 @@ def test_get_env():
     os.environ["DATABASE_VERSION"] = orig_env
 
 
-def test_get_source_db():
+def test_get_source_db() -> None:
     from opg_pipeline_builder.utils.constants import get_source_db
 
     assert get_source_db() == "testdb"
@@ -31,7 +31,7 @@ def test_get_source_db():
     os.environ["DATABASE"] = orig_env
 
 
-def test_get_source_tbls():
+def test_get_source_tbls() -> None:
     from opg_pipeline_builder.utils.constants import get_source_tbls
 
     assert get_source_tbls() == ["table1", "table2", "table3"]
@@ -44,7 +44,7 @@ def test_get_source_tbls():
     os.environ["SOURCE_TBLS_ENV"] = orig_env
 
 
-def test_get_etl_stage():
+def test_get_etl_stage() -> None:
     from opg_pipeline_builder.utils.constants import get_etl_stage
 
     assert get_etl_stage() == "raw_hist_to_curated"
@@ -77,7 +77,9 @@ def test_get_etl_stage():
         ),
     ],
 )
-def test_get_multiprocessing_settings(env_var, expected):
+def test_get_multiprocessing_settings(
+    env_var: str, expected: dict[str, object]
+) -> None:
     from opg_pipeline_builder.utils.constants import get_multiprocessing_settings
 
     assert get_multiprocessing_settings() is None
@@ -89,7 +91,7 @@ def test_get_multiprocessing_settings(env_var, expected):
     del os.environ["MULTI_PROC_ENV"]
 
 
-def test_get_start_date():
+def test_get_start_date() -> None:
     from opg_pipeline_builder.utils.constants import get_start_date
 
     assert get_start_date() is None
@@ -101,7 +103,7 @@ def test_get_start_date():
     del os.environ["START_DATE"]
 
 
-def test_get_end_date():
+def test_get_end_date() -> None:
     from opg_pipeline_builder.utils.constants import get_end_date
 
     assert get_end_date() is None
@@ -122,7 +124,9 @@ def test_get_end_date():
         (None, False, False),
     ],
 )
-def test_get_use_glue(enable_glue, expected, error):
+def test_get_use_glue(
+    enable_glue: str | None, expected: bool | None, error: bool
+) -> None:
     from opg_pipeline_builder.utils.constants import get_use_glue
 
     if enable_glue is None:
@@ -149,7 +153,9 @@ def test_get_use_glue(enable_glue, expected, error):
         ("True", "1", 2),
     ],
 )
-def test_get_no_glue_workers(use_glue, no_workers, expected):
+def test_get_no_glue_workers(
+    use_glue: str | None, no_workers: str, expected: int | None
+) -> None:
     from opg_pipeline_builder.utils.constants import get_no_glue_workers, get_use_glue
 
     if use_glue is None:
@@ -181,7 +187,7 @@ def test_get_no_glue_workers(use_glue, no_workers, expected):
     "db_name, prefix, expected",
     [("all", "dep", "dep_test"), ("testdb", "dep", "dep_testdb_test")],
 )
-def test_get_opg_db_name(db_name, prefix, expected):
+def test_get_opg_db_name(db_name: str, prefix: str, expected: str) -> None:
     from opg_pipeline_builder.utils.constants import get_full_db_name
 
     os.environ["ATHENA_DB_PREFIX"] = prefix
@@ -189,7 +195,7 @@ def test_get_opg_db_name(db_name, prefix, expected):
     del os.environ["ATHENA_DB_PREFIX"]
 
 
-def test_get_metadata_path():
+def test_get_metadata_path() -> None:
     from opg_pipeline_builder.utils.constants import get_metadata_path
 
     assert get_metadata_path() == os.path.join(
@@ -208,7 +214,9 @@ def test_get_metadata_path():
         ("hello", None, True),
     ],
 )
-def test_get_chunk_size(chunk_size, expected, error):
+def test_get_chunk_size(
+    chunk_size: str, expected: int | bool | None, error: bool
+) -> None:
     from opg_pipeline_builder.utils.constants import get_chunk_size
 
     os.environ["CHUNK_SIZE"] = chunk_size

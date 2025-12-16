@@ -1,4 +1,5 @@
 from tempfile import NamedTemporaryFile
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -19,7 +20,7 @@ class TestSchemaReader:
         {"my_int": [0, 1, 2, 3, 4], "hobby": ["jump", "hop", "skip", "walk", "run"]}
     )
 
-    def helper(self, s3, monkeypatch, file_ext):
+    def helper(self, s3: Any, monkeypatch: pytest.MonkeyPatch, file_ext: str) -> str:
         monkeypatch.setattr(self.sr_utils, "S3FileSystem", mock_get_file)
 
         set_up_s3(s3)
@@ -38,7 +39,7 @@ class TestSchemaReader:
 
         return s3_key
 
-    def test_repr(self):
+    def test_repr(self) -> None:
         assert (
             str(self.sr_utils.SchemaReader())
             == f"""
@@ -80,7 +81,9 @@ class TestSchemaReader:
             ),
         ],
     )
-    def test_unpack_type(self, type, contains_field, expected):
+    def test_unpack_type(
+        self, type: str, contains_field: bool, expected: list[dict[str, str | Any]]
+    ) -> None:
         sr = self.sr_utils.SchemaReader
         assert sr._unpack_type(type, contains_field=contains_field) == expected
 
@@ -101,7 +104,7 @@ class TestSchemaReader:
             )
         ],
     )
-    def test_split_type(self, type, expected):
+    def test_split_type(self, type: str, expected: list[str]) -> None:
         sr = self.sr_utils.SchemaReader
         assert sr._split_type(type) == expected
 
@@ -160,7 +163,9 @@ class TestSchemaReader:
             ),
         ],
     )
-    def test_struct_validator(self, col_type, meta_col_type, expected):
+    def test_struct_validator(
+        self, col_type: str, meta_col_type: str, expected: bool
+    ) -> None:
         sr = self.sr_utils.SchemaReader
         assert sr._struct_validator(col_type, meta_col_type) == expected
 
@@ -341,12 +346,19 @@ class TestSchemaReader:
             ),
         ],
     )
-    def test_validator(self, data_columns, meta_columns, expected):
+    def test_validator(
+        self,
+        data_columns: list[dict[str, str | Any]],
+        meta_columns: list[dict[str, str | Any]],
+        expected: bool,
+    ) -> None:
         sr = self.sr_utils.SchemaReader
         assert sr._validate(data_columns, meta_columns) == expected
 
     @pytest.mark.parametrize("file_ext", ["snappy.parquet", "json"])
-    def test_read_schema(self, s3, monkeypatch, file_ext):
+    def test_read_schema(
+        self, s3: Any, monkeypatch: pytest.MonkeyPatch, file_ext: str
+    ) -> None:
         s3_key = self.helper(s3, monkeypatch, file_ext)
         sr = self.sr_utils.SchemaReader()
         meta = self.meta
@@ -359,7 +371,9 @@ class TestSchemaReader:
         assert meta_cols == schema_cols
 
     @pytest.mark.parametrize("file_ext", ["snappy.parquet", "json"])
-    def test_check_schemas_match(self, s3, monkeypatch, file_ext):
+    def test_check_schemas_match(
+        self, s3: Any, monkeypatch: pytest.MonkeyPatch, file_ext: str
+    ) -> None:
         s3_key = self.helper(s3, monkeypatch, file_ext)
         sr = self.sr_utils.SchemaReader()
         meta = self.meta

@@ -1,35 +1,31 @@
-from typing import Dict, List
+from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
+from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
+from opg_pipeline_builder.transforms import Transforms
 
 
 class TestTransforms:
     database_name = "testdb"
 
-    def get_transforms(self):
-        from opg_pipeline_builder.transforms import Transforms
-
+    def get_transforms(self) -> Transforms:
         return Transforms()
 
-    def setup_child_athena(self):
-        from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
-
-        class ChildAthenaTransformEngine(AthenaTransformEngine):
-            def dummy_method(self, tables: List[str], stages: Dict[str, str]): ...
+    def setup_child_athena(self) -> AthenaTransformEngine:
+        class ChildAthenaTransformEngine(AthenaTransformEngine):  # type: ignore
+            def dummy_method(self, _: list[str], __: dict[str, str]) -> None: ...
 
         return ChildAthenaTransformEngine
 
-    def setup_dummy_engine(self):
-        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
-
-        class DummyTransformEngine(BaseTransformEngine):
-            def run(self, tables: List[str], stages: Dict[str, str]):
+    def setup_dummy_engine(self) -> BaseTransformEngine:
+        class DummyTransformEngine(BaseTransformEngine):  # type: ignore
+            def run(self, _: list[str], __: dict[str, str]) -> None:
                 print("hello")
 
         return DummyTransformEngine
 
-    def test_transforms_init(self):
+    def test_transforms_init(self) -> None:
         _ = self.get_transforms()
 
-    def test_transforms_setattr(self):
+    def test_transforms_setattr(self) -> None:
         new_athena = self.setup_child_athena()
         transforms = self.get_transforms()
         transforms.athena = new_athena

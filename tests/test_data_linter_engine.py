@@ -8,6 +8,7 @@ import awswrangler as wr
 import pytest
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 
+import opg_pipeline_builder.transform_engines.data_linter as Linter
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.models.metadata_model import load_metadata
 from opg_pipeline_builder.validator import PipelineConfig
@@ -21,11 +22,6 @@ class TestDataLinterEngine:
     output_stage = "raw_hist"
     land_data_path = "tests/data/dummy_data"
     data_ext = ".csv"
-
-    def get_linter(self):
-        import opg_pipeline_builder.transform_engines.data_linter as linter
-
-        return linter
 
     @pytest.mark.parametrize(
         "mp_args, expected",
@@ -49,13 +45,14 @@ class TestDataLinterEngine:
             ({"enable": "pod", "total_workers": 7, "current_worker": 8}, False),
         ],
     )
-    def test_validate_mp_args(self, mp_args, expected):
-        linter = self.get_linter()
-        linter_engine = linter.DataLinterTransformEngine
+    def test_validate_mp_args(
+        self, mp_args: dict[str, str | int | bool] | None, expected: bool
+    ) -> None:
+        linter_engine = Linter.DataLinterTransformEngine
         if expected:
             assert linter_engine._validate_mp_args(mp_args) is None
         else:
-            error = ValueError if "enable" in mp_args else KeyError
+            error = ValueError if "enable" in mp_args else KeyError  # type: ignore
             with pytest.raises(error):
                 linter_engine._validate_mp_args(mp_args)
 
@@ -114,8 +111,7 @@ class TestDataLinterEngine:
 
         from opg_pipeline_builder.utils.utils import remove_lint_filestamp
 
-        linter = self.get_linter()
-        transform = linter.DataLinterTransformEngine(config=config, db=database)
+        transform = Linter.DataLinterTransformEngine(config=config, db=database)
         db = transform.db
         table = db.table(self.table_name)
         input_path = table.table_data_paths()[self.input_stage]

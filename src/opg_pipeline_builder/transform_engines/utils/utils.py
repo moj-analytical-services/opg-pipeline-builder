@@ -193,16 +193,20 @@ class TransformEngineUtils(BaseModel):
             given ETL stage.
         """
         input_partitions = self.list_partitions(
-            stage=input_stage, table_name=table_name, **kwargs
+            stage=input_stage,
+            table_name=table_name,
+            **kwargs,  # type: ignore
         )
 
         output_partitions = self.list_partitions(
-            stage=output_stage, table_name=table_name, **kwargs
+            stage=output_stage,
+            table_name=table_name,
+            **kwargs,  # type: ignore
         )
 
         new_partitions = [f for f in input_partitions if f not in output_partitions]
 
-        new_partitions_list: list[str] = sorted(list(set(new_partitions)), reverse=True)
+        new_partitions_list: list[str] = sorted(list(set(new_partitions)), reverse=True)  # type: ignore
 
         return new_partitions_list
 

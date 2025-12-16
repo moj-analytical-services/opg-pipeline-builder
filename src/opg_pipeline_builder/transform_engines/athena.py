@@ -5,7 +5,6 @@ from typing import Any
 import awswrangler as wr
 import pydbtools as pydb
 from mojap_metadata import Metadata
-from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
@@ -39,7 +38,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     sql_table_filter: bool = False
     db_search_limit: int | None = None
     jinja_args: dict[Any, Any] | None = None
-    transforms: athena_transforms.AthenaTransformations = Field(init=False)
+    transforms: athena_transforms.AthenaTransformations | None = None
     transforms_type: str | None = None
     input_stage: str = "processed"
 
@@ -606,7 +605,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         sql = pydb.get_sql_from_file(sql_path, jinja_args=new_jinja_args)
 
         try:
-            self.transforms.derived_transform(
+            self.transforms.derived_transform(  # type: ignore
                 sql,
                 output_path=output_path,
                 output_meta=output_meta,

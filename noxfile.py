@@ -26,9 +26,11 @@ def run_tool(session: nox.Session, tool: str, *args: str) -> None:
 @nox.session(tags=["lint"])
 def lint(session: nox.Session) -> None:
     """Run ruff (lint + format) and isort."""
-    install_with_tools(session, "ruff", "isort")
-    run_tool(session, "ruff", "check", *TARGETS)
-    run_tool(session, "isort", *TARGETS)
+    install_with_tools(
+        session,
+        "ruff",
+    )
+    run_tool(session, "ruff", "check", "--select", "I", *TARGETS)
 
 
 @nox.session(tags=["typecheck"])

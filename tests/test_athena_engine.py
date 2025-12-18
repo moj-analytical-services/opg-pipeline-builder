@@ -5,6 +5,7 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Any
 
 import awswrangler as wr
 import boto3
@@ -35,7 +36,7 @@ def create_athena_instance() -> athena.AthenaTransformEngine:
 
 
 class DummyAthenaResponse:
-    def __init__(self, status, output_location):
+    def __init__(self, status: bool, output_location: str) -> None:
         payload_status = "SUCCEEDED" if status else "FAILED"
         self.raw_payload = {"Status": {"State": payload_status}}
         self.output_location = output_location
@@ -52,20 +53,20 @@ class TestAthenaTransformEngine:
     temp_table_name = "table2_copy"
     temp_table_animal = "chicken"
 
-    def do_nothing(*args, **kwargs): ...
+    def do_nothing(self, *args: Any, **kwargs: Any) -> None: ...
 
     def mock_unload(
         self,
-        sql,
-        path,
-        database,
-        partitioned_by,
-        status,
-        output_meta,
-        use_glue_meta=True,
-        alt_database=None,
-        **kwargs,
-    ):
+        sql: str,
+        path: str,
+        database: str,
+        partitioned_by: list[str],
+        status: bool,
+        output_meta: Any,
+        use_glue_meta: bool = True,
+        alt_database: str | None = None,
+        **kwargs: Any,
+    ) -> DummyAthenaResponse:
         from opg_pipeline_builder.utils.utils import (
             extract_mojap_partition,
             extract_mojap_timestamp,
@@ -107,7 +108,7 @@ class TestAthenaTransformEngine:
 
             con = duckdb.connect(database=database_to_use)
             tmp_file = NamedTemporaryFile(suffix=".snappy.parquet")
-            _ = wr.s3.download(path=p, local_file=tmp_file.name)
+            wr.s3.download(path=p, local_file=tmp_file.name)
 
             df = reader.read(  # noqa: F841
                 tmp_file.name, metadata=glue_meta if use_glue_meta else None
@@ -116,7 +117,7 @@ class TestAthenaTransformEngine:
                 extract_mojap_partition(p, timestamp_partition_name=primary_partition)
             )
 
-            con.execute(  # nosec
+            con.execute(
                 f"""
                 CREATE TABLE {table} AS
                 SELECT
@@ -125,7 +126,7 @@ class TestAthenaTransformEngine:
                         {prt} AS INT
                     ) AS {primary_partition}
                 FROM df
-                """
+                """  # nosec B608
             )
 
             con.execute(re.sub(f"{database_to_use}.{table}", table, duckdb_sql[0]))
@@ -153,14 +154,20 @@ class TestAthenaTransformEngine:
 
         return DummyAthenaResponse(status, path)
 
-    def mock_pydb_read_sql_queries(self, sql, prt):
+    def mock_pydb_read_sql_queries(self, sql: str, prt: int) -> dict[str, list[int]]:
         return {"unique_prts": [prt]}
 
     def mock_pydb_create_temp_table(
-        self, sql, table_name, con, prt, primary_partition, s3_path
-    ):
+        self,
+        sql: str,
+        table_name: str,
+        con: Any,
+        prt: int,
+        primary_partition: str,
+        s3_path: str,
+    ) -> None:
         tmp_file = NamedTemporaryFile(suffix=".snappy.parquet")
-        _ = wr.s3.download(path=s3_path, local_file=tmp_file.name)
+        wr.s3.download(path=s3_path, local_file=tmp_file.name)
         mock_df = reader.read(tmp_file.name)  # noqa: F841
 
         duckdb_sql = sqlglot.transpile(sql, read="presto", write="duckdb")
@@ -169,7 +176,7 @@ class TestAthenaTransformEngine:
             "FROM [a-zA-Z0-9_]+\\.[a-zA-Z0-9]+", "FROM mocked_table", duckdb_sql[0]
         )
 
-        con.execute(  # nosec
+        con.execute(
             f"""
             CREATE TABLE mocked_table AS
             SELECT
@@ -178,12 +185,14 @@ class TestAthenaTransformEngine:
                     {prt} AS INT
                 ) AS {primary_partition}
             FROM mock_df
-            """
+            """  # nosec B608
         )
 
         con.execute(augmented_sql)
 
-    def setup_data(self, s3, stage="input"):
+    def setup_data(
+        self, s3: Any, stage: str = "input"
+    ) -> tuple[athena.AthenaTransformEngine, int]:
         transform = create_athena_instance()
         db = transform.db
         partition_name = db.primary_partition_name()
@@ -218,7 +227,7 @@ class TestAthenaTransformEngine:
     @pytest.mark.xfail
     @mock_aws
     @pytest.mark.parametrize("status", [True, False])
-    def test_run(self, s3, monkeypatch, status):
+    def test_run(self, s3: Any, monkeypatch: Any, status: bool) -> None:
         import opg_pipeline_builder.utils.schema_reader as sr
         from opg_pipeline_builder.utils.constants import etl_stages
 
@@ -250,8 +259,9 @@ class TestAthenaTransformEngine:
 
         if status:
             transform.run(
-                stages={"input": self.input_stage, "output": self.output_stage},
-                tables=[table.name],
+                table=table.name,
+                stage=self.input_stage,
+                _=None,
             )
 
             primary_partition = db.primary_partition_name()
@@ -269,7 +279,7 @@ class TestAthenaTransformEngine:
                 for prt in original_prts:
                     prt_type = copied_meta.get_column(prt).get("type")
                     prt_reg = "[0-9]{10}" if "int" in prt_type else "[a-zA-Z]*"
-                    prt_substr = re.search(f"{prt}={prt_reg}/", file)[0]
+                    prt_substr = re.search(f"{prt}={prt_reg}/", file)[0]  # type: ignore
                     prt_val_pre = re.sub(f"{prt}=|/", "", prt_substr)
                     prt_val = int(prt_val_pre) if "int" in prt_type else prt_val_pre
                     file_df[prt] = prt_val
@@ -309,14 +319,15 @@ class TestAthenaTransformEngine:
         else:
             with pytest.raises(Exception):
                 transform.run(
-                    stages={"input": self.input_stage, "output": self.output_stage},
-                    tables=[table.name],
+                    stage=self.input_stage,
+                    table=table.name,
+                    _=None,
                 )
             assert len(wr.s3.list_objects(cp)) == 0
             assert len(wr.s3.list_objects(temp_path)) == 0
 
     @pytest.mark.xfail
-    def test_create_tmp_table(self, s3, monkeypatch):
+    def test_create_tmp_table(self, s3: Any, monkeypatch: Any) -> None:
         athena, prt = self.setup_data(s3, stage="output")
         con = duckdb.connect(database="__temp__")
 
@@ -355,7 +366,7 @@ class TestAthenaTransformEngine:
     @pytest.mark.xfail
     @mock_aws
     @pytest.mark.parametrize("status", [True, False])
-    def test_run_derived(self, s3, monkeypatch, status):
+    def test_run_derived(self, s3: Any, monkeypatch: Any, status: bool) -> None:
         import pydbtools.utils as pydb_utils
 
         import opg_pipeline_builder.utils.schema_reader as sr
@@ -432,7 +443,7 @@ class TestAthenaTransformEngine:
                 for prt in original_prts:
                     prt_type = copied_meta.get_column(prt).get("type")
                     prt_reg = "[0-9]{10}" if "int" in prt_type else "[a-zA-Z]*"
-                    prt_substr = re.search(f"{prt}={prt_reg}/", file)[0]
+                    prt_substr = re.search(f"{prt}={prt_reg}/", file)[0]  # type: ignore
                     prt_val_pre = re.sub(f"{prt}=|/", "", prt_substr)
                     prt_val = int(prt_val_pre) if "int" in prt_type else prt_val_pre
                     file_df[prt] = prt_val

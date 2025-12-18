@@ -4,7 +4,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import boto3
 from dataengineeringutils3.s3 import (
@@ -34,7 +34,9 @@ def get_last_modified(obj: dict[Any, Any]) -> int:
     return int(obj["LastModified"].strftime("%s"))
 
 
-def s3_copy(copy_args: tuple[str, str], client: object | None = None) -> dict[Any, Any]:
+def s3_copy(
+    copy_args: tuple[str, str], client: Optional[boto3.client] = None
+) -> dict[Any, Any]:
     """
     Function to copy objects from one S3 location to another S3 location
     Args:
@@ -47,7 +49,8 @@ def s3_copy(copy_args: tuple[str, str], client: object | None = None) -> dict[An
         dict: Dictionary containing the 'CopyObjectResults' dictionary of the
               clients copy_object call.
     """
-    if client is None:
+
+    if not client:
         client = boto3.client("s3")
 
     source_path, dest_path = copy_args
@@ -58,7 +61,7 @@ def s3_copy(copy_args: tuple[str, str], client: object | None = None) -> dict[An
         CopySource=source_path, Bucket=dest_bucket, Key=dest_key
     )
 
-    return copy_return["CopyObjectResult"]
+    return copy_return["CopyObjectResult"]  # type: ignore
 
 
 def s3_bulk_copy(copy_list: list[tuple[str, str]]) -> list[Any]:
@@ -75,7 +78,7 @@ def s3_bulk_copy(copy_list: list[tuple[str, str]]) -> list[Any]:
 
     max_work = min(
         max(
-            32 if len(copy_list) > 80 else min(32, os.cpu_count() + 4),
+            32 if len(copy_list) > 80 else min(32, os.cpu_count() + 4),  # type: ignore
             int(round(len(copy_list) / 10, 0)),
         ),
         1000,
@@ -294,7 +297,7 @@ def check_s3_for_existing_timestamp_file(
     """
     try:
         # get max timestamp in raw_hist for given table
-        ts = [re.search(filename_regex, Path(i).name).group(3) for i in existing_data]
+        ts = [re.search(filename_regex, Path(i).name).group(3) for i in existing_data]  # type: ignore
     except AttributeError:
         raise ValueError(
             """a file timestamp in raw_hist is not
@@ -307,7 +310,7 @@ def check_s3_for_existing_timestamp_file(
         max_ts = 0
 
     try:
-        new_file_timestamp = re.search(filename_regex, Path(new_file).name).group(3)
+        new_file_timestamp = re.search(filename_regex, Path(new_file).name).group(3)  # type: ignore
     except AttributeError:
         raise ValueError(
             f"""the new filename, {new_file}, is not
@@ -340,4 +343,4 @@ def pa_read_json_from_s3(s3_path: str) -> Table:
     return json_pa_data
 
 
-def do_nothing(*args, **kwargs): ...
+def do_nothing(*args, **kwargs): ...  # type: ignore

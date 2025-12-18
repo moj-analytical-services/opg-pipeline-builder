@@ -9,7 +9,7 @@ from mojap_metadata.converters.glue_converter import GlueConverter
 from opg_pipeline_builder.transform_engines.utils.utils import TransformEngineUtils
 
 
-class AthenaTransformEngineUtils(TransformEngineUtils):
+class AthenaTransformEngineUtils(TransformEngineUtils):  # type: ignore
     @staticmethod
     def check_table_is_not_empty(table_name: str) -> None:
         count_template = pydb.render_sql_template(

@@ -1,14 +1,19 @@
 import os
 from copy import deepcopy
+from typing import Any
 
 import pytest
 import yaml
 from mojap_metadata import Metadata
 
+from opg_pipeline_builder.database import Database, DatabaseTable
+from opg_pipeline_builder.validator import read_pipeline_config
 from src.opg_pipeline_builder.validator import PipelineConfig
+from tests.conftest import land_bucket
 
 
 @pytest.fixture(
+    name="db_fixt",
     params=[
         (
             "testdb",
@@ -107,11 +112,10 @@ from src.opg_pipeline_builder.validator import PipelineConfig
                 },
             },
         )
-    ]
+    ],
 )
-def db_fixt(request):
+def db_fixt(request: pytest.FixtureRequest) -> tuple[Database, dict[str, Any]]:
     db_name, expected = request.param
-    from opg_pipeline_builder.database import Database
 
     with open(os.path.join("tests/data/configs", f"{db_name}.yml")) as config_file:
         raw_pipeline_config = yaml.safe_load(config_file)
@@ -122,24 +126,22 @@ def db_fixt(request):
     return db, expected
 
 
-def test_db_name(db_fixt):
+def test_db_name(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, expected = db_fixt
     assert db._name == expected["name"]
 
 
-def test_db_env(db_fixt):
+def test_db_env(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, expected = db_fixt
     assert db.env == expected["env"]
 
 
-def test_db_tables(db_fixt):
+def test_db_tables(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, expected = db_fixt
     assert db.tables == expected["tables"]
 
 
-def test_db_config(db_fixt):
-    from opg_pipeline_builder.validator import read_pipeline_config
-
+def test_db_config(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, _ = db_fixt
     pipeline_config = read_pipeline_config(db._name)
 
@@ -147,21 +149,19 @@ def test_db_config(db_fixt):
 
 
 @pytest.mark.xfail
-def test_db_metadata_path(db_fixt):
+def test_db_metadata_path(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, expected = db_fixt
     full_expected_path = expected["metadata_path"]
     assert db.metadata_path == full_expected_path
 
 
-def test_db_land_path(db_fixt):
-    from tests.conftest import land_bucket
-
+def test_db_land_path(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, _ = db_fixt
     exp_lp = os.path.join("s3://", land_bucket, "dep", db.env, db._name)
     assert db.land_path == exp_lp
 
 
-def test_db_raw_hist_path(db_fixt):
+def test_db_raw_hist_path(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     from tests.conftest import raw_hist_bucket
 
     db, _ = db_fixt
@@ -169,12 +169,12 @@ def test_db_raw_hist_path(db_fixt):
     assert db.raw_hist_path == exp_rhp
 
 
-def test_db_processed_path(db_fixt):
+def test_db_processed_path(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, _ = db_fixt
     assert db.processed_path == ""
 
 
-def test_db_curated_path(db_fixt):
+def test_db_curated_path(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     from tests.conftest import dep_bucket
 
     db, _ = db_fixt
@@ -182,9 +182,9 @@ def test_db_curated_path(db_fixt):
     assert db.curated_path == exp_cp
 
 
-def test_db_primary_partition(db_fixt):
+def test_db_primary_partition(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, expected = db_fixt
-    assert db.primary_partition_name() == expected.get("lint_config").get(
+    assert db.primary_partition_name() == expected.get("lint_config").get(  # type: ignore
         "timestamp-partition-name"
     )
 
@@ -333,9 +333,9 @@ def test_db_primary_partition(db_fixt):
         ),
     ]
 )
-def tbl_fixt(request, db_fixt):
-    from opg_pipeline_builder.database import DatabaseTable
-
+def tbl_fixt(
+    request: pytest.FixtureRequest, db_fixt: tuple[Database, dict[str, Any]]
+) -> tuple[DatabaseTable, dict[str, Any]]:
     db_table, expected = request.param
     _, tbl_name = db_table.split(".")
 
@@ -343,31 +343,33 @@ def tbl_fixt(request, db_fixt):
 
 
 @pytest.fixture
-def db_config(tbl_fixt):
-    from opg_pipeline_builder.validator import read_pipeline_config
-
+def db_config(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> dict[Any, Any]:
     _, expected = tbl_fixt
     db_config = read_pipeline_config(expected["db_name"])
-    return db_config.dict()
+    return db_config.model_dump()  # type: ignore
 
 
-def test_db_tbl_name(tbl_fixt):
+def test_db_tbl_name(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     assert expected["name"] == tbl.name
 
 
-def test_db_tbl_db_name(tbl_fixt):
+def test_db_tbl_db_name(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     assert expected["db_name"] == tbl.db_name
 
 
-def test_db_tbl_config(tbl_fixt, db_config):
+def test_db_tbl_config(
+    tbl_fixt: tuple[DatabaseTable, dict[str, Any]], db_config: dict[Any, Any]
+) -> None:
     tbl, expected = tbl_fixt
     tbl_config = db_config["tables"][expected["name"]]
     assert tbl.config == tbl_config
 
 
-def test_db_tbl_transform(tbl_fixt, db_config):
+def test_db_tbl_transform(
+    tbl_fixt: tuple[DatabaseTable, dict[str, Any]], db_config: dict[Any, Any]
+) -> None:
     tbl, expected = tbl_fixt
     tbl_config = db_config["tables"][expected["name"]]
     config_transform = tbl_config["transform_type"]
@@ -387,7 +389,9 @@ def test_db_tbl_transform(tbl_fixt, db_config):
         assert transform_check1 and transform_check2
 
 
-def test_db_tbl_etl_stages(tbl_fixt, db_config):
+def test_db_tbl_etl_stages(
+    tbl_fixt: tuple[DatabaseTable, dict[str, Any]], db_config: dict[Any, Any]
+) -> None:
     tbl, expected = tbl_fixt
     tbl_config = db_config["tables"][expected["name"]]
     tbl_etl_stages = list(tbl_config["etl_stages"].keys())
@@ -397,7 +401,9 @@ def test_db_tbl_etl_stages(tbl_fixt, db_config):
     assert etl_check1 and etl_check2
 
 
-def test_db_tbl_file_formats(tbl_fixt, db_config):
+def test_db_tbl_file_formats(
+    tbl_fixt: tuple[DatabaseTable, dict[str, Any]], db_config: dict[Any, Any]
+) -> None:
     tbl, expected = tbl_fixt
     tbl_config = db_config["tables"][expected["name"]]
     tbl_formats = tbl_config["etl_stages"]
@@ -407,13 +413,13 @@ def test_db_tbl_file_formats(tbl_fixt, db_config):
     assert formats_check1 and formats_check2
 
 
-def test_db_tbl_paths(tbl_fixt):
+def test_db_tbl_paths(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     expected_paths = expected["table_paths"]
     assert tbl.table_data_paths() == expected_paths
 
 
-def test_db_tbl_meta_paths(tbl_fixt):
+def test_db_tbl_meta_paths(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     expected_meta_paths = expected["table_meta_paths"]
     full_meta_paths = {
@@ -423,20 +429,20 @@ def test_db_tbl_meta_paths(tbl_fixt):
 
 
 @pytest.mark.xfail
-def test_db_tbl_input_data(tbl_fixt):
+def test_db_tbl_input_data(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     expected_meta_paths = expected["input_data"]
     assert tbl.input_data() == expected_meta_paths
 
 
-def test_db_tbl_lint_config(tbl_fixt):
+def test_db_tbl_lint_config(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     expected_lint_config = expected["lint_config"]
     assert tbl.lint_config() == expected_lint_config
 
 
 @pytest.mark.xfail
-def test_db_tbl_transform_args(tbl_fixt):
+def test_db_tbl_transform_args(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     transform_type = expected["transform_type"]
     input = None if transform_type == "derived" else "raw_hist"
@@ -448,7 +454,7 @@ def test_db_tbl_transform_args(tbl_fixt):
 
 
 @pytest.mark.xfail
-def test_db_tbl_get_tbl_meta(tbl_fixt):
+def test_db_tbl_get_tbl_meta(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     meta_fps = expected["table_meta_paths"]
     for stage, fp in meta_fps.items():
@@ -458,16 +464,14 @@ def test_db_tbl_get_tbl_meta(tbl_fixt):
         assert moj_meta_dict == tbl.get_table_metadata(stage=stage).to_dict()
 
 
-def test_db_tbl_get_table_path(tbl_fixt):
+def test_db_tbl_get_table_path(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
     tbl, expected = tbl_fixt
     tbl_fps = expected["table_paths"]
     for stage, tbl_fp in tbl_fps.items():
         assert tbl_fp == tbl.get_table_path(stage=stage)
 
 
-def test_db_table(db_fixt):
-    from opg_pipeline_builder.database import DatabaseTable
-
+def test_db_table(db_fixt: tuple[Database, dict[str, Any]]) -> None:
     db, expected = db_fixt
     tables = expected["tables"]
     for table_name in tables:
@@ -475,7 +479,9 @@ def test_db_table(db_fixt):
 
 
 @pytest.mark.parametrize("specify_tables, spec", [(False, None), (True, 1), (True, -1)])
-def test_db_lint_config(db_fixt, specify_tables, spec):
+def test_db_lint_config(
+    db_fixt: tuple[Database, dict[str, Any]], specify_tables: bool, spec: int | None
+) -> None:
     db, expected = db_fixt
     exp_lint_config = deepcopy(expected["lint_config"])
     tbls = expected["tables"]
@@ -506,7 +512,9 @@ def test_db_lint_config(db_fixt, specify_tables, spec):
 
 
 @pytest.mark.parametrize("specify_tables, spec", [(False, None), (True, 1), (True, -1)])
-def test_db_tf_args(db_fixt, specify_tables, spec):
+def test_db_tf_args(
+    db_fixt: tuple[Database, dict[str, Any]], specify_tables: bool, spec: int | None
+) -> None:
     db, expected = db_fixt
     exp_tf_args = deepcopy(expected["transform_args"])
     exp_tf_args["db"] = db._name

@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any, Optional
 
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
@@ -18,27 +19,25 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     chunk_memory_size: int | str = 100_000
     chunk_rest_threshold: int = 500_000_000
     add_partition_column: bool = False
-    attributes_file: str | None = None
-    attributes: dict | None = None
-    extract_header_values: dict[str, str] | None = None
+    attributes_file: str = ""
+    attributes: dict[Any, Any] = {}
+    extract_header_values: dict[str, str] = {}
     enrich_meta: bool = True
     raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"
-    raw_stage: str = "raw_hist"
-    transforms: PandasTransformations | None = None
+    transforms: Optional[PandasTransformations] = None
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context) -> None:  # type: ignore
         super().model_post_init(__context)
-        if not self.transforms:
-            self.transforms = PandasTransformations(
-                config=self.config,
-                db=self.db,
-                utils=self.utils,
-                add_partition_column=self.add_partition_column,
-                attributes_file=self.attributes_file,
-                attributes=self.attributes,
-                extract_header_values=self.extract_header_values,
-            )
+        self.transforms = PandasTransformations(
+            config=self.config,
+            db=self.db,
+            utils=self.utils,
+            add_partition_column=self.add_partition_column,
+            attributes_file=self.attributes_file,
+            attributes=self.attributes,
+            extract_header_values=self.extract_header_values,
+        )
 
     @classmethod
     def _remove_columns_in_meta_not_in_data(
@@ -91,12 +90,12 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         for df in dfs:
             _logger.info(f"Transforming chunk {i}")
             if transform_type == "custom":
-                tf_df = self.transforms.custom_transform(
+                tf_df = self.transforms.custom_transform(  # type: ignore
                     df, table_name, partition, updated_input_meta, output_meta
                 )
             else:
                 _logger.info(df)
-                tf_df = self.transforms.default_transform(
+                tf_df = self.transforms.default_transform(  # type: ignore
                     df, partition, updated_input_meta, output_meta
                 )
 
@@ -144,14 +143,14 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
             _logger.info(
                 f"Applying custom transformation to {filepath} for {table_name}"
             )
-            df = self.transforms.custom_transform(
+            df = self.transforms.custom_transform(  # type: ignore
                 df, table_name, partition, updated_input_meta, output_meta
             )
         else:
             _logger.info(
                 f"Applying default transformation to {filepath} for {table_name}"
             )
-            df = self.transforms.default_transform(
+            df = self.transforms.default_transform(  # type: ignore
                 df, partition, updated_input_meta, output_meta
             )
 
@@ -186,8 +185,8 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         files_to_process = wr.s3.list_objects(input_partition_path)
         for file in files_to_process:
             partition_input_info = wr.s3.describe_objects(file)
-            max_length = max(
-                [v.get("ContentLength") for _, v in partition_input_info.items()]
+            max_length: int = max(
+                [v.get("ContentLength") for _, v in partition_input_info.items()]  # type: ignore
             )
 
             if max_length > self.chunk_rest_threshold:
@@ -228,7 +227,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         unprocessed_partitions = [
             (
                 table_name,
-                self.utils.list_unprocessed_partitions(
+                self.utils.list_unprocessed_partitions(  # type: ignore
                     table_name,
                     input_stage=self.raw_stage,
                     output_stage=self.final_partition_stage,
@@ -248,17 +247,17 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
 
             input_meta = table_obj.get_table_metadata(self.raw_stage)
             output_meta = table_obj.get_table_metadata(stage)
-            output_format = table_obj.table_file_formats().get(stage).get("file_format")
+            output_format = table_obj.table_file_formats().get(stage).get("file_format")  # type: ignore
 
             for partition in partitions:
-                partition_input_path = os.path.join(input_path, partition)
-                partition_output_path = os.path.join(output_path, partition)
+                partition_input_path = os.path.join(input_path, partition)  # type: ignore
+                partition_output_path = os.path.join(output_path, partition)  # type: ignore
 
                 _logger.info(f"Processing {partition} for {table_name}")
                 self._transform(
                     table_name,
                     transform_type,
-                    partition,
+                    partition,  # type: ignore
                     partition_input_path,
                     partition_output_path,
                     output_format,

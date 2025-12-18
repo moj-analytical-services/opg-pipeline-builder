@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable
+from typing import Any, Callable, Generator
 from unittest.mock import MagicMock
 
 import aiobotocore.awsrequest
@@ -35,7 +35,7 @@ logging.getLogger("moto").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="module", autouse=True)
-def tests_env_setup_and_teardown():
+def tests_env_setup_and_teardown() -> Generator[None, None, None]:
     if "TEST_ENV" in os.environ:
         test_env = os.environ["TEST_ENV"]
     else:
@@ -92,12 +92,12 @@ def create_database(config: PipelineConfig) -> Database:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def copy_files():
+def copy_files() -> Generator[None, None, None]:
     test_directories = {"configs", "meta_data/test", "glue_jobs", "pipelines", "sql"}
 
     for dir in test_directories:
         try:
-            _ = Path(dir).mkdir(parents=True)
+            Path(dir).mkdir(parents=True)
         except FileExistsError:
             pass
 
@@ -112,33 +112,23 @@ def copy_files():
     copy("tests/data/meta_data", "meta_data/test")
     copy("tests/data/glue_jobs", "glue_jobs")
 
-    test_py_files = os.listdir("tests/data/python_scripts")
-    for py_file in test_py_files:
-        shutil.copyfile(
-            src=os.path.join("tests/data/python_scripts", py_file),
-            dst=os.path.join("pipelines", py_file),
-        )
-
     yield
 
     for config_file in test_config_files:
         os.remove(os.path.join("configs", config_file))
-
-    for py_file in test_py_files:
-        os.remove(os.path.join("pipelines", py_file))
 
     _ = [shutil.rmtree(dir) for dir in test_directories]
     shutil.rmtree("meta_data")
 
 
 @pytest.fixture(scope="function")
-def s3():
+def s3() -> Generator[boto3.resources.base.ServiceResource, None, None]:
     with mock_aws():
         yield boto3.resource("s3", region_name="eu-west-1")
 
 
 @pytest.fixture(scope="function")
-def s3_client():
+def s3_client() -> Generator[boto3.client, None, None]:
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-1")
 
@@ -149,7 +139,7 @@ def s3_client():
 # S3 and reading using e.g. pd.read_csv
 
 
-class MockAWSResponse(aiobotocore.awsrequest.AioAWSResponse):
+class MockAWSResponse(aiobotocore.awsrequest.AioAWSResponse):  # type: ignore
     """
     Mocked AWS Response.
 
@@ -157,7 +147,7 @@ class MockAWSResponse(aiobotocore.awsrequest.AioAWSResponse):
     https://gist.github.com/giles-betteromics/12e68b88e261402fbe31c2e918ea4168
     """
 
-    def __init__(self, response: botocore.awsrequest.AWSResponse):
+    def __init__(self, response: botocore.awsrequest.AWSResponse) -> None:
         self._moto_response = response
         self.status_code = response.status_code
         self.headers = response.headers
@@ -165,10 +155,10 @@ class MockAWSResponse(aiobotocore.awsrequest.AioAWSResponse):
 
     # adapt async methods to use moto's response
     async def _content_prop(self) -> bytes:
-        return self._moto_response.content
+        return self._moto_response.content  # type: ignore
 
     async def _text_prop(self) -> str:
-        return self._moto_response.text
+        return self._moto_response.text  # type: ignore
 
 
 class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
@@ -184,12 +174,12 @@ class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
         """
 
         async def read(self: MockHttpClientResponse, n: int = -1) -> bytes:
-            return response.content
+            return response.content  # type: ignore
 
         self.content = MagicMock(aiohttp.StreamReader)
         self.content.read = read
         self.response = response
-        self._loop = None
+        self._loop = None  # type: ignore
 
     @property
     def raw_headers(self) -> Any:
@@ -235,7 +225,7 @@ dummy_bucket = "dummy-bucket"
 dep_bucket = "alpha-dep-etl"
 
 
-def copy(odir, ndir):
+def copy(odir: str, ndir: str) -> None:
     odir_path = pathlib.Path(odir)
     for path in odir_path.rglob("*"):
         if path.is_file():
@@ -251,7 +241,7 @@ def copy(odir, ndir):
 class MockS3FilesystemReadInputStream:
     @staticmethod
     @contextmanager
-    def open_input_stream(s3_file_path_in: str) -> io.BytesIO:
+    def open_input_stream(s3_file_path_in: str) -> Generator[io.BytesIO, None, None]:
         s3_resource = boto3.resource("s3")
         bucket, key = s3_path_to_bucket_key(s3_file_path_in)
         obj_bytes = s3_resource.Object(bucket, key).get()["Body"].read()
@@ -263,7 +253,7 @@ class MockS3FilesystemReadInputStream:
 
     @staticmethod
     @contextmanager
-    def open_input_file(s3_file_path_in: str):
+    def open_input_file(s3_file_path_in: str) -> Generator[str, None, None]:
         s3_client = boto3.client("s3")
         bucket, key = s3_path_to_bucket_key(s3_file_path_in)
         tmp_file = NamedTemporaryFile(suffix=pathlib.Path(key).suffix)
@@ -271,19 +261,19 @@ class MockS3FilesystemReadInputStream:
         yield tmp_file.name
 
 
-def mock_get_file(*args, **kwargs):
+def mock_get_file(*args: Any, **kwargs: Any) -> MockS3FilesystemReadInputStream:
     return MockS3FilesystemReadInputStream()
 
 
-def mock_aws_delete_job(*args, **kwargs):
+def mock_aws_delete_job(*args: Any, **kwargs: Any) -> dict[str, str]:
     return {"JOB_NAME": "testdb_job"}
 
 
-def mock_wr_repair_partitions(*args, **kwargs):
+def mock_wr_repair_partitions(*args: Any, **kwargs: Any) -> None:
     return None
 
 
-def set_up_s3(mocked_s3):
+def set_up_s3(mocked_s3: boto3.resource) -> None:
     """
     Used to setup mocked s3 before a run that expects data in S3
     """
@@ -296,7 +286,9 @@ def set_up_s3(mocked_s3):
         )
 
 
-def mock_writer_write(df, output_path, *args, **kwargs):
+def mock_writer_write(
+    df: pd.DataFrame, output_path: str, *args: Any, **kwargs: Any
+) -> None:
     ext = pathlib.Path(output_path).suffix
     if ext == ".csv":
         wr.s3.to_csv(df, output_path, index=False)
@@ -306,7 +298,9 @@ def mock_writer_write(df, output_path, *args, **kwargs):
         raise NotImplementedError("Please add new writer")
 
 
-def mock_reader_read(path, metadata, *args, **kwargs):
+def mock_reader_read(
+    path: str, metadata: Any, *args: Any, **kwargs: Any
+) -> pd.DataFrame | list[pd.DataFrame]:
     ext = pathlib.Path(path).suffix
     with NamedTemporaryFile(suffix=ext) as tmp:
         wr.s3.download(path, tmp.name)
@@ -333,7 +327,7 @@ def mock_reader_read(path, metadata, *args, **kwargs):
 
 
 @pytest.fixture(autouse=True, scope="session")
-def fix_set_log_level() -> None:
+def fix_set_log_level() -> Generator[None, None, None]:
     """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
     logging.getLogger("botocore").setLevel(logging.CRITICAL)
     logging.getLogger("awswrangler").setLevel(logging.CRITICAL)

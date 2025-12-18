@@ -1,6 +1,6 @@
 import logging
 from inspect import getmembers, isfunction, signature
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -18,18 +18,21 @@ class BaseTransformEngine(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, _: Any) -> None:
         if not self.utils:
             self.utils = TransformEngineUtils(db=self.db)
         self._validate_method_kwargs()
 
     @staticmethod
-    def _check_public_method_args(parameters: object) -> bool:
+    def _check_public_method_args(parameters: list[str]) -> bool:
         if "tables" not in parameters:
             return False
 
         if "stages" or "stage" in parameters:
             return True
+
+        else:
+            return False
 
     def _validate_method_kwargs(self) -> None:
         methods = [
@@ -40,7 +43,7 @@ class BaseTransformEngine(BaseModel):
 
         validation = all(
             [
-                BaseTransformEngine._check_public_method_args(parameters)
+                BaseTransformEngine._check_public_method_args(parameters)  # type: ignore
                 for parameters in methods
             ]
         )

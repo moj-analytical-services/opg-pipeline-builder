@@ -12,7 +12,7 @@ from opg_pipeline_builder.utils.schema_reader import SchemaReader
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
-class AthenaTransformations(BaseTransformations, ABC):
+class AthenaTransformations(BaseTransformations, ABC):  # type: ignore
     @abstractmethod
     def default_transform(
         self, sql: str, output_meta: Metadata, output_path: str, database_name: str

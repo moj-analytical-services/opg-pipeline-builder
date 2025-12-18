@@ -79,59 +79,10 @@ class ETLStepConfig(BaseModel):
     transform_name: str | None = None
     transform_kwargs: dict[str, object] | None = None
 
-    # @field_validator("step")
-    # @classmethod
-    # def check_in_etl_steps(cls, v: str) -> str:
-    #     if v not in etl_steps:
-    #         raise ValueError(f"{v} not one of the following: {', '.join(etl_steps)}")
-    #     return v
-
     @model_validator(mode="after")
     def check_engine_exists(self) -> "ETLStepConfig":
         if not self.transform_name:
             self.transform_name = "run"
-
-        # engine_spec = os.path.exists(
-        #     resource_filename(
-        #         "opg_pipeline_builder", f"transform_engines/{self.engine_name}.py"
-        #     )
-        # )
-
-        # if not engine_spec:
-        #     module_path = f"engines.{self.engine_name}"
-        #     try:
-        #         engine_module = importlib.import_module(module_path)
-        #     except ModuleNotFoundError:
-        #         raise ModuleNotFoundError(
-        #             f"Cannot find transform engine {self.engine_name}"
-        #         )
-        # else:
-        #     engine_module = importlib.import_module(
-        #         f"opg_pipeline_builder.transform_engines.{self.engine_name}"
-        #     )
-
-        # class_name = (
-        #     "".join([n[0].upper() + n[1:].lower() for n in self.engine_name.split("_")])
-        #     + "TransformEngine"
-        # )
-
-        # try:
-        #     engine = getattr(engine_module, class_name)
-        # except AttributeError:
-        #     raise AttributeError(
-        #         f"Engine {self.engine_name} should contain a {class_name} class."
-        #     )
-
-        # functions = [
-        #     f
-        #     for f in inspect.getmembers(engine, predicate=inspect.isfunction)
-        #     if f[0] == self.transform_name
-        # ]
-
-        # if len(functions) != 1:
-        #     raise ValueError(
-        #         f"{class_name} class is missing {self.transform_name} method"
-        #     )
 
         return self
 
@@ -238,7 +189,7 @@ class PipelineConfig(BaseModel):
                     missing_tables = [
                         tbl
                         for tbl, _ in input_table_dict.items()
-                        if tbl not in db_tables
+                        if tbl not in db_tables  # type: ignore
                     ]
                     if missing_tables:
                         raise ValueError(

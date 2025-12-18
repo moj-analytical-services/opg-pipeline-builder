@@ -2,11 +2,13 @@ import os
 import time
 from datetime import timedelta
 from itertools import chain
+from typing import Any
 
 import pytest
 import yaml
 
 from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import dep_bucket, land_bucket, raw_hist_bucket, set_up_s3
 
@@ -16,7 +18,13 @@ class TestBaseEngineTransform:
     raw_hist_bucket = raw_hist_bucket
     curated_bucket = dep_bucket
 
-    def base_setup(self, test_files, upload_dir, table_name, partition=""):
+    def base_setup(
+        self,
+        test_files: list[str],
+        upload_dir: str,
+        table_name: str,
+        partition: str = "",
+    ) -> list[tuple[str, str, str]]:
         test_path = "tests/data/dummy_data/"
         table_partition = f"{table_name}/{partition}" if partition != "" else table_name
 
@@ -44,21 +52,17 @@ class TestBaseEngineTransform:
         db = Database(config)
         return config, db
 
-    def get_transform(self):
-        from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
-
+    def get_transform(self) -> BaseTransformEngine:
         config, db = self.create_db()
+        return BaseTransformEngine(config=config, db=db)
 
-        transform = BaseTransformEngine(config=config, db=db)
-        return transform
-
-    def test_base_db(self):
+    def test_base_db(self) -> None:
         _, db = self.create_db()
 
         base_tf = self.get_transform()
         assert base_tf.db == db
 
-    def test_list_table_files(self, s3):
+    def test_list_table_files(self, s3: Any) -> None:
         set_up_s3(s3)
         s3_client = s3.meta.client
         transform = self.get_transform()
@@ -191,7 +195,9 @@ class TestBaseEngineTransform:
             ({"mojap_file_land_timestamp=1664198347": []}, True),
         ],
     )
-    def test_list_partitions_and_cleanup(self, s3, partition_map, expected):
+    def test_list_partitions_and_cleanup(
+        self, s3: Any, partition_map: dict[str, list[str]], expected: bool
+    ) -> None:
         set_up_s3(s3)
         s3_client = s3.meta.client
         transform = self.get_transform()
@@ -201,7 +207,8 @@ class TestBaseEngineTransform:
         prts = [prt for prt, files in partition_map.items() if files]
 
         i = 0
-        setup_table1 = []
+        prt0 = ""
+        setup_table1: list[tuple[str, str, str]] = []
         for prt, prt_files in partition_map.items():
             if i == 0:
                 prt0 = prt
@@ -241,12 +248,9 @@ class TestBaseEngineTransform:
         transform.utils.cleanup_partitions(
             f"s3://{self.land_bucket}/dep/{env}/{db_name}/table1", prts
         )
-        assert (
-            s3_client.list_objects(
-                Bucket=self.land_bucket, Prefix=f"dep/{env}/{db_name}/table1"
-            ).get("Contents")
-            is None
-        )
+        assert not s3_client.list_objects(
+            Bucket=self.land_bucket, Prefix=f"dep/{env}/{db_name}/table1"
+        ).get("Contents")
 
     @pytest.mark.parametrize(
         "stages_map, expected",
@@ -307,7 +311,9 @@ class TestBaseEngineTransform:
             ),
         ],
     )
-    def test_list_unprocessed_partitions(self, s3, stages_map, expected):
+    def test_list_unprocessed_partitions(
+        self, s3: Any, stages_map: dict[str, Any], expected: list[str]
+    ) -> None:
         set_up_s3(s3)
         s3_client = s3.meta.client
         transform = self.get_transform()
@@ -317,7 +323,7 @@ class TestBaseEngineTransform:
         for _, map in stages_map.items():
             stage = map["name"]
             bucket = map["bucket_name"]
-            setup = []
+            setup: list[tuple[str, str, str]] = []
             upload_dir = (
                 f"dep/{env}/{db_name}"
                 if stage != "curated"
@@ -410,7 +416,13 @@ class TestBaseEngineTransform:
             ),
         ],
     )
-    def test_transform_partitions(self, s3, stages_map, tables, expected):
+    def test_transform_partitions(
+        self,
+        s3: Any,
+        stages_map: dict[str, Any],
+        tables: list[str],
+        expected: dict[str, list[str]],
+    ) -> None:
         set_up_s3(s3)
         s3_client = s3.meta.client
         transform = self.get_transform()
@@ -420,7 +432,7 @@ class TestBaseEngineTransform:
         for _, map in stages_map.items():
             stage = map["name"]
             bucket = map["bucket_name"]
-            setup = []
+            setup: list[tuple[str, str, str]] = []
             upload_dir = (
                 f"dep/{env}/{db_name}"
                 if stage != "curated"
@@ -516,7 +528,9 @@ class TestBaseEngineTransform:
             # ),
         ],
     )
-    def test_tf_args(self, table_name, stages, expected):
+    def test_tf_args(
+        self, table_name: str, stages: dict[str, str], expected: tuple[str, str, str]
+    ) -> None:
         transform = self.get_transform()
         assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected
 

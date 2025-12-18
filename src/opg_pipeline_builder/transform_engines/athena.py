@@ -684,7 +684,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         primary_partition = db.primary_partition_name()
         db_derived_name = get_full_db_name(db_name=db.name, env=db.env, derived=True)
         tables_to_use = db.tables_to_use(
-            tables, stages=["create_derived"], tf_types=["create_derived"]
+            tables, stages=["derived"], tf_types=["derived"]
         )
 
         databases = wr.catalog.databases(self.db_search_limit)
@@ -700,11 +700,8 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         tf_args = db.transform_args(
             tables_to_use,
-            tf_types=["create_derived"],
-            **{
-                tbl: {"input": "curated", "output": "create_derived"}
-                for tbl in tables_to_use
-            },
+            tf_types=["derived"],
+            **{tbl: {"input": "curated", "output": "derived"} for tbl in tables_to_use},
         )
 
         for tbl in tables_to_use:

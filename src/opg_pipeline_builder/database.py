@@ -710,7 +710,6 @@ class DatabaseTable:
 
             all_data_paths: dict[str, dict[str, str]] = {}
             for db_name in input_data:
-                db = Database(self.config)  # type: ignore
                 tables = input_data[db_name]
                 table_names = list(tables.keys())
                 all_data_paths[db_name] = {}
@@ -723,7 +722,7 @@ class DatabaseTable:
                         )
 
                     table_stage = tables[table_name]
-                    table = DatabaseTable(table_name, db)
+                    table = DatabaseTable(table_name, self.db)
                     table_formats = table.table_file_formats()
                     table_paths = table.table_data_paths()
                     data_paths = table_paths[table_stage]

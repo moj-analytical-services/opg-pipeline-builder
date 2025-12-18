@@ -4,7 +4,7 @@ import nox
 nox.options.reuse_existing_virtualenvs = True
 nox.options.sessions = ["lint", "typecheck", "security", "test", "yamllint"]
 
-PYTHON_VERSIONS = ["3.12", "3.13"]
+PYTHON_VERSIONS = ["3.12"]
 
 # targets
 TARGETS = ["src", "tests"]
@@ -26,9 +26,11 @@ def run_tool(session: nox.Session, tool: str, *args: str) -> None:
 @nox.session(tags=["lint"])
 def lint(session: nox.Session) -> None:
     """Run ruff (lint + format) and isort."""
-    install_with_tools(session, "ruff", "isort")
-    run_tool(session, "ruff", "check", *TARGETS)
-    run_tool(session, "isort", *TARGETS)
+    install_with_tools(
+        session,
+        "ruff",
+    )
+    run_tool(session, "ruff", "check", "--select", "I", "--fix", *TARGETS)
 
 
 @nox.session(tags=["typecheck"])

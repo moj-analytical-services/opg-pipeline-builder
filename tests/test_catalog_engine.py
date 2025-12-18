@@ -1,25 +1,27 @@
 from pathlib import Path
+from typing import Any
 
 import boto3
 import pytest
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_aws
 
+import opg_pipeline_builder.transform_engines.catalog as catalog
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.models.metadata_model import load_metadata
+from opg_pipeline_builder.utils.constants import get_full_db_name
 from opg_pipeline_builder.validator import PipelineConfig
 
 
 class TestCatalogTransformEngine:
     @staticmethod
-    def do_nothing(*args, **kwargs): ...
+    def do_nothing(*args: Any, **kwargs: Any) -> None: ...
 
     @mock_aws
     @pytest.mark.xfail
-    def test_run(self, monkeypatch, config: PipelineConfig, database: Database):
-        import opg_pipeline_builder.transform_engines.catalog as catalog
-        from opg_pipeline_builder.utils.constants import get_full_db_name
-
+    def test_run(
+        self, monkeypatch: Any, config: PipelineConfig, database: Database
+    ) -> None:
         db_name = "testdb"
         table_names = ["table1", "table2"]
         stage = "curated"
@@ -31,7 +33,7 @@ class TestCatalogTransformEngine:
                 Path("tests/data/meta_data/new_metadata"),
                 "test",
             )
-            transform.run(table=table_name, _=metadata, stage=stage)
+            transform.run(table=table_name, _=metadata, __=stage)
 
             glue_table = GlueTable()
             gc = GlueConverter()

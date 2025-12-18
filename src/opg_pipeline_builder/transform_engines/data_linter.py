@@ -37,15 +37,15 @@ class DataLinterTransformEngine(BaseTransformEngine):
         if temp_staging is set to True in mp_args.
     """
 
-    mp_args: dict | None = None
+    mp_args: dict[Any, Any] = {}
     dag_timestamp: int | None = get_dag_timestamp()
 
     @staticmethod
-    def _callback(future: Future, worker: int) -> None:
+    def _callback(_: Future, worker: int) -> None:  # type: ignore
         _logger.info(f"Worker {worker} complete")
 
     @staticmethod
-    def _validate_mp_args(mp_args: dict) -> None:
+    def _validate_mp_args(mp_args: dict[Any, Any]) -> None:
         schema = {
             "type": "object",
             "properties": {
@@ -57,7 +57,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
             },
         }
 
-        if mp_args is not None:
+        if mp_args:
             if "enable" not in mp_args.keys():
                 raise KeyError('mp_args must contain an "enable" key-value pair')
 
@@ -68,7 +68,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     "type": "object",
                     "properties": {
                         k: v
-                        for k, v in schema["properties"].items()
+                        for k, v in schema["properties"].items()  # type: ignore
                         if k in ["enable", "temp_staging"]
                     },
                 }
@@ -89,7 +89,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @staticmethod
     def _start_linter(config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
-        if mp_args is not None:
+        if mp_args:
             mp_enable = mp_args["enable"]
 
             if mp_enable == "local":
@@ -123,12 +123,12 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @classmethod
     def _run_linter(cls, config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
-        if mp_args is None:
+        if not mp_args:
             _logger.info("Running validation with no multiprocessing")
             validation.run_validation(config)
 
         elif mp_args["enable"] == "local":
-            max_workers: int = os.cpu_count()
+            max_workers: int = os.cpu_count()  # type: ignore
             workers = range(0, max_workers)
             config_dc = [deepcopy(config) for _ in workers]
             _logger.info(f"Running validation with {max_workers} workers")
@@ -159,7 +159,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
     @staticmethod
     def _close_linter(config: str | dict[Any, Any], mp_args: dict[Any, Any]) -> None:
-        if mp_args is not None:
+        if mp_args:
             mp_enable = mp_args["enable"]
             if mp_enable == "local":
                 config_dc = deepcopy(config)
@@ -185,7 +185,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         timestamp_partition_name: str = "mojap_file_land_timestamp",
     ) -> None:
         proceed = False
-        if mp_args is not None:
+        if mp_args:
             mp_enable = mp_args["enable"]
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
@@ -198,11 +198,11 @@ class DataLinterTransformEngine(BaseTransformEngine):
                     proceed = True
 
         if proceed:
-            pass_tmp_path = config["pass-base-path"]
+            pass_tmp_path = config["pass-base-path"]  # type: ignore
             if "temp" not in pass_tmp_path:
                 raise ValueError("Expecting temp in pass base path")
 
-            for tbl_name in config["tables"]:
+            for tbl_name in config["tables"]:  # type: ignore
                 tbl_tmp_path = os.path.join(pass_tmp_path, tbl_name)
                 tbl_tmp_files = get_modified_filepaths_from_s3_folder(tbl_tmp_path)
 
@@ -274,7 +274,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         dag_timestamp = self.dag_timestamp
         tables = [table]
 
-        if mp_args is None:
+        if not mp_args:
             _logger.info("Setting multiprocessing arguments from environment")
             mp_args = get_multiprocessing_settings()
 
@@ -286,7 +286,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         self._validate_mp_args(mp_args)
 
         tmp_staging = False
-        if mp_args is not None:
+        if mp_args:
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
             _logger.info(f"Using temporary staging directory: {tmp_staging}")

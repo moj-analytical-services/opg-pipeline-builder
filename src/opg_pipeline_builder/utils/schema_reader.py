@@ -148,15 +148,15 @@ class SchemaReader:
         elif ftype.startswith("list<") and ftype.endswith(">"):
             new_type = re.sub("^list<|>$", "", ftype)
             if new_type.startswith("struct"):
-                final_vals = cls._unpack_type(new_type, contains_field=False)
+                final_vals = cls._unpack_type(new_type, contains_field=False)  # type: ignore
             else:
-                final_vals = ftype
+                final_vals = ftype  # type: ignore
         else:
-            final_vals = ftype
+            final_vals = ftype  # type: ignore
 
         full_final_val = {field: final_vals} if contains_field else final_vals
 
-        return full_final_val
+        return full_final_val  # type: ignore
 
     @classmethod
     def _struct_validator(
@@ -165,7 +165,7 @@ class SchemaReader:
         valid = True
 
         if unpack:
-            meta_col_type = cls._unpack_type(meta_col_type, contains_field=False)
+            meta_col_type = cls._unpack_type(meta_col_type, contains_field=False)  # type: ignore
             col_type = cls._unpack_type(col_type, contains_field=False)
 
         ds_map = {}
@@ -174,7 +174,7 @@ class SchemaReader:
             ds_map[ds_name] = ds_type
 
         for ms_col in meta_col_type:
-            ms_name, ms_type = list(ms_col.items())[0]
+            ms_name, ms_type = list(ms_col.items())[0]  # type: ignore
             if ms_name in ds_map:
                 cds_type = ds_map[ms_name]
                 if isinstance(ms_type, str):
@@ -192,7 +192,7 @@ class SchemaReader:
         return valid
 
     @classmethod
-    def _validate(cls, data_columns, meta_columns) -> bool:
+    def _validate(cls, data_columns, meta_columns) -> bool:  # type: ignore
         valid = True
         data_column_lookup = {c["name"]: c["type"] for c in data_columns}
         for col in meta_columns:

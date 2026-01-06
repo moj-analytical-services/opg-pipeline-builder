@@ -55,6 +55,7 @@ class Stage(BaseModel):
     name: str
     type: str
     pattern: str = ""
+    format: str = ""
 
     @field_validator("name")
     @classmethod

@@ -308,6 +308,7 @@ class SchemaReader:
         return_val = True
         for pth in s3_paths:
             schema = self.read_schema(pth, moj_meta=mojap_base, ext=ext)
+            print(schema.columns)
             if mojap_base:
                 schema = [
                     {"name": c["name"], "type": c["type"]} for c in schema.columns
@@ -321,6 +322,5 @@ class SchemaReader:
                     return_val = False
 
         print(expected_meta.columns)
-        print(schema.columns)
 
         return return_val

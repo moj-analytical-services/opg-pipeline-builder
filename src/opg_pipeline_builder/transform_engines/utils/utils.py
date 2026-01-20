@@ -344,23 +344,14 @@ class TransformEngineUtils(BaseModel):
         input_metadata: Metadata,
         output_metadata: Metadata,
     ) -> list[str]:
-        input_columns = input_metadata.columns
-        output_columns = output_metadata.columns
+        input_columns = {c["name"]: c["type"] for c in input_metadata.columns}
+        output_columns = {c["name"]: c["type"] for c in output_metadata.columns}
 
-        input_column_names = [c["name"].lower() for c in input_columns]
-        output_column_names = [c["name"].lower() for c in output_columns]
+        common_columns = []
 
-        input_column_types = {c["name"].lower(): c["type"] for c in input_columns}
-        output_column_types = {c["name"].lower(): c["type"] for c in output_columns}
+        for out_col, out_type in output_columns.items():
+            for in_col, in_type in input_columns.items():
+                if out_col.lower() == in_col.lower() and out_type == in_type:
+                    common_columns.append(out_col)
 
-        common_columns = [
-            c
-            for c in output_column_names
-            if (c in input_column_names and c not in output_metadata.partitions)
-        ]
-
-        common_columns_with_same_types = [
-            c for c in common_columns if input_column_types[c] == output_column_types[c]
-        ]
-
-        return common_columns_with_same_types
+        return common_columns

@@ -320,4 +320,7 @@ class SchemaReader:
                 if schema != expected_schema:
                     return_val = False
 
+        print(expected_meta.columns)
+        print(schema.columns)
+
         return return_val

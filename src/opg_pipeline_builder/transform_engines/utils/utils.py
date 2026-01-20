@@ -351,7 +351,11 @@ class TransformEngineUtils(BaseModel):
 
         for out_col, out_type in output_columns.items():
             for in_col, in_type in input_columns.items():
-                if out_col.lower() == in_col.lower() and out_type == in_type:
+                if (
+                    out_col.lower() == in_col.lower()
+                    and out_type == in_type
+                    and out_col not in output_metadata.partitions
+                ):
                     common_columns.append(out_col)
 
         return common_columns

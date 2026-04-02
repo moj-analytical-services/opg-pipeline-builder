@@ -49,7 +49,7 @@ def tests_env_setup_and_teardown() -> Generator[None, None, None]:
         "GITHUB_TAG": "testing",
         "TEST_ENV": test_env,
         "AWS_ACCESS_KEY_ID": "testing",
-        "AWS_SECRET_ACCESS_KEY": "testing",  # pragma: allowlist secret
+        "AWS_SECRET_ACCESS_KEY": "testing",  # pragma: allowlist secret nosec: B105
         "AWS_SECURITY_TOKEN": "testing",
         "AWS_SESSION_TOKEN": "testing",
         "AWS_DEFAULT_REGION": "eu-west-1",

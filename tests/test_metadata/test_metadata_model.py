@@ -578,7 +578,7 @@ def test_output_to_df() -> None:
 def test_load_metadata() -> None:
     metadata = m.load_metadata(Path("tests/data/meta_data"), "test_database")
 
-    assert list(metadata.tables.keys()) == ["test_table", "test_table2"]
+    assert sorted(list(metadata.tables.keys())) == ["test_table", "test_table2"]
     assert metadata.tables["test_table"].columns[0].name == "id"
     assert metadata.tables["test_table2"].columns[0].name == "ids"
 

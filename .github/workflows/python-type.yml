@@ -2,7 +2,7 @@
 name: Python type check
 on:
     pull_request:
-        types: [ edited, opened, reopened, synchronize ]
+        types: [edited, opened, reopened, synchronize]
 jobs:
     python-type-check:
         name: Python type check

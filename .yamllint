@@ -1,4 +1,6 @@
 ---
+extends: default
+
 rules:
   braces: enable
   brackets: enable
@@ -6,6 +8,7 @@ rules:
   commas: enable
   comments:
     level: warning
+    min-spaces-from-content: 1
   comments-indentation:
     level: warning
   document-end: disable
@@ -17,7 +20,8 @@ rules:
   indentation: enable
   key-duplicates: enable
   key-ordering: disable
-  line-length: enable
+  line-length:
+    max: 155
   new-line-at-end-of-file: enable
   new-lines: enable
   octal-values: disable
@@ -25,3 +29,4 @@ rules:
   trailing-spaces: enable
   truthy:
     level: warning
+    allowed-values: ["true", "false", "on"]

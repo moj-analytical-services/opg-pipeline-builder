@@ -2,7 +2,7 @@
 name: Yaml Lint
 on:
     pull_request:
-        types: [ edited, opened, reopened, synchronize ]
+        types: [edited, opened, reopened, synchronize]
 jobs:
     yaml-lint:
         name: YAML lint

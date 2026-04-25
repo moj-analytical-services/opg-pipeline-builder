@@ -1,59 +1,13 @@
 ---
-name: Security checks
-
+name: Security
 on:
   pull_request:
-    paths-ignore:
-      - ".github/**"
-
-  push:
-    paths-ignore:
-      - ".github/**"
-
-permissions:
-  security-events: write
-  contents: read
-  actions: read
-
+    types: [ edited, opened, reopened, synchronize ]
 jobs:
-  trufflehog:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-      - name: Secret Scanning
-        uses: trufflesecurity/trufflehog@586f66d7886cd0b037c7c245d4a6e34ef357ab10 # 3.94.2
-        with:
-          base: ""
-          head: ${{ github.ref_name }}
-          extra_args: --results=verified,unknown
-
-  bandit:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Perform Bandit Analysis
-        uses: PyCQA/bandit-action@67a458d90fa11fb1463e91e7f4c8f068b5863c7f # v1.0.1
-
-  detect-secrets:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.13"
-
-      # - name: SLSA
-      #   uses: ministryofjustice/devsecops-actions/sca/slsa@e3c63a5986ea6e7d57d38b7f72e5b8cf08dc7020
-
-      - name: Install detect-secrets
-        run: pip install detect-secrets
-
-      - name: Scan for secrets
-        run: detect-secrets scan --all-files > .secrets.baseline --exclude-files '.git*'
+  security:
+    name: Security
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    uses: ministryofjustice/data-engineering-github-actions/.github/workflows/reusable-security.yml@867b0f83016b15386c659b6a18fbd85037eb662f # v1.0.0

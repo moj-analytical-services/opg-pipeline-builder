@@ -67,7 +67,7 @@ repos:
     rev: 3.4.1
     hooks:
       - id: sqlfluff-lint
-        args: [--dialect, athena, --templates, jinja]
+        args: [--dialect, athena, --templater, jinja]
 
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.104.0

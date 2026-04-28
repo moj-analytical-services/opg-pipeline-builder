@@ -118,7 +118,7 @@ def test_s3_bulk_copy(
             "9a4b6363-1fc4-56e5-caf1-95cf1765a1db-c100.snappy.parquet",
         ),
         (
-            "9a4b6363-1fc4-56e5-caf1-95cf176.snappy.parquet",
+            "9a4b6363-1fc4-56e5-calf1-95cf176.snappy.parquet",
             "Filename is not in the expected format.",
         ),
         ("test_csv-2-1648540499.csv", "test_csv.csv"),

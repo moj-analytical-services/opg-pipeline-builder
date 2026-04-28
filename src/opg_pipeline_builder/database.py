@@ -41,7 +41,7 @@ class Database:
 
         **shared_sql_paths**:
             Returns a list of tuples consisting of the temp table
-            name and temp table sql path for sql shared accross the
+            name and temp table sql path for sql shared across the
             given transform types.
     """
 
@@ -345,7 +345,7 @@ class Database:
         """SQL files used to create shared temporary tables
 
         Returns a list of tuples consisting of the temp table
-        name and temp table sql path for sql shared accross the
+        name and temp table sql path for sql shared across the
         given transform types.
 
         Parameters:

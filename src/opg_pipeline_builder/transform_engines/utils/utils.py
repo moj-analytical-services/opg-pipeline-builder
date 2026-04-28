@@ -117,7 +117,7 @@ class TransformEngineUtils(BaseModel):
 
         Lists default MoJ partitions located for table at the given
         ETL stage. If extract_timestamp is set to True, then only the
-        timetamp will be returned. kwargs are passed onto
+        timestamp will be returned. kwargs are passed onto
         _list_table_files.
 
         Params
@@ -238,7 +238,7 @@ class TransformEngineUtils(BaseModel):
         Return
         ------
         dict[str, list[str] | list[int]]
-            Dictionary conatining list of unprocessed partitions for
+            Dictionary containing list of unprocessed partitions for
             the tables passed, given the ETL stages specified.
         """
         stages_list = [v for _, v in stages.items()]

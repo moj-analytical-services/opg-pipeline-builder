@@ -45,7 +45,7 @@ def s3_copy(
                            item is the location for the copied object.
         client (optional): Boto S3 client. If not provided, one will be created.
                            This is a useful argument for multithreading.
-    Retrun:
+    Return:
         dict: Dictionary containing the 'CopyObjectResults' dictionary of the
               clients copy_object call.
     """
@@ -286,7 +286,7 @@ def check_s3_for_existing_timestamp_file(
     returns True if file does not exist for a given timestamp or
     day of timestamp and indicates pipeline should get the file.
     Args:
-        existing_data (list[str]):   List of S3 paths for exisiting data
+        existing_data (list[str]):   List of S3 paths for existing data
         new_file (str):              S3 path for new file to process
         one_a_day (optional - bool): True - only one file per
                                      day

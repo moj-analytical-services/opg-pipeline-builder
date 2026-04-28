@@ -115,11 +115,11 @@ class SchemaReader:
         no_commas = x.count(", ")
         split_x = x.split(", ")
         i = 0
-        indicies: list[int] = []
+        indices: list[int] = []
         split = []
 
         while i <= no_commas:
-            max_index = max([*indicies, 0])
+            max_index = max([*indices, 0])
             i += 1
 
             val_i = ", ".join(split_x[max_index:i])
@@ -127,7 +127,7 @@ class SchemaReader:
             count_close_bracket = val_i.count(">")
 
             if count_open_brackets == count_close_bracket:
-                indicies.append(i)
+                indices.append(i)
                 split.append(val_i)
 
         return split

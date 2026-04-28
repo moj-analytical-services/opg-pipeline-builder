@@ -85,9 +85,9 @@ def test_stage_valid(data_type: str) -> None:
         ),
         (
             "raw",
-            "list<struc",
+            "list<struct",
             m.InvalidTypeError,
-            "Data type 'list<struc' is not in the ALLOWED_DATA_TYPES constant",
+            "Data type 'list<struct' is not in the ALLOWED_DATA_TYPES constant",
         ),
         (
             "raw",

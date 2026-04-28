@@ -1,21 +1,12 @@
 ---
+name: Python Unit Test
 on:
-    workflow_call:
-        inputs:
-            uv_test_group_name:
-                type: string
-                default: test
+  pull_request:
+    types: [edited, opened, reopened, synchronize]
+    paths: ["**/*.py"]
 jobs:
-    python-unit-test:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout repo
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-            - name: Setup UV
-              uses: astral-sh/setup-uv@6ee6290f1cbc4156c0bdd66691b2c144ef8df19a # v7.4.0
-            - name: Set up Python
-              run: uv python install
-            - name: Install the project
-              run: uv sync --all-groups
-            - name: Run tests
-              run: uv run pytest --cov=src --cov-report=term-missing
+  python-unit-test:
+    name: Python Unit Test
+    permissions:
+      contents: read
+    uses: ministryofjustice/data-engineering-github-actions/.github/workflows/reusable-python-unit-test.yml@main

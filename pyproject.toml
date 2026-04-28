@@ -66,11 +66,12 @@ show_missing = true
 
 [tool.mypy]
 strict = true
+disallow_untyped_defs = true
 exclude = "migrations|dist|build|typings"
 explicit_package_bases = true
 warn_unused_ignores = true
 show_error_codes = true
-ignore_missing_imports = true
+mypy_path = "src"
 
 
 [tool.lint.ruff]

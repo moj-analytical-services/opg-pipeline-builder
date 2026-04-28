@@ -26,7 +26,7 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine_class() -> Generator[Type[PandasTransformEngine]]:
+def pandas_engine_class() -> Generator[Type[PandasTransformEngine], None, None]:
     yield PandasTransformEngine
 
 
@@ -35,17 +35,17 @@ def pandas_engine(
     pandas_engine_class: PandasTransformEngine,
     config: PipelineConfig,
     database: Database,
-) -> Generator[Type[PandasTransformEngine]]:
+) -> Generator[Type[PandasTransformEngine], None, None]:
     yield pandas_engine_class(config=config, db=database)  # type: ignore[operator]
 
 
 @pytest.fixture
-def default_metadata() -> Generator[Metadata]:
+def default_metadata() -> Generator[Metadata, None, None]:
     yield Metadata.from_json(DEFAULT_METADATA_FILE)
 
 
 @pytest.fixture
-def default_df() -> Generator[pd.DataFrame]:
+def default_df() -> Generator[pd.DataFrame, None, None]:
     yield pd.read_csv(DEFAULT_DATA_FILE)
 
 

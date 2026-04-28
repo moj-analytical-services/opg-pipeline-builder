@@ -20,9 +20,6 @@ dependencies = [
     "pydbtools>=5.8.1",
     "s3fs==2025.12.0",
     "ssm-parameter-store>=19.11.0",
-    "types-croniter>=6.0.0.20250809",
-    "types-python-dateutil>=2.9.0.20251115",
-    "types-pyyaml>=6.0.12.20250915",
 ]
 
 [tool.uv]
@@ -36,12 +33,13 @@ dev = [
     "mkdocs-material>=9.6.12",
     "mkdocstrings>=0.29.1",
     "mkdocstrings-python>=1.16.10",
-    "mypy>=1.19.0",
-    "nox>=2025.5.1",
+    "mypy>=1.19.1",
     "pre-commit>=4.2.0",
     "ruff>=0.14.8",
     "safety>=3.2.9",
     "sqlglot>=26.16.4",
+    "types-python-dateutil>=2.9.0.20260408",
+    "types-pyyaml>=6.0.12.20260408",
 ]
 test = [
     "duckdb>=1.2.2",
@@ -72,6 +70,7 @@ explicit_package_bases = true
 warn_unused_ignores = true
 show_error_codes = true
 mypy_path = "src"
+ignore_missing_imports = true
 
 
 [tool.lint.ruff]

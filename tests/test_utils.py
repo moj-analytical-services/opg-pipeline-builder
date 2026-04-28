@@ -358,5 +358,5 @@ def test_pa_read_json_from_s3(s3: Any, monkeypatch: Any, json_path: str) -> None
     filename = Path(json_path).name
     s3.meta.client.upload_file(json_path, dummy_bucket, filename)
     pa_tbl = pbutils.pa_read_json_from_s3(f"s3://{dummy_bucket}/{filename}")
-    pa_loc_tbl = pbutils.read_json(json_path)
+    pa_loc_tbl = pbutils.read_json(json_path)  # type: ignore[attr-defined]
     assert pa_tbl == pa_loc_tbl

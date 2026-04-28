@@ -85,7 +85,7 @@ class TestSchemaReader:
         self, type: str, contains_field: bool, expected: list[dict[str, str | Any]]
     ) -> None:
         sr = self.sr_utils.SchemaReader
-        assert sr._unpack_type(type, contains_field=contains_field) == expected
+        assert sr._unpack_type(type, contains_field=contains_field) == expected  # type: ignore[comparison-overlap]
 
     @pytest.mark.parametrize(
         "type, expected",

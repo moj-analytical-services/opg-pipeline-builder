@@ -8,7 +8,7 @@ from mojap_metadata import Metadata
 
 from opg_pipeline_builder.database import Database, DatabaseTable
 from opg_pipeline_builder.validator import read_pipeline_config
-from src.opg_pipeline_builder.validator import PipelineConfig
+from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import land_bucket
 
 
@@ -346,7 +346,7 @@ def tbl_fixt(
 def db_config(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> dict[Any, Any]:
     _, expected = tbl_fixt
     db_config = read_pipeline_config(expected["db_name"])
-    return db_config.model_dump()  # type: ignore
+    return db_config.model_dump()
 
 
 def test_db_tbl_name(tbl_fixt: tuple[DatabaseTable, dict[str, Any]]) -> None:
@@ -532,4 +532,4 @@ def test_db_tf_args(
 
     exp_tf_args["transforms"] = spec_tbls_glue
 
-    assert db.transform_args(tbl_arg, **glue_inputs) == exp_tf_args
+    assert db.transform_args(tbl_arg, **glue_inputs) == exp_tf_args  # type: ignore

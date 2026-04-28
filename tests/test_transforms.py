@@ -1,3 +1,5 @@
+from typing import Type
+
 from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
 from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 from opg_pipeline_builder.transforms import Transforms
@@ -9,14 +11,14 @@ class TestTransforms:
     def get_transforms(self) -> Transforms:
         return Transforms()
 
-    def setup_child_athena(self) -> AthenaTransformEngine:
-        class ChildAthenaTransformEngine(AthenaTransformEngine):  # type: ignore
+    def setup_child_athena(self) -> Type[AthenaTransformEngine]:
+        class ChildAthenaTransformEngine(AthenaTransformEngine):
             def dummy_method(self, _: list[str], __: dict[str, str]) -> None: ...
 
         return ChildAthenaTransformEngine
 
-    def setup_dummy_engine(self) -> BaseTransformEngine:
-        class DummyTransformEngine(BaseTransformEngine):  # type: ignore
+    def setup_dummy_engine(self) -> Type[BaseTransformEngine]:
+        class DummyTransformEngine(BaseTransformEngine):
             def run(self, _: list[str], __: dict[str, str]) -> None:
                 print("hello")
 
@@ -29,8 +31,8 @@ class TestTransforms:
         new_athena = self.setup_child_athena()
         transforms = self.get_transforms()
         transforms.athena = new_athena
-        assert transforms.athena == new_athena
+        assert transforms.athena == new_athena  # type: ignore[attr-defined]
 
         dummy_engine = self.setup_dummy_engine()
         transforms.dummy = dummy_engine
-        assert transforms.dummy == dummy_engine
+        assert transforms.dummy == dummy_engine  # type: ignore[attr-defined]

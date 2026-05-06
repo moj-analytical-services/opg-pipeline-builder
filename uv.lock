@@ -392,7 +392,7 @@ wheels = [
 
 [[package]]
 name = "data-linter"
-version = "6.3.3"
+version = "6.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow-pd-parser" },
@@ -408,9 +408,9 @@ dependencies = [
     { name = "setuptools" },
     { name = "toml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/db/3eaa8521fd7aecaf2b15952f2f42d899b3282206b0268c0bcfcd073af385/data_linter-6.3.3.tar.gz", hash = "sha256:d659ae8e58cb304dc6b473189130d5c6e643697714a365d2aefca04b680b0c4b", size = 27794, upload-time = "2025-12-01T16:43:41.008Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/4a/5b3d21447a8f822778e141db7fd4d26584e2f350fca35feb12ff9687f326/data_linter-6.3.6.tar.gz", hash = "sha256:3a36679b0e43aeff812fbfb9e1e9d960250925ec5b0ae8763c02b208258978e8", size = 27792, upload-time = "2026-04-01T14:34:56.023Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/e0/800780faa6813cddb1995fe5b724c4cf826048a7b6d917b0001958c97dd7/data_linter-6.3.3-py3-none-any.whl", hash = "sha256:46ebd67466db6a08696445016f298ffc36e3d81065fff3698a31bf6416aa1a1b", size = 29415, upload-time = "2025-12-01T16:43:39.607Z" },
+    { url = "https://files.pythonhosted.org/packages/49/8c/6157a66b8be5a221cea9587ebba715b95de82f87a090674fb9fc3e907cba/data_linter-6.3.6-py3-none-any.whl", hash = "sha256:26cec9001fedfe06a10facde1bb987cf7b5ea9d76b05f4d64235b7203e261c30", size = 29414, upload-time = "2026-04-01T14:34:54.911Z" },
 ]
 
 [[package]]
@@ -1087,7 +1087,7 @@ requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.8.6" },
     { name = "boto3", specifier = "==1.41.5" },
     { name = "croniter", specifier = ">=6.0.0" },
-    { name = "data-linter", specifier = ">=6.3.3" },
+    { name = "data-linter", specifier = ">=6.3.6" },
     { name = "dataengineeringutils3", specifier = ">=1.4.3" },
     { name = "detect-secrets", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "duckdb", marker = "extra == 'dev'", specifier = ">=1.2.2" },

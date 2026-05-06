@@ -145,7 +145,7 @@ class FileFormat(BaseModel):
 
 
 class TableMetaData(BaseModel):
-    """Pydantic mdoel representing a metadata entry for a specific table."""
+    """Pydantic model representing a metadata entry for a specific table."""
 
     converted_from: str
     schema_link: str
@@ -169,7 +169,7 @@ class TableMetaData(BaseModel):
 
     @model_validator(mode="after")
     def validate_partition_columns_defined(self) -> "TableMetaData":
-        """Check that the parition columns are defined as columns."""
+        """Check that the partition columns are defined as columns."""
         all_columns = [column.name for column in self.columns]
 
         for partition in self.partitions:

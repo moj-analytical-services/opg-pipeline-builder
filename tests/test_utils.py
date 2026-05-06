@@ -118,7 +118,7 @@ def test_s3_bulk_copy(
             "9a4b6363-1fc4-56e5-caf1-95cf1765a1db-c100.snappy.parquet",
         ),
         (
-            "9a4b6363-1fc4-56e5-caf1-95cf176.snappy.parquet",
+            "9a4b6363-1fc4-56e5-calf1-95cf176.snappy.parquet",
             "Filename is not in the expected format.",
         ),
         ("test_csv-2-1648540499.csv", "test_csv.csv"),
@@ -358,5 +358,5 @@ def test_pa_read_json_from_s3(s3: Any, monkeypatch: Any, json_path: str) -> None
     filename = Path(json_path).name
     s3.meta.client.upload_file(json_path, dummy_bucket, filename)
     pa_tbl = pbutils.pa_read_json_from_s3(f"s3://{dummy_bucket}/{filename}")
-    pa_loc_tbl = pbutils.read_json(json_path)
+    pa_loc_tbl = pbutils.read_json(json_path)  # type: ignore[attr-defined]
     assert pa_tbl == pa_loc_tbl

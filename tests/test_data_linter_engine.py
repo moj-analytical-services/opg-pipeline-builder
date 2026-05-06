@@ -50,11 +50,11 @@ class TestDataLinterEngine:
     ) -> None:
         linter_engine = Linter.DataLinterTransformEngine
         if expected:
-            assert linter_engine._validate_mp_args(mp_args) is None
+            assert linter_engine._validate_mp_args(mp_args) is None  # type: ignore[arg-type]
         else:
             error = ValueError if "enable" in mp_args else KeyError  # type: ignore
             with pytest.raises(error):
-                linter_engine._validate_mp_args(mp_args)
+                linter_engine._validate_mp_args(mp_args)  # type: ignore[arg-type]
 
     @pytest.mark.parametrize(
         "mps_list, dag_run_id, dag_interval_end",
@@ -166,7 +166,7 @@ class TestDataLinterEngine:
                         "temp_staging", False
                     ):
                         prts = set(
-                            transform.utils.list_partitions(
+                            transform.utils.list_partitions(  # type: ignore[union-attr]
                                 table.name,
                                 stage=self.output_stage,
                                 extract_timestamp=True,

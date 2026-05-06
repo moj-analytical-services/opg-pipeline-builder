@@ -222,7 +222,7 @@ class TestAthenaTransformEngine:
             ),
         )
 
-        return athena, timestamp
+        return athena, timestamp  # type: ignore[return-value]
 
     @pytest.mark.xfail
     @mock_aws
@@ -249,8 +249,8 @@ class TestAthenaTransformEngine:
             self.mock_unload, status=status, output_meta=output_meta
         )
 
-        monkeypatch.setattr(athena.wr.athena, "unload", mock_unload_partial)
-        monkeypatch.setattr(athena.wr.athena, "repair_table", self.do_nothing)
+        monkeypatch.setattr(athena.wr.athena, "unload", mock_unload_partial)  # type: ignore[attr-defined]
+        monkeypatch.setattr(athena.wr.athena, "repair_table", self.do_nothing)  # type: ignore[attr-defined]
 
         cp = transform.db.table(table.name).table_data_paths()[self.output_stage]
         temp_path = cp
@@ -261,7 +261,7 @@ class TestAthenaTransformEngine:
             transform.run(
                 table=table.name,
                 stage=self.input_stage,
-                _=None,
+                _=None,  # type: ignore
             )
 
             primary_partition = db.primary_partition_name()
@@ -308,7 +308,7 @@ class TestAthenaTransformEngine:
             assert (
                 len(
                     set(
-                        transform.utils.list_partitions(
+                        transform.utils.list_partitions(  # type: ignore
                             table.name, stage=self.output_stage
                         )
                     )
@@ -321,7 +321,7 @@ class TestAthenaTransformEngine:
                 transform.run(
                     stage=self.input_stage,
                     table=table.name,
-                    _=None,
+                    _=None,  # type: ignore
                 )
             assert len(wr.s3.list_objects(cp)) == 0
             assert len(wr.s3.list_objects(temp_path)) == 0
@@ -352,9 +352,9 @@ class TestAthenaTransformEngine:
             s3_path=data_path,
             con=con,
         )
-        monkeypatch.setattr(athena.pydb, "create_temp_table", mock_create_temp_table)
+        monkeypatch.setattr(athena.pydb, "create_temp_table", mock_create_temp_table)  # type: ignore
 
-        transform._create_temporary_tables(table_name, snapshot_timestamps=str(prt))
+        transform._create_temporary_tables(table_name, snapshot_timestamps=str(prt))  # type: ignore
 
         con.execute(f"SELECT * FROM {self.temp_table_name}")  # nosec
 
@@ -401,10 +401,10 @@ class TestAthenaTransformEngine:
 
         mock_read_sql_queries = partial(self.mock_pydb_read_sql_queries, prt=timestamp)
 
-        monkeypatch.setattr(athena.pydb, "create_temp_table", self.do_nothing)
-        monkeypatch.setattr(athena.wr.athena, "unload", mock_unload_partial)
-        monkeypatch.setattr(athena.wr.athena, "repair_table", self.do_nothing)
-        monkeypatch.setattr(athena.pydb, "read_sql_queries", mock_read_sql_queries)
+        monkeypatch.setattr(athena.pydb, "create_temp_table", self.do_nothing)  # type: ignore
+        monkeypatch.setattr(athena.wr.athena, "unload", mock_unload_partial)  # type: ignore
+        monkeypatch.setattr(athena.wr.athena, "repair_table", self.do_nothing)  # type: ignore
+        monkeypatch.setattr(athena.pydb, "read_sql_queries", mock_read_sql_queries)  # type: ignore
 
         dp = transform.db.table(table.name).table_data_paths()["derived"]
         temp_path = dp
@@ -453,7 +453,7 @@ class TestAthenaTransformEngine:
                     df = pd.concat([df, file_df], ignore_index=True, sort=False)
 
             assert (
-                len(set(transform.utils.list_partitions(table.name, stage="derived")))
+                len(set(transform.utils.list_partitions(table.name, stage="derived")))  # type: ignore
                 == 1
             )
             assert set(df.animal) == {"chicken"}

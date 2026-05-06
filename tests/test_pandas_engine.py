@@ -2,7 +2,7 @@ import json
 from copy import deepcopy
 from datetime import datetime
 from logging import getLogger
-from typing import Generator
+from typing import Generator, Type
 
 import awswrangler as wr
 import boto3
@@ -26,7 +26,7 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine_class() -> Generator[PandasTransformEngine, None, None]:
+def pandas_engine_class() -> Generator[Type[PandasTransformEngine], None, None]:
     yield PandasTransformEngine
 
 
@@ -35,8 +35,8 @@ def pandas_engine(
     pandas_engine_class: PandasTransformEngine,
     config: PipelineConfig,
     database: Database,
-) -> Generator[PandasTransformEngine, None, None]:
-    yield pandas_engine_class(config=config, db=database)
+) -> Generator[Type[PandasTransformEngine], None, None]:
+    yield pandas_engine_class(config=config, db=database)  # type: ignore[operator]
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_remove_columns_not_in_metadata(
     df_with_dummy_data = default_df.copy()
     df_with_dummy_data["dummy_col"] = "dummy value"
 
-    df = pandas_engine.transforms.remove_columns_not_in_metadata(
+    df = pandas_engine.transforms.remove_columns_not_in_metadata(  # type: ignore[union-attr]
         df_with_dummy_data, default_metadata
     )
 
@@ -67,7 +67,7 @@ def test_remove_columns_not_in_metadata(
 def test_set_column_names_to_lower(
     pandas_engine: PandasTransformEngine, default_df: pd.DataFrame
 ) -> None:
-    df = pandas_engine.transforms.set_colnames_to_lower(default_df)
+    df = pandas_engine.transforms.set_colnames_to_lower(default_df)  # type: ignore[union-attr]
     assert all([c.islower() for c in df.columns.to_list()])
 
 
@@ -78,7 +78,7 @@ def test_add_attributes_from_headers_and_rename(
     config: PipelineConfig,
     database: Database,
 ) -> None:
-    pandas_engine = pandas_engine_class(
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
         extract_header_values={
             "field_name": "dummy_field",
             "header_regex": "[0-9]{2}",
@@ -113,7 +113,7 @@ def test_add_primary_partition_column(
     ts = int(datetime.utcnow().timestamp())
     partition_value = f"mojap_file_land_timestamp={str(ts)}"
 
-    pandas_engine = pandas_engine_class(
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
         add_partition_column=True, config=config, db=database
     )
 
@@ -133,7 +133,7 @@ def test_add_etl_column(
 ) -> None:
     expected_df = default_df.copy()
     expected_df["testdb_etl_version"] = "testing"
-    df = pandas_engine.transforms.add_etl_column(default_df)
+    df = pandas_engine.transforms.add_etl_column(default_df)  # type: ignore[union-attr]
     assert expected_df.equals(df)
 
 
@@ -165,7 +165,7 @@ def test_add_attributes_from_config(
     config: PipelineConfig,
     database: Database,
 ) -> None:
-    pandas_engine = pandas_engine_class(
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
         attributes=attributes, config=config, db=database
     )
 
@@ -196,7 +196,7 @@ def test_remove_null_columns(
     default_metadata.update_column({"name": "dummy_column", "type": "null"})
     updated_df = default_df.copy()
     updated_df["dummy_column"] = np.NaN
-    df = pandas_engine.transforms.remove_null_columns(updated_df, default_metadata)
+    df = pandas_engine.transforms.remove_null_columns(updated_df, default_metadata)  # type: ignore[union-attr]
     assert df.equals(default_df)
 
 
@@ -208,7 +208,7 @@ def test_create_null_columns_for_columns_in_meta_not_in_data(
     default_metadata.update_column({"name": "dummy_column", "type": "string"})
     expected_df = default_df.copy()
     expected_df["dummy_column"] = np.NaN
-    df = pandas_engine.transforms.create_null_columns_for_columns_in_meta_not_in_data(
+    df = pandas_engine.transforms.create_null_columns_for_columns_in_meta_not_in_data(  # type: ignore[union-attr]
         default_df,
         default_metadata,
     )
@@ -226,7 +226,7 @@ def test_input_transform_methods(
     updated_df["dummy_column"] = np.NaN
     updated_df.columns = [x.upper() for x in updated_df.columns]
 
-    df = pandas_engine.transforms.input_transform_methods(
+    df = pandas_engine.transforms.input_transform_methods(  # type: ignore[union-attr]
         updated_df,
         default_metadata,
     )
@@ -295,7 +295,7 @@ def test_output_transform_methods(
     config: PipelineConfig,
     database: Database,
 ) -> None:
-    pandas_engine = pandas_engine_class(
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
         attributes=attributes,
         extract_header_values=extract_header_values,
         add_partition_column=add_partition_column,
@@ -406,7 +406,7 @@ def test_transform(
     monkeypatch.setattr(writer, "write", mock_writer_write)
     monkeypatch.setattr(reader, "read", mock_reader_read)
 
-    pandas_engine = pandas_engine_class(chunk_rest_threshold=chunk_rest_threshold)
+    pandas_engine = pandas_engine_class(chunk_rest_threshold=chunk_rest_threshold)  # type: ignore[operator]
     output_metadata = deepcopy(default_metadata)
     output_metadata.update_column(
         {

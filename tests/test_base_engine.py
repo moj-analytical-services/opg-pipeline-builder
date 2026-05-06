@@ -44,7 +44,7 @@ class TestBaseEngineTransform:
 
         return list(iter)
 
-    def create_db(self) -> Database:
+    def create_db(self) -> tuple[PipelineConfig, Database]:
         with open("tests/data/configs/testdb.yml") as config_file:
             raw_config = yaml.safe_load(config_file)
 
@@ -126,12 +126,12 @@ class TestBaseEngineTransform:
             stage = "land" if "land" in stage_bucket else "raw_hist"
             path_index = 1 if stage == "land" else 2
             for i, table in enumerate(["table1", "table2"]):
-                assert transform.utils.list_table_files(stage, table) == [
+                assert transform.utils.list_table_files(stage, table) == [  # type: ignore[union-attr]
                     f"s3://{getattr(self, stage_bucket)}/{p[path_index]}"
                     for p in setup[i]
                 ]
 
-                assert transform.utils.list_table_files(
+                assert transform.utils.list_table_files(  # type: ignore[union-attr]
                     stage, table, modified_before=mid_adj_timestamp
                 ) == [
                     [
@@ -140,7 +140,7 @@ class TestBaseEngineTransform:
                     ][0]
                 ]
 
-                assert transform.utils.list_table_files(
+                assert transform.utils.list_table_files(  # type: ignore[union-attr]
                     stage, table, modified_after=mid_adj_timestamp
                 ) == [
                     [
@@ -150,7 +150,7 @@ class TestBaseEngineTransform:
                 ]
 
                 assert (
-                    transform.utils.list_table_files(
+                    transform.utils.list_table_files(  # type: ignore[union-attr]
                         stage, table, modified_after=post_timestamp
                     )
                     == []
@@ -240,12 +240,12 @@ class TestBaseEngineTransform:
                     s3_client.upload_file(loc_path, getattr(self, stage), p)
 
         if expected:
-            assert set(transform.utils.list_partitions("table1", "land")) == set(prts)
+            assert set(transform.utils.list_partitions("table1", "land")) == set(prts)  # type: ignore[union-attr]
         else:
             with pytest.raises(ValueError):
-                transform.utils.list_partitions("table1", "land")
+                transform.utils.list_partitions("table1", "land")  # type: ignore[union-attr]
 
-        transform.utils.cleanup_partitions(
+        transform.utils.cleanup_partitions(  # type: ignore[union-attr]
             f"s3://{self.land_bucket}/dep/{env}/{db_name}/table1", prts
         )
         assert not s3_client.list_objects(
@@ -347,7 +347,7 @@ class TestBaseEngineTransform:
         input_stage = stages_map["input"]["name"]
         output_stage = stages_map["output"]["name"]
         assert (
-            transform.utils.list_unprocessed_partitions(
+            transform.utils.list_unprocessed_partitions(  # type: ignore[union-attr]
                 "table1", input_stage=input_stage, output_stage=output_stage
             )
             == expected
@@ -482,7 +482,7 @@ class TestBaseEngineTransform:
 
         stages_arg = {k: v["name"] for k, v in stages_map.items()}
 
-        assert transform.utils.transform_partitions(tables, stages_arg) == expected
+        assert transform.utils.transform_partitions(tables, stages_arg) == expected  # type: ignore[union-attr]
 
     @pytest.mark.parametrize(
         "table_name, stages, expected",
@@ -532,18 +532,18 @@ class TestBaseEngineTransform:
         self, table_name: str, stages: dict[str, str], expected: tuple[str, str, str]
     ) -> None:
         transform = self.get_transform()
-        assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected
+        assert transform.utils.tf_args(table_name=table_name, stages=stages) == expected  # type: ignore[union-attr]
 
     def test_get_secrets_valid(self) -> None:
         os.environ["dummy"] = "fjg95ihi94wg"
         transform = self.get_transform()
-        assert transform.utils.get_secrets("dummy") == "fjg95ihi94wg"
+        assert transform.utils.get_secrets("dummy") == "fjg95ihi94wg"  # type: ignore[union-attr]
 
     def test_get_secrets_invalid(self) -> None:
         os.environ["valid"] = "fjg95ihi94wg"
         transform = self.get_transform()
         with pytest.raises(ValueError) as error:
-            transform.utils.get_secrets("invalid")
+            transform.utils.get_secrets("invalid")  # type: ignore[union-attr]
         assert (
             str(error.value)
             == "No value found for secret: 'invalid'. The secret needs to be added to the DAG manifest file and AWS secret manager."  # pragma: allowlist secret

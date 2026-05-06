@@ -37,7 +37,7 @@ dev = [
     "pre-commit>=4.2.0",
     "ruff>=0.14.8",
     "safety>=3.2.9",
-    "sqlglot>=26.16.4",
+    "sqlglot>=30.6.0",
     "types-python-dateutil>=2.9.0.20260408",
     "types-pyyaml>=6.0.12.20260408",
 ]

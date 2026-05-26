@@ -11,7 +11,7 @@ requires-python = ">=3.12, <3.13"
 dependencies = [
     "aiobotocore>=2.26.0",
     "awswrangler>=3.11.0",
-    "boto3==1.41.5",
+    "boto3==1.43.11",
     "croniter>=6.0.0",
     "data-linter>=6.3.3",
     "dataengineeringutils3>=1.4.3",

@@ -15,7 +15,7 @@ dependencies = [
     "croniter>=6.0.0",
     "data-linter>=6.3.3",
     "dataengineeringutils3>=1.4.3",
-    "pyarrow>=18.1.0",
+    "pyarrow>=23.0.1",
     "pydantic>=2.11.4",
     "pydbtools>=5.8.1",
     "s3fs==2025.12.0",

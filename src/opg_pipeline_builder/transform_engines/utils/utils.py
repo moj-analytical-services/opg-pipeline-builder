@@ -79,7 +79,9 @@ class TransformEngineUtils(BaseModel):
         if modified_before is None and disable_environment is False:
             modified_before = get_end_date()
 
-        table = self.db.table(table_name)
+        table = self.db.table(
+            table_name.split("-")[-1]
+        )  # Remove schema prefix if present
         etl_stages = deepcopy(table.etl_stages())
         table_paths = table.table_data_paths()
 

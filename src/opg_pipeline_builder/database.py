@@ -316,12 +316,12 @@ class Database:
                 an ETL stage (e.g. curated)
 
         Returns:
-            dict[str, Any]: Summary dictionary of all the transfomrations
+            dict[str, Any]: Summary dictionary of all the transformations
                    to apply to the tables.
         """
-        inpt = [stages[k]["input"] for k in stages]
-        outpt = [stages[k]["output"] for k in stages]
-        db_stages = list(set(inpt + outpt))
+        input = [stages[k]["input"] for k in stages]
+        output = [stages[k]["output"] for k in stages]
+        db_stages = list(set(input + output))
 
         tables = self.tables_to_use(
             table_list=tables, stages=db_stages, tf_types=tf_types

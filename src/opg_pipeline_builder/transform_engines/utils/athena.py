@@ -1,5 +1,3 @@
-from typing import Optional
-
 import awswrangler as wr
 import boto3
 import pydbtools as pydb
@@ -25,7 +23,7 @@ class AthenaTransformEngineUtils(TransformEngineUtils):  # type: ignore
     def recreate_database(
         self,
         database_name: str,
-        existing_databases: Optional[list[str] | None] = None,
+        existing_databases: list[str] | None = None,
     ) -> None:
         if existing_databases is None:
             databases_df = wr.catalog.databases(limit=self.db_search_limit)

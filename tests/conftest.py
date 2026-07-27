@@ -3,11 +3,12 @@ import logging
 import os
 import pathlib
 import shutil
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Generator
+from typing import Any
 from unittest.mock import MagicMock
 
 import aiobotocore.awsrequest
@@ -256,9 +257,9 @@ class MockS3FilesystemReadInputStream:
     def open_input_file(s3_file_path_in: str) -> Generator[str, None, None]:
         s3_client = boto3.client("s3")
         bucket, key = s3_path_to_bucket_key(s3_file_path_in)
-        tmp_file = NamedTemporaryFile(suffix=pathlib.Path(key).suffix)
-        s3_client.download_file(bucket, key, tmp_file.name)
-        yield tmp_file.name
+        with NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp_file:
+            s3_client.download_file(bucket, key, tmp_file.name)
+            yield tmp_file.name
 
 
 def mock_get_file(*args: Any, **kwargs: Any) -> MockS3FilesystemReadInputStream:

@@ -170,11 +170,11 @@ class SchemaReader:
 
         ds_map = {}
         for ds_col in col_type:
-            ds_name, ds_type = list(ds_col.items())[0]
+            ds_name, ds_type = next(iter(ds_col.items()))
             ds_map[ds_name] = ds_type
 
         for ms_col in meta_col_type:
-            ms_name, ms_type = list(ms_col.items())[0]  # type: ignore
+            ms_name, ms_type = next(iter(ms_col.items()))  # type: ignore
             if ms_name in ds_map:
                 cds_type = ds_map[ms_name]
                 if isinstance(ms_type, str):

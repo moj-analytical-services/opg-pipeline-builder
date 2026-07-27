@@ -1,7 +1,7 @@
 import os
 import re
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -19,8 +19,8 @@ from arrow_pd_parser import reader, writer
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_aws
 
-import opg_pipeline_builder.transform_engines.athena as athena
 from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.transform_engines import athena
 from opg_pipeline_builder.utils.constants import get_full_db_name
 from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, set_up_s3
@@ -81,11 +81,11 @@ class TestAthenaTransformEngine:
 
         tables = [table for table in sqlglot.parse_one(sql).find_all(sqlglot.exp.Table)]
 
-        table = [
+        table = next(
             id.name
             for id in tables[0].find_all(sqlglot.exp.Identifier)
             if id.name != database
-        ][0]
+        )
 
         glue_client = boto3.client("glue")
 
@@ -107,12 +107,12 @@ class TestAthenaTransformEngine:
                 os.remove(database_to_use)
 
             con = duckdb.connect(database=database_to_use)
-            tmp_file = NamedTemporaryFile(suffix=".snappy.parquet")
-            wr.s3.download(path=p, local_file=tmp_file.name)
+            with NamedTemporaryFile(suffix=".snappy.parquet") as tmp_file:
+                wr.s3.download(path=p, local_file=tmp_file.name)
 
-            df = reader.read(  # noqa: F841
-                tmp_file.name, metadata=glue_meta if use_glue_meta else None
-            )
+                df = reader.read(  # noqa: F841
+                    tmp_file.name, metadata=glue_meta if use_glue_meta else None
+                )
             prt = extract_mojap_timestamp(
                 extract_mojap_partition(p, timestamp_partition_name=primary_partition)
             )
@@ -164,9 +164,9 @@ class TestAthenaTransformEngine:
         primary_partition: str,
         s3_path: str,
     ) -> None:
-        tmp_file = NamedTemporaryFile(suffix=".snappy.parquet")
-        wr.s3.download(path=s3_path, local_file=tmp_file.name)
-        mock_df = reader.read(tmp_file.name)  # noqa: F841
+        with NamedTemporaryFile(suffix=".snappy.parquet") as tmp_file:
+            wr.s3.download(path=s3_path, local_file=tmp_file.name)
+            mock_df = reader.read(tmp_file.name)  # noqa: F841
 
         duckdb_sql = sqlglot.transpile(sql, read="presto", write="duckdb")
 
@@ -205,18 +205,18 @@ class TestAthenaTransformEngine:
         table_meta.partitions = []
 
         df = reader.read(self.raw_data_file, metadata=table_meta)
-        tmp = NamedTemporaryFile(suffix=".snappy.parquet")
-        writer.write(df, tmp.name, metadata=table_meta)
-        timestamp = int(datetime.now().timestamp())
+        with NamedTemporaryFile(suffix=".snappy.parquet") as tmp:
+            writer.write(df, tmp.name, metadata=table_meta)
+            timestamp = int(datetime.now(tz=UTC).timestamp())
 
-        wr.s3.upload(
-            tmp.name,
-            os.path.join(
-                paths[stage],
-                f"{partition_name}={timestamp}",
-                f"{Path(self.raw_data_file).stem}.snappy.parquet",
-            ),
-        )
+            wr.s3.upload(
+                tmp.name,
+                os.path.join(
+                    paths[stage],
+                    f"{partition_name}={timestamp}",
+                    f"{Path(self.raw_data_file).stem}.snappy.parquet",
+                ),
+            )
 
         return athena, timestamp  # type: ignore[return-value]
 
@@ -266,9 +266,9 @@ class TestAthenaTransformEngine:
             files = wr.s3.list_objects(path=cp)
 
             for i, file in enumerate(files):
-                tmp = NamedTemporaryFile(suffix=".snappy.parquet")
-                wr.s3.download(file, tmp.name)
-                file_df = reader.read(tmp.name, metadata=output_meta)
+                with NamedTemporaryFile(suffix=".snappy.parquet") as tmp:
+                    wr.s3.download(file, tmp.name)
+                    file_df = reader.read(tmp.name, metadata=output_meta)
                 original_prts = [
                     prt for prt in copied_meta.partitions if prt != primary_partition
                 ]
@@ -313,7 +313,7 @@ class TestAthenaTransformEngine:
             )
 
         else:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 transform.run(
                     stage=self.input_stage,
                     table=table.name,
@@ -430,9 +430,9 @@ class TestAthenaTransformEngine:
             files = wr.s3.list_objects(path=dp)
 
             for i, file in enumerate(files):
-                tmp = NamedTemporaryFile(suffix=".snappy.parquet")
-                wr.s3.download(file, tmp.name)
-                file_df = reader.read(tmp.name)
+                with NamedTemporaryFile(suffix=".snappy.parquet") as tmp:
+                    wr.s3.download(file, tmp.name)
+                    file_df = reader.read(tmp.name)
                 original_prts = [
                     prt for prt in copied_meta.partitions if prt != primary_partition
                 ]
@@ -455,7 +455,7 @@ class TestAthenaTransformEngine:
             assert set(df.animal) == {"chicken"}
 
         else:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 transform.run_derived(tables=[table.name])
             assert len(wr.s3.list_objects(dp)) == 0
             assert len(wr.s3.list_objects(temp_path)) == 0

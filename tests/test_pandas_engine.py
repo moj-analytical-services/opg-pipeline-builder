@@ -1,18 +1,18 @@
 import json
+from collections.abc import Generator
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 from logging import getLogger
-from typing import Generator, Type
 
 import awswrangler as wr
 import boto3
 import numpy as np
 import pandas as pd
-import pyarrow.fs as fs
 import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
+from pyarrow import fs
 
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
@@ -26,7 +26,7 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine_class() -> Generator[Type[PandasTransformEngine], None, None]:
+def pandas_engine_class() -> Generator[type[PandasTransformEngine], None, None]:
     yield PandasTransformEngine
 
 
@@ -35,7 +35,7 @@ def pandas_engine(
     pandas_engine_class: PandasTransformEngine,
     config: PipelineConfig,
     database: Database,
-) -> Generator[Type[PandasTransformEngine], None, None]:
+) -> Generator[type[PandasTransformEngine], None, None]:
     yield pandas_engine_class(config=config, db=database)  # type: ignore[operator]
 
 
@@ -68,7 +68,7 @@ def test_set_column_names_to_lower(
     pandas_engine: PandasTransformEngine, default_df: pd.DataFrame
 ) -> None:
     df = pandas_engine.transforms.set_colnames_to_lower(default_df)  # type: ignore[union-attr]
-    assert all([c.islower() for c in df.columns.to_list()])
+    assert all(c.islower() for c in df.columns.to_list())
 
 
 def test_add_attributes_from_headers_and_rename(
@@ -110,8 +110,8 @@ def test_add_primary_partition_column(
     config: PipelineConfig,
     database: Database,
 ) -> None:
-    ts = int(datetime.utcnow().timestamp())
-    partition_value = f"mojap_file_land_timestamp={str(ts)}"
+    ts = int(datetime.now(tz=UTC).timestamp())
+    partition_value = f"mojap_file_land_timestamp={ts!s}"
 
     pandas_engine = pandas_engine_class(  # type: ignore[operator]
         add_partition_column=True, config=config, db=database
@@ -308,7 +308,7 @@ def test_output_transform_methods(
 
     if attributes:
         default_metadata.update_column(
-            {"name": list(attributes.keys())[0], "type": "string"}
+            {"name": next(iter(attributes.keys())), "type": "string"}
         )
 
     input_df = default_df.copy()
@@ -324,8 +324,8 @@ def test_output_transform_methods(
     expected_df["testdb_etl_version"] = "testing"
 
     if add_partition_column:
-        ts = int(datetime.utcnow().timestamp())
-        partition_value = f"mojap_file_land_timestamp={str(ts)}"
+        ts = int(datetime.now(tz=UTC).timestamp())
+        partition_value = f"mojap_file_land_timestamp={ts!s}"
         expected_df["mojap_file_land_timestamp"] = ts
         default_metadata.update_column(
             {"name": "mojap_file_land_timestamp", "type": "int64"}
@@ -415,7 +415,7 @@ def test_transform(
         }
     )
 
-    ts = int(datetime.utcnow().timestamp())
+    ts = int(datetime.now(tz=UTC).timestamp())
     partition = f"mojap_file_land_timestamp={ts}"
 
     input_partition_path = (

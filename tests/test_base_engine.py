@@ -134,10 +134,10 @@ class TestBaseEngineTransform:
                 assert transform.utils.list_table_files(  # type: ignore[union-attr]
                     stage, table, modified_before=mid_adj_timestamp
                 ) == [
-                    [
+                    next(
                         f"s3://{getattr(self, stage_bucket)}/{p[path_index]}"
                         for p in setup[i]
-                    ][0]
+                    )
                 ]
 
                 assert transform.utils.list_table_files(  # type: ignore[union-attr]
@@ -320,7 +320,7 @@ class TestBaseEngineTransform:
         env = transform.db.env
         db_name = transform.db.name
 
-        for _, map in stages_map.items():
+        for map in stages_map.values():
             stage = map["name"]
             bucket = map["bucket_name"]
             setup: list[tuple[str, str, str]] = []
@@ -429,7 +429,7 @@ class TestBaseEngineTransform:
         env = transform.db.env
         db_name = transform.db.name
 
-        for _, map in stages_map.items():
+        for map in stages_map.values():
             stage = map["name"]
             bucket = map["bucket_name"]
             setup: list[tuple[str, str, str]] = []

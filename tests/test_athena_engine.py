@@ -117,8 +117,7 @@ class TestAthenaTransformEngine:
                 extract_mojap_partition(p, timestamp_partition_name=primary_partition)
             )
 
-            con.execute(
-                f"""
+            con.execute(f"""
                 CREATE TABLE {table} AS
                 SELECT
                     *,
@@ -126,14 +125,13 @@ class TestAthenaTransformEngine:
                         {prt} AS INT
                     ) AS {primary_partition}
                 FROM df
-                """  # nosec B608
-            )
+                """)  # nosec B608
 
             con.execute(re.sub(f"{database_to_use}.{table}", table, duckdb_sql[0]))
             final_table = con.arrow()
 
             tmp = TemporaryDirectory()
-            pq.write_to_dataset(
+            pq.write_to_dataset(  # type: ignore[no-untyped-call]
                 final_table,
                 root_path=tmp.name,
                 partition_cols=partitioned_by,
@@ -176,8 +174,7 @@ class TestAthenaTransformEngine:
             "FROM [a-zA-Z0-9_]+\\.[a-zA-Z0-9]+", "FROM mocked_table", duckdb_sql[0]
         )
 
-        con.execute(
-            f"""
+        con.execute(f"""
             CREATE TABLE mocked_table AS
             SELECT
                 *,
@@ -185,8 +182,7 @@ class TestAthenaTransformEngine:
                     {prt} AS INT
                 ) AS {primary_partition}
             FROM mock_df
-            """  # nosec B608
-        )
+            """)  # nosec B608
 
         con.execute(augmented_sql)
 

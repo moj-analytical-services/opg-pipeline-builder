@@ -1,4 +1,6 @@
+import functools
 import logging
+import operator
 import os
 from typing import Any
 
@@ -44,10 +46,11 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def model_post_init(
         self,
-        __context: Any,
+        context: Any,
+        /,
     ) -> None:
         self.utils = AthenaTransformEngineUtils(db=self.db)
-        super().model_post_init(__context)
+        super().model_post_init(context)
 
         if self.transforms is None:
             transforms_type = (
@@ -246,15 +249,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self, table_name: str, input_stage: str
     ) -> str:
         input_stage_under = input_stage.replace("-", "_")
-        return "_".join(
-            [
-                "_temp",
-                self.db.name,
-                self.db.env,
-                table_name,
-                input_stage_under,
-            ]
-        )
+        return f"_temp_{self.db.name}_{self.db.env}_{table_name}_{input_stage_under}"
 
     def _prepare_input_metadata_for_load(
         self, table_name: str, input_stage: str
@@ -377,11 +372,9 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         except Exception as e:
             _logger.info(
-                (
-                    "Failed to write data to curated.\n"
-                    f"Error: {e}\n"
-                    "Deleting any half-written files.\n"
-                )
+                "Failed to write data to curated.\n"
+                f"Error: {e}\n"
+                "Deleting any half-written files.\n"
             )
 
             self.utils.cleanup_partitions(  # type: ignore
@@ -497,7 +490,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         db_ipts = list(ipt_args.keys())
         tbl_ipts = [list(ipt_args[ipt_db].keys()) for ipt_db in ipt_args]
 
-        db_tbls = sum(
+        db_tbls = functools.reduce(
+            operator.iadd,
             [
                 list(zip([db_ipts[i]] * len(tbl_ipts[i]), tbl_ipts[i]))
                 for i in range(len(db_ipts))
@@ -616,11 +610,9 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         except Exception as e:
             _logger.info(
-                (
-                    "Failed to write data to derived.\n"
-                    f"Error: {e}\n"
-                    "Deleting any half-written files.\n"
-                )
+                "Failed to write data to derived.\n"
+                f"Error: {e}\n"
+                "Deleting any half-written files.\n"
             )
 
             for prt in partitions:
@@ -654,7 +646,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         tables: list[str],
         stage: str = "create_derived",
-        jinja_args: dict[str, Any] = {},
+        jinja_args: dict[str, Any] | None = None,
     ) -> None:
         """Creates derived tables for db using Athena
 
@@ -674,6 +666,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         **jinja_args: dict[str, Any]
             Jinja args to pass to pydbtools calls.
         """
+        if jinja_args is None:
+            jinja_args = {}
         if stage != "create_derived":
             raise ValueError("Expecting derived ETL step for this transform")
 

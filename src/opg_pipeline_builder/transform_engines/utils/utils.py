@@ -79,7 +79,9 @@ class TransformEngineUtils(BaseModel):
         if modified_before is None and disable_environment is False:
             modified_before = get_end_date()
 
-        table = self.db.table(table_name)
+        table = self.db.table(
+            table_name.split("-")[-1]
+        )  # Remove schema prefix if present
         etl_stages = deepcopy(table.etl_stages())
         table_paths = table.table_data_paths()
 
@@ -206,15 +208,15 @@ class TransformEngineUtils(BaseModel):
 
         new_partitions = [f for f in input_partitions if f not in output_partitions]
 
-        new_partitions_list: list[str] = sorted(list(set(new_partitions)), reverse=True)  # type: ignore
+        new_partitions_list: list[str] = sorted(set(new_partitions), reverse=True)  # type: ignore
 
         return new_partitions_list
 
     def transform_partitions(
         self,
-        tables: list[str] | None = get_source_tbls(),
-        stages: dict[str, str] = {"input": "raw_hist", "output": "curated"},
-        tf_types: list[str] = ["default", "custom"],
+        tables: list[str] | None = None,
+        stages: dict[str, str] | None = None,
+        tf_types: list[str] | None = None,
     ) -> dict[str, list[str] | list[int]]:
         """Lists unprocessed partitions for a set of tables
 
@@ -241,6 +243,12 @@ class TransformEngineUtils(BaseModel):
             Dictionary containing list of unprocessed partitions for
             the tables passed, given the ETL stages specified.
         """
+        if tf_types is None:
+            tf_types = ["default", "custom"]
+        if stages is None:
+            stages = {"input": "raw_hist", "output": "curated"}
+        if tables is None:
+            tables = get_source_tbls()
         stages_list = [v for _, v in stages.items()]
         tables_to_use = self.db.tables_to_use(
             tables, stages=stages_list, tf_types=tf_types
@@ -256,7 +264,7 @@ class TransformEngineUtils(BaseModel):
     def tf_args(
         self,
         table_name: str,
-        stages: dict[str, str] = {"input": "raw_hist", "output": "curated"},
+        stages: dict[str, str] | None = None,
     ) -> tuple[str, str, str]:
         """Transformation arguments for specified table
 
@@ -279,6 +287,8 @@ class TransformEngineUtils(BaseModel):
             transform type, input S3 path and output S3 path
             for the given table and stages.
         """
+        if stages is None:
+            stages = {"input": "raw_hist", "output": "curated"}
         transform_stage_args = {table_name: stages}
 
         tf_args = self.db.transform_args([table_name], **transform_stage_args)

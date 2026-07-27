@@ -7,8 +7,7 @@ import yaml
 from mojap_metadata import Metadata
 
 from opg_pipeline_builder.database import Database, DatabaseTable
-from opg_pipeline_builder.validator import read_pipeline_config
-from opg_pipeline_builder.validator import PipelineConfig
+from opg_pipeline_builder.validator import PipelineConfig, read_pipeline_config
 from tests.conftest import land_bucket
 
 
@@ -492,7 +491,7 @@ def test_db_lint_config(
     for table in test_tables:
         tf_args_tfs = expected["transform_args"]["transforms"]
         tbl_tf = tf_args_tfs[table]["transform_type"]
-        if table in exp_lint_config["tables"].keys() and tbl_tf in [
+        if table in exp_lint_config["tables"] and tbl_tf in [
             "default",
             "custom",
         ]:

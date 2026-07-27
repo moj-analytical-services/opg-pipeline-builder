@@ -1,5 +1,3 @@
-from typing import Type
-
 from opg_pipeline_builder.transform_engines.athena import AthenaTransformEngine
 from opg_pipeline_builder.transform_engines.base import BaseTransformEngine
 from opg_pipeline_builder.transforms import Transforms
@@ -11,13 +9,13 @@ class TestTransforms:
     def get_transforms(self) -> Transforms:
         return Transforms()
 
-    def setup_child_athena(self) -> Type[AthenaTransformEngine]:
+    def setup_child_athena(self) -> type[AthenaTransformEngine]:
         class ChildAthenaTransformEngine(AthenaTransformEngine):
             def dummy_method(self, _: list[str], __: dict[str, str]) -> None: ...
 
         return ChildAthenaTransformEngine
 
-    def setup_dummy_engine(self) -> Type[BaseTransformEngine]:
+    def setup_dummy_engine(self) -> type[BaseTransformEngine]:
         class DummyTransformEngine(BaseTransformEngine):
             def run(self, _: list[str], __: dict[str, str]) -> None:
                 print("hello")

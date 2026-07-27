@@ -25,17 +25,17 @@ class TestSchemaReader:
 
         set_up_s3(s3)
 
-        tmp_file = NamedTemporaryFile(suffix=file_ext)
         df = self.data
         meta = self.meta
 
-        if file_ext == "snappy.parquet":
-            writer.parquet.write(df, output_path=tmp_file.name, metadata=meta)
-        else:
-            writer.json.write(df, output_path=tmp_file.name, metadata=meta)
+        with NamedTemporaryFile(suffix=file_ext) as tmp_file:
+            if file_ext == "snappy.parquet":
+                writer.parquet.write(df, output_path=tmp_file.name, metadata=meta)
+            else:
+                writer.json.write(df, output_path=tmp_file.name, metadata=meta)
 
-        s3_key = f"dummy_data.{file_ext}"
-        s3.meta.client.upload_file(tmp_file.name, dummy_bucket, s3_key)
+            s3_key = f"dummy_data.{file_ext}"
+            s3.meta.client.upload_file(tmp_file.name, dummy_bucket, s3_key)
 
         return s3_key
 

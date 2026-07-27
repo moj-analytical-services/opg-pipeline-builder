@@ -222,7 +222,7 @@ def get_use_glue() -> bool:
     try:
         glue_enable: bool = literal_eval(os.environ["USE_GLUE"])
         if not isinstance(glue_enable, bool):
-            raise ValueError(
+            raise TypeError(
                 "Expecting True or False for 'USE_GLUE' environment variable"
             )
     except KeyError:
@@ -293,9 +293,9 @@ def get_full_db_name(
     env_suffix = f"derived_{env}" if derived else env
 
     if db_name == "all":
-        full_db_name = "_".join([prefix, env_suffix])
+        full_db_name = f"{prefix}_{env_suffix}"
     else:
-        full_db_name = "_".join([prefix, db_name, env_suffix])
+        full_db_name = f"{prefix}_{db_name}_{env_suffix}"
 
     return full_db_name
 
@@ -349,7 +349,7 @@ def get_chunk_size() -> int | bool:
         chunk: int = literal_eval(chunk_str)
 
         if not isinstance(chunk, bool) and not isinstance(chunk, int):
-            raise ValueError(
+            raise TypeError(
                 "CHUNK_SIZE must be a string corresponding to a boolean or integer"
             )
 
@@ -377,5 +377,5 @@ def get_dag_timestamp() -> int | None:
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
         return dag_ts
-    except Exception:  # pylint: disable=broad-exception-caught
+    except (KeyError, TypeError, ValueError):
         return None

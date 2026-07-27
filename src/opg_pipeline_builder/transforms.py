@@ -28,7 +28,7 @@ class Transforms:
         base_engine = importlib.import_module(
             ".base", package=transform_engines.__package__
         )
-        base_engine_class = getattr(base_engine, "BaseTransformEngine")
+        base_engine_class = base_engine.BaseTransformEngine
 
         if key in self.__dict__:
             try:

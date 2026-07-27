@@ -1,29 +1,41 @@
 import logging
+import os
 from datetime import UTC, datetime
-from pydantic import BaseModel, ConfigDict, ValidationError
 from typing import Any, Literal
 
 import awswrangler as wr
-import pyarrow as pa
+import pandas as pd
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _PARQUET_HANDLER_NAME = "opg_pipeline_builder_parquet"
 
 
-# Pydantic model for the full log - enforce types and output to DF / pyarrow (use an explicit schema)
-# Think about parallel processing risks
-
-
-class CustomLogFields(BaseModel):
+class StructuredLogRecord(BaseModel):
+    logger_name: str
+    module: str
+    function: str
+    line_number: int
     database_name: str
     data_delivery_period: datetime
     attempt_no: int
-    pipeline_activity: Literal["BAU", "Deletion", "Validation"]
+    pipeline_activity: Literal["BAU", "Deletion", "Logging Error", "Validation"]
     table_name: str
     field_name: str
+    log_level: str
+    log_timestamp: datetime
+    message: str
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("data_delivery_period", "log_timestamp")
+    @classmethod
+    def ensure_utc_aware(cls, value: datetime) -> datetime:
+        """Require timezone-aware datetimes and normalize them to UTC."""
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Datetime fields must be timezone-aware.")
+        return value.astimezone(UTC)
 
 
 class ParquetLogHandler(logging.Handler):
@@ -74,13 +86,14 @@ class ParquetLogHandler(logging.Handler):
         if not self._buffer:
             return
 
-        table = pa.Table.from_pylist(self._buffer).to_pandas()
+        df = pd.DataFrame(self._buffer)
         output_path = (
             f"s3://{self._bucket}/{self._prefix}/run_date={self._session_datetime.strftime('%Y%m%d')}/"
-            f"run_datetime={self._session_datetime.strftime('%Y%m%dT%H%M%SZ')}/log_{self._part_number:05d}.parquet"
+            f"run_datetime={self._session_datetime.strftime('%Y%m%dT%H%M%SZ')}/"
+            f"log_pid={os.getpid()}_{self._part_number:05d}.parquet"
         )
+        wr.s3.to_parquet(df, path=str(output_path), index=False)
 
-        wr.s3.to_parquet(table, path=str(output_path), index=False)
         self._part_number += 1
         self._buffer.clear()
 
@@ -90,7 +103,16 @@ class ParquetLogHandler(logging.Handler):
 
         custom_fields_dict = getattr(record, "custom_fields", {})
         try:
-            custom_fields = CustomLogFields(**custom_fields_dict)
+            log_record = StructuredLogRecord(
+                logger_name=record.name,
+                module=record.module,
+                function=record.funcName,
+                line_number=record.lineno,
+                log_level=record.levelname,
+                log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
+                message=record.getMessage(),
+                **custom_fields_dict,
+            )
         except ValidationError:
             return {
                 "logger_name": record.name,
@@ -100,32 +122,16 @@ class ParquetLogHandler(logging.Handler):
                 "database_name": "Unknown",
                 "data_delivery_period": datetime(1970, 1, 1, tzinfo=UTC),
                 "attempt_no": 0,
-                "pipeline_activity": "Parsing custom log fields",
+                "pipeline_activity": "Logging Error",
                 "table_name": "Unknown",
                 "field_name": "Unknown",
                 "log_level": record.levelname,
-                "log_timestamp": datetime.fromtimestamp(
-                    record.created, tz=UTC
-                ).isoformat(),
+                "log_timestamp": datetime.fromtimestamp(record.created, tz=UTC),
                 "message": "Failed to parse custom log fields: "
                 + str(custom_fields_dict),
             }
 
-        return {
-            "logger_name": record.name,
-            "module": record.module,
-            "function": record.funcName,
-            "line_number": record.lineno,
-            "database_name": custom_fields.database_name,
-            "data_delivery_period": custom_fields.data_delivery_period,
-            "attempt_no": custom_fields.attempt_no,
-            "pipeline_activity": custom_fields.pipeline_activity,
-            "table_name": custom_fields.table_name,
-            "field_name": custom_fields.field_name,
-            "log_level": record.levelname,
-            "log_timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
-            "message": record.getMessage(),
-        }
+        return log_record.model_dump()
 
 
 def configure_logging(

@@ -69,16 +69,13 @@ class ParquetLogHandler(logging.Handler):
         finally:
             self.release()
 
-    def flush(self) -> None:
-        self.acquire()
-        try:
-            self._flush_locked()
-        finally:
-            self.release()
-
     def close(self) -> None:
         try:
-            self.flush()
+            self.acquire()
+            try:
+                self._flush_locked()
+            finally:
+                self.release()
         finally:
             super().close()
 
@@ -87,12 +84,18 @@ class ParquetLogHandler(logging.Handler):
             return
 
         df = pd.DataFrame(self._buffer)
+
+        pid = os.getpid()  # Differentiate logs from parallel processes in the same run
+
+        # Differentiate logs between airflow DAGs
+        database = os.environ.get("DATABASE", "Unknown")
+
         output_path = (
             f"s3://{self._bucket}/{self._prefix}/run_date={self._session_datetime.strftime('%Y%m%d')}/"
             f"run_datetime={self._session_datetime.strftime('%Y%m%dT%H%M%SZ')}/"
-            f"log_pid={os.getpid()}_{self._part_number:05d}.parquet"
+            f"{database}_{pid}_{self._part_number}.snappy.parquet"
         )
-        wr.s3.to_parquet(df, path=str(output_path), index=False)
+        wr.s3.to_parquet(df, path=output_path, index=False, compression="snappy")
 
         self._part_number += 1
         self._buffer.clear()
@@ -114,28 +117,31 @@ class ParquetLogHandler(logging.Handler):
                 **custom_fields_dict,
             )
         except ValidationError:
-            return {
-                "logger_name": record.name,
-                "module": record.module,
-                "function": record.funcName,
-                "line_number": record.lineno,
-                "database_name": "Unknown",
-                "data_delivery_period": datetime(1970, 1, 1, tzinfo=UTC),
-                "attempt_no": 0,
-                "pipeline_activity": "Logging Error",
-                "table_name": "Unknown",
-                "field_name": "Unknown",
-                "log_level": record.levelname,
-                "log_timestamp": datetime.fromtimestamp(record.created, tz=UTC),
-                "message": "Failed to parse custom log fields: "
-                + str(custom_fields_dict),
-            }
+            log_record = StructuredLogRecord(
+                logger_name=record.name if isinstance(record.name, str) else "Unknown",
+                module=record.module if isinstance(record.module, str) else "Unknown",
+                function=(
+                    record.funcName if isinstance(record.funcName, str) else "Unknown"
+                ),
+                line_number=record.lineno if isinstance(record.lineno, int) else 0,
+                database_name="Unknown",
+                data_delivery_period=datetime(1970, 1, 1, tzinfo=UTC),
+                attempt_no=0,
+                pipeline_activity="Logging Error",
+                table_name="Unknown",
+                field_name="Unknown",
+                log_level=(
+                    record.levelname if isinstance(record.levelname, str) else "Unknown"
+                ),
+                log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
+                message="Failed to parse custom log fields: " + str(custom_fields_dict),
+            )
 
         return log_record.model_dump()
 
 
 def configure_logging(
-    bucket: str, prefix: str, session_datetime: datetime
+    bucket: str, prefix: str, session_datetime: datetime, batch_size: int = 500
 ) -> logging.Logger:
     """Configure package logging once with a shared console handler."""
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
@@ -157,6 +163,12 @@ def configure_logging(
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )
+    else:
+        err = (
+            "Logger has already been configured with a console handler."
+            "This should only be done once per process."
+        )
+        raise RuntimeError(err)
 
     if not any(
         _PARQUET_HANDLER_NAME == handler.get_name()
@@ -166,9 +178,10 @@ def configure_logging(
             bucket=bucket,
             prefix=prefix,
             session_datetime=session_datetime,
-            batch_size=500,
+            batch_size=batch_size,
         )
 
         parquet_handler.set_name(_PARQUET_HANDLER_NAME)
         package_logger.addHandler(parquet_handler)
+
     return package_logger

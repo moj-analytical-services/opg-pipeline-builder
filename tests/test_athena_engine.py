@@ -1,7 +1,7 @@
 import os
 import re
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -19,7 +19,7 @@ from arrow_pd_parser import reader, writer
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_aws
 
-import opg_pipeline_builder.transform_engines.athena as athena
+from opg_pipeline_builder.transform_engines import athena
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.utils.constants import get_full_db_name
 from opg_pipeline_builder.validator import PipelineConfig
@@ -81,11 +81,11 @@ class TestAthenaTransformEngine:
 
         tables = [table for table in sqlglot.parse_one(sql).find_all(sqlglot.exp.Table)]
 
-        table = [
+        table = next(
             id.name
             for id in tables[0].find_all(sqlglot.exp.Identifier)
             if id.name != database
-        ][0]
+        )
 
         glue_client = boto3.client("glue")
 
@@ -207,7 +207,7 @@ class TestAthenaTransformEngine:
         df = reader.read(self.raw_data_file, metadata=table_meta)
         tmp = NamedTemporaryFile(suffix=".snappy.parquet")
         writer.write(df, tmp.name, metadata=table_meta)
-        timestamp = int(datetime.now().timestamp())
+        timestamp = int(datetime.now(tz=timezone.utc).timestamp())
 
         wr.s3.upload(
             tmp.name,
@@ -313,7 +313,7 @@ class TestAthenaTransformEngine:
             )
 
         else:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 transform.run(
                     stage=self.input_stage,
                     table=table.name,

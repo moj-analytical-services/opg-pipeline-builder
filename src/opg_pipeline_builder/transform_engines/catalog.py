@@ -47,26 +47,24 @@ class CatalogTransformEngine(BaseTransformEngine):
                         "Name": db_name,
                     }
                 }
-                _logger.info(f"Creating initial {db_name} db")
+                _logger.info("Creating initial %s db", db_name)
                 glue_client.create_database(**db_meta)
             else:
-                _logger.info("Unexpected error: %s" % e)
+                _logger.info("Unexpected error: %s", e)
 
-        for table in tables:
-            _logger.info(f"Updating {db_name}.{table}")
-            db_table = db.table(table)
+        for table_name in tables:
+            _logger.info("Updating %s.%s", db_name, table_name)
+            db_table = db.table(table_name)
 
             stage_meta = db_table.get_table_metadata("curated")
             stage_meta.force_partition_order = "start"
             stage_s3_path = db_table.get_table_path("curated")
 
-            if table != stage_meta.name:
+            if table_name != stage_meta.name:
                 raise ValueError(
-                    (
-                        "Table name in metadata file is inconsistent:\n"
-                        f"{stage_meta.name} (meta)\n"
-                        f"{table} (config)"
-                    )
+                    "Table name in metadata file is inconsistent:\n"
+                    f"{stage_meta.name} (meta)\n"
+                    f"{table_name} (config)"
                 )
 
             wr.catalog.delete_table_if_exists(database=db_name, table=stage_meta.name)
@@ -80,6 +78,6 @@ class CatalogTransformEngine(BaseTransformEngine):
             glue_client.create_table(**spec)
             wr.athena.repair_table(table=table, database=db_name)
 
-            _logger.info(f"{db_name}.{table} updated")
+            _logger.info("%s.%s updated", db_name, table)
 
-        _logger.info(f"Finished updating {db_name}")
+        _logger.info("Finished updating %s", db_name)

@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
@@ -20,12 +20,12 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     chunk_rest_threshold: int = 500_000_000
     add_partition_column: bool = False
     attributes_file: str = ""
-    attributes: dict[Any, Any] = {}
-    extract_header_values: dict[str, str] = {}
+    attributes: dict[Any, Any] | None = None
+    extract_header_values: dict[str, str] | None = None
     enrich_meta: bool = True
     raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"
-    transforms: Optional[PandasTransformations] = None
+    transforms: PandasTransformations | None = None
 
     def model_post_init(self, __context) -> None:  # type: ignore
         super().model_post_init(__context)
@@ -86,8 +86,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
         )
 
         _logger.info("Looping through chunks")
-        i = 0
-        for df in dfs:
+        for i, df in enumerate(dfs):
             _logger.info(f"Transforming chunk {i}")
             if transform_type == "custom":
                 tf_df = self.transforms.custom_transform(  # type: ignore
@@ -118,7 +117,6 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
                 output_path=output_filepath,
                 metadata=output_meta,
             )
-            i += 1
 
     def _apply(
         self,

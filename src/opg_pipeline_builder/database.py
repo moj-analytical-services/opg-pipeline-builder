@@ -706,11 +706,11 @@ class DatabaseTable:
             try:
                 input_data: dict[str, dict[str, str]] = config["input_data"]  # type: ignore
             except KeyError:
-                raise KeyError("Derived table should have inputs listed in config.")
+                err = "Derived table should have inputs listed in config."
+                raise KeyError(err)
 
             all_data_paths: dict[str, dict[str, str]] = {}
-            for db_name in input_data:
-                tables = input_data[db_name]
+            for db_name, tables in input_data.items():
                 table_names = list(tables.keys())
                 all_data_paths[db_name] = {}
 
@@ -730,7 +730,8 @@ class DatabaseTable:
                     table_freq = table.frequency()
 
                     all_data_paths[db_name][table_name] = {
-                        **{"path": data_paths, "frequency": table_freq},  # type: ignore
+                        "path": data_paths,
+                        "frequency": table_freq,
                         **data_formats,  # type: ignore
                     }
 
@@ -789,7 +790,7 @@ class DatabaseTable:
         config = {}
         if transform_type in ["default", "custom"]:
             table_lint_config = self._config
-            if "lint_options" not in table_lint_config.keys():
+            if "lint_options" not in table_lint_config:
                 raise KeyError(f"Lint options have not been specified for {self._name}")
 
             table_meta = self.table_meta_paths()
@@ -883,7 +884,7 @@ class DatabaseTable:
         return transform_args
 
     def get_table_metadata(
-        self, stage: str, updates: list[dict[str, str | bool] | None] = []
+        self, stage: str, updates: list[dict[str, str | bool]] | None = None
     ) -> Metadata:
         """Fetches MoJ Metadata for the table
 

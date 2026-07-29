@@ -18,8 +18,8 @@ _logger: logging.Logger = logging.getLogger(__name__)
 class PandasTransformations(BaseTransformations):  # type: ignore
     add_partition_column: bool = False
     attributes_file: str = ""
-    attributes: dict[Any, Any] = {}
-    extract_header_values: dict[str, str] = {}
+    attributes: dict[Any, Any] | None = None
+    extract_header_values: dict[str, str] | None = None
 
     @staticmethod
     def remove_columns_not_in_metadata(
@@ -51,7 +51,7 @@ class PandasTransformations(BaseTransformations):  # type: ignore
             header_values = [(c, v[0]) for c, v in header_values if v is not None]  # type: ignore
             headers_in_scope = [c for c, _ in header_values]
 
-            unique_values = set([v for _, v in header_values])
+            unique_values = {v for _, v in header_values}
 
             mapping = [
                 {

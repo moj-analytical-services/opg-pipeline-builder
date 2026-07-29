@@ -159,7 +159,7 @@ def test_get_no_glue_workers(
     from opg_pipeline_builder.utils.constants import get_no_glue_workers, get_use_glue
 
     if use_glue is None:
-        if "USE_GLUE" in os.environ.keys():
+        if "USE_GLUE" in os.environ:
             del os.environ["USE_GLUE"]
         n_wrks = get_no_glue_workers()
         assert n_wrks == expected

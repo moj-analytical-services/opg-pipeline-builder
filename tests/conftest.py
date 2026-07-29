@@ -3,11 +3,12 @@ import logging
 import os
 import pathlib
 import shutil
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Generator
+from typing import Any
 from unittest.mock import MagicMock
 
 import aiobotocore.awsrequest

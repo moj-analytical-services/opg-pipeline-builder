@@ -105,7 +105,7 @@ class TestDataLinterEngine:
         config: PipelineConfig,
         database: Database,
     ) -> None:
-        import pyarrow.fs as fs
+        from pyarrow import fs
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
 
@@ -140,7 +140,7 @@ class TestDataLinterEngine:
             s3.meta.client.upload_file(
                 dummy_data_path / path,
                 lb,
-                os.path.join(lk, table.name, dummy_data[i]),
+                os.path.join(lk, table.name, path),
             )
 
         if mps_list:

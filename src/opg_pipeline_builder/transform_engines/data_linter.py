@@ -37,7 +37,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         if temp_staging is set to True in mp_args.
     """
 
-    mp_args: dict[Any, Any] = {}
+    mp_args: dict[Any, Any] | None = None
     dag_timestamp: int | None = get_dag_timestamp()
 
     @staticmethod
@@ -58,7 +58,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
         }
 
         if mp_args:
-            if "enable" not in mp_args.keys():
+            if "enable" not in mp_args:
                 raise KeyError('mp_args must contain an "enable" key-value pair')
 
             mp_enable = mp_args["enable"]
@@ -97,10 +97,8 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 config_dc = deepcopy(config)
 
                 _logger.info(
-                    (
-                        f"Creating parallel run config files for {max_workers}"
-                        " (CPU count) workers"
-                    )
+                    f"Creating parallel run config files for {max_workers}"
+                    " (CPU count) workers"
                 )
                 validation.para_run_init(max_workers, config_dc)
 
@@ -111,10 +109,8 @@ class DataLinterTransformEngine(BaseTransformEngine):
                 if current_worker is None and close_status is False:
                     max_workers = mp_args["total_workers"]
                     _logger.info(
-                        (
-                            f"Creating parallel run config files for {max_workers}"
-                            " (environment) workers"
-                        )
+                        f"Creating parallel run config files for {max_workers}"
+                        " (environment) workers"
                     )
                     validation.para_run_init(max_workers, config)
 

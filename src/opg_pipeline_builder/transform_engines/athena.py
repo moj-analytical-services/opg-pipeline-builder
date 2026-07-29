@@ -1,4 +1,6 @@
+import functools
 import logging
+import operator
 import os
 from typing import Any
 
@@ -42,10 +44,7 @@ class AthenaTransformEngine(BaseTransformEngine):
     transforms_type: str | None = None
     input_stage: str = "processed"
 
-    def model_post_init(
-        self,
-        __context: Any,
-    ) -> None:
+    def model_post_init(self, __context: Any, /) -> None:
         self.utils = AthenaTransformEngineUtils(db=self.db)
         super().model_post_init(__context)
 
@@ -246,15 +245,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self, table_name: str, input_stage: str
     ) -> str:
         input_stage_under = input_stage.replace("-", "_")
-        return "_".join(
-            [
-                "_temp",
-                self.db.name,
-                self.db.env,
-                table_name,
-                input_stage_under,
-            ]
-        )
+        return f"_temp_{self.db.name}_{self.db.env}_{table_name}_{input_stage_under}"
 
     def _prepare_input_metadata_for_load(
         self, table_name: str, input_stage: str
@@ -377,11 +368,10 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         except Exception as e:
             _logger.info(
-                (
-                    "Failed to write data to curated.\n"
-                    f"Error: {e}\n"
-                    "Deleting any half-written files.\n"
-                )
+                "Failed to write data to curated.\n"
+                "Error: %s\n"
+                "Deleting any half-written files.\n",
+                e,
             )
 
             self.utils.cleanup_partitions(  # type: ignore
@@ -497,7 +487,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         db_ipts = list(ipt_args.keys())
         tbl_ipts = [list(ipt_args[ipt_db].keys()) for ipt_db in ipt_args]
 
-        db_tbls = sum(
+        db_tbls = functools.reduce(
+            operator.iadd,
             [
                 list(zip([db_ipts[i]] * len(tbl_ipts[i]), tbl_ipts[i]))
                 for i in range(len(db_ipts))
@@ -616,11 +607,10 @@ class AthenaTransformEngine(BaseTransformEngine):
 
         except Exception as e:
             _logger.info(
-                (
-                    "Failed to write data to derived.\n"
-                    f"Error: {e}\n"
-                    "Deleting any half-written files.\n"
-                )
+                "Failed to write data to derived.\n"
+                "Error: %s\n"
+                "Deleting any half-written files.\n",
+                e,
             )
 
             for prt in partitions:
@@ -654,7 +644,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         self,
         tables: list[str],
         stage: str = "create_derived",
-        jinja_args: dict[str, Any] = {},
+        jinja_args: dict[str, Any] | None = None,
     ) -> None:
         """Creates derived tables for db using Athena
 
@@ -677,6 +667,7 @@ class AthenaTransformEngine(BaseTransformEngine):
         if stage != "create_derived":
             raise ValueError("Expecting derived ETL step for this transform")
 
+        jinja_args = jinja_args or {}
         db = self.db
         primary_partition = db.primary_partition_name()
         db_derived_name = get_full_db_name(db_name=db.name, env=db.env, derived=True)
@@ -687,13 +678,13 @@ class AthenaTransformEngine(BaseTransformEngine):
         databases = wr.catalog.databases(self.db_search_limit)  # type: ignore
         if db_derived_name not in databases.Database.to_list():
             _logger.info(
-                f"Derived database {db_derived_name} doesn't exist. "
-                + "Creating database..."
+                "Derived database %s doesn't exist. " + "Creating database...",
+                db_derived_name,
             )
             wr.catalog.create_database(
                 db_derived_name, description=f"Derived {db.name} tables"
             )
-            _logger.info(f"Derived database {db_derived_name} created")
+            _logger.info("Derived database %s created", db_derived_name)
 
         tf_args = db.transform_args(
             tables_to_use,
@@ -702,9 +693,9 @@ class AthenaTransformEngine(BaseTransformEngine):
         )
 
         for tbl in tables_to_use:
-            _logger.info(f"Starting derived table job for {tbl}")
+            _logger.info("Starting derived table job for %s", tbl)
 
-            _logger.info(f"Fetching new input data partitions for {tbl}")
+            _logger.info("Fetching new input data partitions for %s", tbl)
             new_prts = self._new_derived_table_partitions(
                 table_name=tbl,
                 transform_args=tf_args,
@@ -712,17 +703,17 @@ class AthenaTransformEngine(BaseTransformEngine):
             )
 
             if not new_prts:
-                _logger.info(f"No new input partitions for {tbl}")
+                _logger.info("No new input partitions for %s", tbl)
                 continue
 
-            _logger.info(f"Creating intermediate temporary tables for {tbl}")
+            _logger.info("Creating intermediate temporary tables for %s", tbl)
             self._create_intermediate_tables_for_derived_table(
                 table_name=tbl,
                 partitions=new_prts,
                 jinja_args=jinja_args,
             )
 
-            _logger.info(f"Creating final derived table {tbl}")
+            _logger.info("Creating final derived table %s", tbl)
             output_meta, output_path = self._create_final_derived_table(
                 table_name=tbl,
                 primary_partition=primary_partition,
@@ -731,7 +722,7 @@ class AthenaTransformEngine(BaseTransformEngine):
                 jinja_args=jinja_args,
             )
 
-            _logger.info(f"Refreshing and repairing {tbl}")
+            _logger.info("Refreshing and repairing %s", tbl)
             self.utils.refresh_and_repair_table(  # type: ignore
                 table_name=output_meta.name,
                 database_name=db_derived_name,
@@ -739,4 +730,4 @@ class AthenaTransformEngine(BaseTransformEngine):
                 table_data_path=output_path,
             )
 
-            _logger.info(f"Finished derived table job for {tbl}")
+            _logger.info("Finished derived table job for %s", tbl)

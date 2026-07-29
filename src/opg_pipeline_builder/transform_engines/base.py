@@ -25,7 +25,10 @@ class BaseTransformEngine(BaseModel):
 
     @staticmethod
     def _check_public_method_args(parameters: list[str]) -> bool:
-        return "tables" in parameters
+        if "tables" not in parameters:
+            return False
+
+        return "stages" in parameters or "stage" in parameters
 
     def _validate_method_kwargs(self) -> None:
         methods = [

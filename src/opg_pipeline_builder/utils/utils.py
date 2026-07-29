@@ -34,7 +34,9 @@ def get_last_modified(obj: dict[Any, Any]) -> int:
     return int(obj["LastModified"].strftime("%s"))
 
 
-def s3_copy(copy_args: tuple[str, str], client: boto3.client) -> dict[Any, Any]:
+def s3_copy(
+    copy_args: tuple[str, str], client: boto3.client | None = None
+) -> dict[Any, Any]:
     """
     Function to copy objects from one S3 location to another S3 location
     Args:
@@ -301,7 +303,7 @@ def check_s3_for_existing_timestamp_file(
 
     try:
         max_ts = int(max(ts))
-    except (TypeError, ValueError):
+    except ValueError:
         max_ts = 0
 
     try:

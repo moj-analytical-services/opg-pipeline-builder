@@ -1,4 +1,7 @@
 ---
+default_language_version:
+  python: python3.13
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -30,11 +33,11 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
   - repo: https://github.com/crate-ci/typos
-    rev: v1.36.2
+    rev: v1.48.0
     hooks:
       - id: typos
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.1
+    rev: v0.16.0
     hooks:
       - id: ruff
         types_or: [python, pyi, jupyter]
@@ -57,7 +60,7 @@ repos:
       - id: detect-secrets
 
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.6
+    rev: 1.9.4
     hooks:
       - id: bandit
         args:
@@ -67,18 +70,18 @@ repos:
           - pbr
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.37.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
 
   - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.4.1
+    rev: 4.2.2
     hooks:
       - id: sqlfluff-lint
         args: [--dialect, athena, --templater, jinja, --ignore, templating]
 
   - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.104.0
+    rev: v1.108.0
     hooks:
       - id: terraform_fmt
       - id: terraform_tflint

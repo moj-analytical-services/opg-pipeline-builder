@@ -316,12 +316,12 @@ class Database:
                 an ETL stage (e.g. curated)
 
         Returns:
-            dict[str, Any]: Summary dictionary of all the transfomrations
+            dict[str, Any]: Summary dictionary of all the transformations
                    to apply to the tables.
         """
-        inpt = [stages[k]["input"] for k in stages]
-        outpt = [stages[k]["output"] for k in stages]
-        db_stages = list(set(inpt + outpt))
+        input = [stages[k]["input"] for k in stages]
+        output = [stages[k]["output"] for k in stages]
+        db_stages = list(set(input + output))
 
         tables = self.tables_to_use(
             table_list=tables, stages=db_stages, tf_types=tf_types
@@ -706,7 +706,8 @@ class DatabaseTable:
             try:
                 input_data: dict[str, dict[str, str]] = config["input_data"]  # type: ignore
             except KeyError:
-                raise KeyError("Derived table should have inputs listed in config.")
+                err = "Derived table should have inputs listed in config."
+                raise KeyError(err)
 
             all_data_paths: dict[str, dict[str, str]] = {}
             for db_name, tables in input_data.items():
@@ -883,7 +884,7 @@ class DatabaseTable:
         return transform_args
 
     def get_table_metadata(
-        self, stage: str, updates: list[dict[str, str | bool] | None] | None = None
+        self, stage: str, updates: list[dict[str, str | bool]] | None = None
     ) -> Metadata:
         """Fetches MoJ Metadata for the table
 

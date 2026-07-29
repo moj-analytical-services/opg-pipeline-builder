@@ -1,6 +1,6 @@
 import logging
 from inspect import getmembers, isfunction, signature
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,7 +14,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 class BaseTransformEngine(BaseModel):
     config: PipelineConfig
     db: Database
-    utils: Optional[TransformEngineUtils] = None
+    utils: TransformEngineUtils | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -28,11 +28,7 @@ class BaseTransformEngine(BaseModel):
         if "tables" not in parameters:
             return False
 
-        if "stages" or "stage" in parameters:
-            return True
-
-        else:
-            return False
+        return "stages" in parameters or "stage" in parameters
 
     def _validate_method_kwargs(self) -> None:
         methods = [
@@ -42,10 +38,8 @@ class BaseTransformEngine(BaseModel):
         ]
 
         validation = all(
-            [
-                BaseTransformEngine._check_public_method_args(parameters)  # type: ignore
-                for parameters in methods
-            ]
+            BaseTransformEngine._check_public_method_args(parameters)  # type: ignore
+            for parameters in methods
         )
 
         if not validation:

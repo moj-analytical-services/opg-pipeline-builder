@@ -2,9 +2,9 @@ import glob
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from dataengineeringutils3.s3 import (
@@ -35,7 +35,7 @@ def get_last_modified(obj: dict[Any, Any]) -> int:
 
 
 def s3_copy(
-    copy_args: tuple[str, str], client: Optional[boto3.client] = None
+    copy_args: tuple[str, str], client: boto3.client | None = None
 ) -> dict[Any, Any]:
     """
     Function to copy objects from one S3 location to another S3 location
@@ -200,9 +200,8 @@ def get_modified_filepaths_from_s3_folder(
 
     s3_resource = boto3.resource("s3")
 
-    if file_extension is not None:
-        if file_extension[0] != ".":
-            file_extension = "." + file_extension
+    if file_extension is not None and file_extension[0] != ".":
+        file_extension = "." + file_extension
 
     # This guarantees that the path the user has given is really a 'folder'.
     s3_folder_path = _add_slash(s3_folder_path)
@@ -264,8 +263,8 @@ def _get_file_result(max_existing_ts: int, new_ts: int, one_a_day: bool) -> bool
         else:
             get_file = False
     else:
-        max_date = datetime.fromtimestamp(max_existing_ts).date()
-        new_file_date = datetime.fromtimestamp(new_ts).date()
+        max_date = datetime.fromtimestamp(max_existing_ts, tz=UTC).date()
+        new_file_date = datetime.fromtimestamp(new_ts, tz=UTC).date()
         if max_date < new_file_date:
             get_file = True
         else:
@@ -299,23 +298,19 @@ def check_s3_for_existing_timestamp_file(
         # get max timestamp in raw_hist for given table
         ts = [re.search(filename_regex, Path(i).name).group(3) for i in existing_data]  # type: ignore
     except AttributeError:
-        raise ValueError(
-            """a file timestamp in raw_hist is not
-               in the expected format"""
-        )
+        raise ValueError("""a file timestamp in raw_hist is not
+               in the expected format""")
 
     try:
         max_ts = int(max(ts))
-    except Exception:
+    except ValueError:
         max_ts = 0
 
     try:
         new_file_timestamp = re.search(filename_regex, Path(new_file).name).group(3)  # type: ignore
     except AttributeError:
-        raise ValueError(
-            f"""the new filename, {new_file}, is not
-               in the expected format"""
-        )
+        raise ValueError(f"""the new filename, {new_file}, is not
+               in the expected format""")
 
     if not isinstance(new_file_timestamp, int) and not len(new_file_timestamp) == 10:
         raise ValueError("wrong format for new timestamp")

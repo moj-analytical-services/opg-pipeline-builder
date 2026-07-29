@@ -39,9 +39,8 @@ class TableConfig(BaseModel):
                     f"{self.transform_type} table should not have input_data"
                 )
 
-            if self.transform_type == "default":
-                if self.sql:
-                    raise ValueError("default table should not have sql")
+            if self.transform_type == "default" and self.sql:
+                raise ValueError("default table should not have sql")
 
         return self
 
@@ -122,7 +121,7 @@ class PipelineConfig(BaseModel):
     @field_validator("paths")
     @classmethod
     def check_in_etl_stages(cls, v: dict[str, str]) -> dict[str, str]:
-        stage = [k for k in v][0]
+        stage = next(iter(v))
         if stage not in etl_stages:
             raise ValueError(f"{stage} is not a valid ETL stage")
         return v
@@ -130,7 +129,7 @@ class PipelineConfig(BaseModel):
     @field_validator("shared_sql")
     @classmethod
     def check_in_transform_types(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
-        transform_type = [k for k, _ in v.items()][0]
+        transform_type = next(k for k, _ in v.items())
         valid_type = transform_type in transform_types
         error_message = f"{transform_type} is not one of {', '.join(transform_types)}"
         if not valid_type:
@@ -239,8 +238,9 @@ class PipelineConfig(BaseModel):
                         lint_opt = table.lint_options
                         full_lint_config["tables"][table_name] = lint_opt
 
-                    except Exception:
+                    except AttributeError:
                         raise KeyError(f"{table} does not have lint options")
+                    full_lint_config["tables"][table_name] = lint_opt
 
             dummy_s3_paths = {
                 "land-base-path": "s3://testing-bucket/land/",

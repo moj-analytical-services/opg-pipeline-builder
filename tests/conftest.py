@@ -1,9 +1,9 @@
 import logging
 from collections.abc import Generator
-from _pytest.monkeypatch import MonkeyPatch
 
 import boto3
 import pytest
+from _pytest.monkeypatch import MonkeyPatch
 from moto import mock_aws
 
 
@@ -33,7 +33,7 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True, scope="session")
-def set_log_level() -> Generator[None, None, None]:
+def set_log_level() -> Generator[None]:
     """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
     logging.getLogger("botocore").setLevel(logging.CRITICAL)
     logging.getLogger("awswrangler").setLevel(logging.CRITICAL)

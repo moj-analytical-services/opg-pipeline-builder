@@ -208,15 +208,15 @@ class TransformEngineUtils(BaseModel):
 
         new_partitions = [f for f in input_partitions if f not in output_partitions]
 
-        new_partitions_list: list[str] = sorted(list(set(new_partitions)), reverse=True)  # type: ignore
+        new_partitions_list: list[str] = sorted(set(new_partitions), reverse=True)  # type: ignore
 
         return new_partitions_list
 
     def transform_partitions(
         self,
-        tables: list[str] | None = get_source_tbls(),
-        stages: dict[str, str] = {"input": "raw_hist", "output": "curated"},
-        tf_types: list[str] = ["default", "custom"],
+        tables: list[str] | None = None,
+        stages: dict[str, str] | None = None,
+        tf_types: list[str] | None = None,
     ) -> dict[str, list[str] | list[int]]:
         """Lists unprocessed partitions for a set of tables
 
@@ -243,6 +243,9 @@ class TransformEngineUtils(BaseModel):
             Dictionary containing list of unprocessed partitions for
             the tables passed, given the ETL stages specified.
         """
+        tables = tables or get_source_tbls()
+        stages = stages or {"input": "raw_hist", "output": "curated"}
+        tf_types = tf_types or ["default", "custom"]
         stages_list = [v for _, v in stages.items()]
         tables_to_use = self.db.tables_to_use(
             tables, stages=stages_list, tf_types=tf_types
@@ -258,7 +261,7 @@ class TransformEngineUtils(BaseModel):
     def tf_args(
         self,
         table_name: str,
-        stages: dict[str, str] = {"input": "raw_hist", "output": "curated"},
+        stages: dict[str, str] | None = None,
     ) -> tuple[str, str, str]:
         """Transformation arguments for specified table
 
@@ -281,6 +284,7 @@ class TransformEngineUtils(BaseModel):
             transform type, input S3 path and output S3 path
             for the given table and stages.
         """
+        stages = stages or {"input": "raw_hist", "output": "curated"}
         transform_stage_args = {table_name: stages}
 
         tf_args = self.db.transform_args([table_name], **transform_stage_args)

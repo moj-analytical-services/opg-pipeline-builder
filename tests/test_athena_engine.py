@@ -1,7 +1,7 @@
-from copy import deepcopy
 import os
 import re
-from datetime import datetime, UTC
+from copy import deepcopy
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -19,8 +19,8 @@ from arrow_pd_parser import reader, writer
 from mojap_metadata.converters.glue_converter import GlueConverter, GlueTable
 from moto import mock_aws
 
-from opg_pipeline_builder.transform_engines import athena
 from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.transform_engines import athena
 from opg_pipeline_builder.utils.constants import get_full_db_name
 from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, set_up_s3

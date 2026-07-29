@@ -1,18 +1,18 @@
 import json
 from collections.abc import Generator
 from copy import deepcopy
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from logging import getLogger
 
 import awswrangler as wr
 import boto3
 import numpy as np
 import pandas as pd
-from pyarrow import fs
 import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
+from pyarrow import fs
 
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine

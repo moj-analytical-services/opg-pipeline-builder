@@ -135,7 +135,7 @@ def test_get_use_glue(
     else:
         os.environ["USE_GLUE"] = enable_glue
         if error:
-            with pytest.raises(ValueError):
+            with pytest.raises(TypeError):
                 get_use_glue()
         else:
             ug = get_use_glue()
@@ -170,11 +170,11 @@ def test_get_no_glue_workers(
         try:
             _ = get_use_glue()
             error = False
-        except ValueError:
+        except TypeError:
             error = True
 
         if error:
-            with pytest.raises(ValueError):
+            with pytest.raises(TypeError):
                 get_no_glue_workers()
         else:
             assert get_no_glue_workers() == expected

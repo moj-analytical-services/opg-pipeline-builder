@@ -240,6 +240,7 @@ class PipelineConfig(BaseModel):
 
                     except AttributeError:
                         raise KeyError(f"{table} does not have lint options")
+                    full_lint_config["tables"][table_name] = lint_opt
 
             dummy_s3_paths = {
                 "land-base-path": "s3://testing-bucket/land/",

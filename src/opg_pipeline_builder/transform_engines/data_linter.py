@@ -9,6 +9,7 @@ import awswrangler as wr
 from data_linter import validation
 from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
+from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 from opg_pipeline_builder.utils.constants import (
@@ -125,7 +126,7 @@ class DataLinterTransformEngine(BaseTransformEngine):
 
         elif mp_args["enable"] == "local":
             max_workers: int = os.cpu_count()  # type: ignore
-            workers = range(0, max_workers)
+            workers = range(max_workers)
             config_dc = [deepcopy(config) for _ in workers]
             _logger.info(f"Running validation with {max_workers} workers")
 
@@ -186,12 +187,10 @@ class DataLinterTransformEngine(BaseTransformEngine):
             tmp_staging = mp_args.get("temp_staging", False)
             tmp_staging = False if tmp_staging is None else tmp_staging
 
-            if mp_enable == "local" and tmp_staging:
+            if (mp_enable == "local" and tmp_staging) or (
+                mp_enable == "pod" and mp_args["close_status"] and tmp_staging
+            ):
                 proceed = True
-
-            elif mp_enable == "pod":
-                if mp_args["close_status"] and tmp_staging:
-                    proceed = True
 
         if proceed:
             pass_tmp_path = config["pass-base-path"]  # type: ignore

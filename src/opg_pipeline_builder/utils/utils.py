@@ -2,7 +2,7 @@ import glob
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -200,9 +200,8 @@ def get_modified_filepaths_from_s3_folder(
 
     s3_resource = boto3.resource("s3")
 
-    if file_extension is not None:
-        if file_extension[0] != ".":
-            file_extension = "." + file_extension
+    if file_extension is not None and file_extension[0] != ".":
+        file_extension = "." + file_extension
 
     # This guarantees that the path the user has given is really a 'folder'.
     s3_folder_path = _add_slash(s3_folder_path)
@@ -264,8 +263,8 @@ def _get_file_result(max_existing_ts: int, new_ts: int, one_a_day: bool) -> bool
         else:
             get_file = False
     else:
-        max_date = datetime.fromtimestamp(max_existing_ts).date()
-        new_file_date = datetime.fromtimestamp(new_ts).date()
+        max_date = datetime.fromtimestamp(max_existing_ts, tz=UTC).date()
+        new_file_date = datetime.fromtimestamp(new_ts, tz=UTC).date()
         if max_date < new_file_date:
             get_file = True
         else:

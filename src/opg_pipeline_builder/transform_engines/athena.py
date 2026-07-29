@@ -46,7 +46,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def model_post_init(self, __context: Any, /) -> None:
         self.utils = AthenaTransformEngineUtils(db=self.db)
-        super().model_post_init(__context)
+        super().model_post_init(context)
 
         if self.transforms is None:
             transforms_type = (
@@ -664,6 +664,8 @@ class AthenaTransformEngine(BaseTransformEngine):
         **jinja_args: dict[str, Any]
             Jinja args to pass to pydbtools calls.
         """
+        if jinja_args is None:
+            jinja_args = {}
         if stage != "create_derived":
             raise ValueError("Expecting derived ETL step for this transform")
 

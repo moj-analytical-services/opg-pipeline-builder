@@ -6,6 +6,7 @@ from typing import Any
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
+from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
@@ -27,7 +28,7 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     final_partition_stage: str = "curated"
     transforms: PandasTransformations | None = None
 
-    def model_post_init(self, __context) -> None:  # type: ignore
+    def model_post_init(self, __context: Any, /) -> None:
         super().model_post_init(__context)
         self.transforms = PandasTransformations(
             config=self.config,

@@ -76,7 +76,7 @@ class CatalogTransformEngine(BaseTransformEngine):
             )
 
             glue_client.create_table(**spec)
-            wr.athena.repair_table(table=table, database=db_name)
+            wr.athena.repair_table(table=table_name, database=db_name)
 
             _logger.info("%s.%s updated", db_name, table)
 

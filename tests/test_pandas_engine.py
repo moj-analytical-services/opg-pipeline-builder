@@ -13,6 +13,7 @@ import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
+from pyarrow import fs
 
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine

@@ -898,7 +898,7 @@ class DatabaseTable:
         stage: str
             ETL stage for meta to retrieve.
 
-        updates: list[dict[str, str] | None]
+        updates: list[dict[str, str | bool] | None] | None
             Only required for updating meta. Expects a list
             of dictionary objects to pass to MoJ Metadata's
             update_column method.

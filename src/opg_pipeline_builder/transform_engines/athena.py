@@ -46,7 +46,7 @@ class AthenaTransformEngine(BaseTransformEngine):
 
     def model_post_init(self, __context: Any, /) -> None:
         self.utils = AthenaTransformEngineUtils(db=self.db)
-        super().model_post_init(context)
+        super().model_post_init(__context)
 
         if self.transforms is None:
             transforms_type = (

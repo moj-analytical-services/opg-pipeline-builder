@@ -10,7 +10,6 @@ from moto import mock_aws
 from opg_pipeline_builder.transform_engines import catalog
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.models.metadata_model import load_metadata
-from opg_pipeline_builder.transform_engines import catalog
 from opg_pipeline_builder.utils.constants import get_full_db_name
 from opg_pipeline_builder.validator import PipelineConfig
 

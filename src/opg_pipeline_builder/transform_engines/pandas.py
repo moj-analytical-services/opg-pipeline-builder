@@ -6,7 +6,6 @@ from typing import Any
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
-from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 

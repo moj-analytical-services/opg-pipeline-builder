@@ -9,7 +9,6 @@ import pandas as pd
 from dataengineeringutils3.s3 import read_json_from_s3
 from jinja2 import Template
 from mojap_metadata import Metadata
-from pydantic import Field
 
 from opg_pipeline_builder.transform_engines.transforms.base import BaseTransformations
 

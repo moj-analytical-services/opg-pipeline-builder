@@ -1,7 +1,7 @@
 import json
 from collections.abc import Generator
 from copy import deepcopy
-from datetime import datetime, timezone, UTC
+from datetime import datetime, UTC
 from logging import getLogger
 
 import awswrangler as wr
@@ -13,7 +13,6 @@ import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
-from pyarrow import fs
 
 from opg_pipeline_builder.database import Database
 from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
@@ -27,7 +26,7 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine_class() -> Generator[type[PandasTransformEngine], None, None]:
+def pandas_engine_class() -> Generator[type[PandasTransformEngine]]:
     yield PandasTransformEngine
 
 
@@ -36,17 +35,17 @@ def pandas_engine(
     pandas_engine_class: type[PandasTransformEngine],
     config: PipelineConfig,
     database: Database,
-) -> Generator[PandasTransformEngine, None, None]:
+) -> Generator[PandasTransformEngine]:
     yield pandas_engine_class(config=config, db=database)
 
 
 @pytest.fixture
-def default_metadata() -> Generator[Metadata, None, None]:
+def default_metadata() -> Generator[Metadata]:
     yield Metadata.from_json(DEFAULT_METADATA_FILE)
 
 
 @pytest.fixture
-def default_df() -> Generator[pd.DataFrame, None, None]:
+def default_df() -> Generator[pd.DataFrame]:
     yield pd.read_csv(DEFAULT_DATA_FILE)
 
 
@@ -325,7 +324,7 @@ def test_output_transform_methods(
     expected_df["testdb_etl_version"] = "testing"
 
     if add_partition_column:
-        ts = int(datetime.now(tz=timezone.utc).timestamp())
+        ts = int(datetime.now(tz=UTC).timestamp())
         partition_value = f"mojap_file_land_timestamp={ts!s}"
         expected_df["mojap_file_land_timestamp"] = ts
         default_metadata.update_column(
@@ -416,7 +415,7 @@ def test_transform(
         }
     )
 
-    ts = int(datetime.now(tz=timezone.utc).timestamp())
+    ts = int(datetime.now(tz=UTC).timestamp())
     partition = f"mojap_file_land_timestamp={ts!s}"
 
     input_partition_path = (

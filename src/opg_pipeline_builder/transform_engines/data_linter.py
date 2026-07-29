@@ -9,7 +9,6 @@ import awswrangler as wr
 from data_linter import validation
 from dataengineeringutils3.s3 import get_filepaths_from_s3_folder
 from jsonschema import exceptions, validate
-from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 from opg_pipeline_builder.utils.constants import (

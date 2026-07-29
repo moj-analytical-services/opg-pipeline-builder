@@ -1,7 +1,7 @@
+from copy import deepcopy
 import os
 import re
-from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -21,7 +21,6 @@ from moto import mock_aws
 
 from opg_pipeline_builder.transform_engines import athena
 from opg_pipeline_builder.database import Database
-from opg_pipeline_builder.transform_engines import athena
 from opg_pipeline_builder.utils.constants import get_full_db_name
 from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, set_up_s3

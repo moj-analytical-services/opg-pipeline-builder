@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 import awswrangler as wr
 import pandas as pd
+from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
@@ -12,19 +13,31 @@ _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _PARQUET_HANDLER_NAME = "opg_pipeline_builder_parquet"
 
 
+class CustomFields(BaseModel):
+    """Model to validate that all required custom fields have been provided."""
+
+    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
+    process_stage: Literal["Start", "Processing", "End"]
+    table_name: str
+    field_name: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class StructuredLogRecord(BaseModel):
+    database_name: str
+    data_delivery_period: datetime
+    attempt_no: int
     logger_name: str
     module: str
     function: str
     line_number: int
-    database_name: str
-    data_delivery_period: datetime
-    attempt_no: int
-    pipeline_activity: Literal["BAU", "Deletion", "Logging Error", "Validation"]
-    table_name: str
-    field_name: str
     log_level: str
     log_timestamp: datetime
+    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
+    process_stage: Literal["Start", "Processing", "End"]
+    table_name: str
+    field_name: str
     message: str
 
     model_config = ConfigDict(extra="forbid")
@@ -38,6 +51,54 @@ class StructuredLogRecord(BaseModel):
         return value.astimezone(UTC)
 
 
+def _validate_logger_inputs(
+    *,
+    bucket: str,
+    prefix: str,
+    database_name: str,
+    data_delivery_period: datetime,
+    attempt_no: int,
+    batch_size: int,
+) -> None:
+    if not bucket.strip():
+        raise ValueError("bucket must be non-empty")
+    if not prefix.strip():
+        raise ValueError("prefix must be non-empty")
+    if not database_name.strip():
+        raise ValueError("database_name must be non-empty")
+    if data_delivery_period.tzinfo is None or data_delivery_period.utcoffset() is None:
+        raise ValueError("data_delivery_period must be timezone-aware")
+    if attempt_no < 1:
+        raise ValueError("attempt_no must be >= 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+
+
+def _validate_log_location(
+    bucket: str,
+    prefix: str,
+    database_name: str,
+    data_delivery_period: datetime,
+    attempt_no: int,
+) -> None:
+    """Validate that the s3 bucket exists and the prefix is writable."""
+    test_log = pd.DataFrame({"test": ["test"]})
+    try:
+        wr.s3.to_parquet(
+            test_log,
+            path=f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%SZ')}_{attempt_no}.parquet",
+            index=False,
+            compression="snappy",
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to write test log to s3://{bucket}/{prefix}/ for {database_name}: {data_delivery_period.strftime('%Y%m%dT%H%M%SZ')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
+        ) from e
+    wr.s3.delete_objects(
+        f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%SZ')}_{attempt_no}.parquet"
+    )
+
+
 class ParquetLogHandler(logging.Handler):
     """Buffered parquet log writer that emits chunked files."""
 
@@ -46,21 +107,26 @@ class ParquetLogHandler(logging.Handler):
         *,
         bucket: str,
         prefix: str,
-        session_datetime: datetime,
+        database_name: str,
+        data_delivery_period: datetime,
+        attempt_no: int,
         batch_size: int = 500,
     ) -> None:
         super().__init__(level=logging.INFO)
         self._bucket = bucket
         self._prefix = prefix
-        self._session_datetime = session_datetime
+        self._database_name = database_name
+        self._data_delivery_period = data_delivery_period
+        self._attempt_no = attempt_no
+        self._base_batch_size = batch_size
         self._batch_size = batch_size
         self._part_number = 0
         self._buffer: list[dict[str, Any]] = []
+        self._write_failures = 0
 
     def emit(self, record: logging.LogRecord) -> None:
         """Append records to buffer and flush to parquet in batches."""
         row = self._record_to_row(record)
-
         self.acquire()
         try:
             self._buffer.append(row)
@@ -74,6 +140,10 @@ class ParquetLogHandler(logging.Handler):
             self.acquire()
             try:
                 self._flush_locked()
+                if self._buffer:
+                    print(f"Failed to write {len(self._buffer)} log records to S3.")
+                    self._buffer.clear()
+                    raise RuntimeError("Failed to write all log records to S3.")
             finally:
                 self.release()
         finally:
@@ -84,21 +154,62 @@ class ParquetLogHandler(logging.Handler):
             return
 
         df = pd.DataFrame(self._buffer)
-
-        pid = os.getpid()  # Differentiate logs from parallel processes in the same run
-
-        # Differentiate logs between airflow DAGs
-        database = os.environ.get("DATABASE", "Unknown")
+        pid = os.getpid()  # Differentiate between parallel processes in the same run
 
         output_path = (
-            f"s3://{self._bucket}/{self._prefix}/{database}/run_date={self._session_datetime.strftime('%Y%m%d')}/"
-            f"run_datetime={self._session_datetime.strftime('%Y%m%dT%H%M%SZ')}/"
-            f"{pid}_{self._part_number}.snappy.parquet"
+            f"s3://{self._bucket}/{self._prefix}/{self._database_name}/data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
+            f"attempt_no={self._attempt_no}/{pid}_{self._part_number}.snappy.parquet"
         )
-        wr.s3.to_parquet(df, path=output_path, index=False, compression="snappy")
+
+        try:
+            wr.s3.to_parquet(df, path=output_path, index=False, compression="snappy")
+
+        except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as e:
+            self._write_failures += 1
+            print(
+                f"Failed to write a batch of logs to S3 (failure_count={self._write_failures}). "
+                "Increasing batch size and resuming."
+            )
+
+            self._batch_size += self._batch_size
+
+            if self._batch_size > self._base_batch_size * 4:
+                print(
+                    f"Failed to write {len(self._buffer)} logs to {output_path}: {e}."
+                )
+                raise RuntimeError(
+                    "Parquet log sink failure threshold exceeded."
+                ) from e
+
+            log_record = StructuredLogRecord(
+                database_name=self._database_name,
+                data_delivery_period=self._data_delivery_period,
+                attempt_no=self._attempt_no,
+                logger_name=PACKAGE_LOGGER_NAME,
+                module="opg_pipeline_builder.components.log",
+                function="_flush_locked",
+                line_number=0,
+                log_level="ERROR",
+                log_timestamp=datetime.now(tz=UTC),
+                pipeline_activity="Logging",
+                process_stage="Processing",
+                table_name="Unknown",
+                field_name="Unknown",
+                message=(
+                    f"Failed to write {len(self._buffer)} logs to {output_path}: {e} "
+                    f"(failure_count={self._write_failures})"
+                ),
+            )
+            self._buffer.append(log_record.model_dump())
+
+            return
 
         self._part_number += 1
         self._buffer.clear()
+        self._write_failures = 0
+
+        if self._batch_size != self._base_batch_size:
+            self._batch_size = self._base_batch_size
 
     def _record_to_row(
         self, record: logging.LogRecord
@@ -107,81 +218,125 @@ class ParquetLogHandler(logging.Handler):
         custom_fields_dict = getattr(record, "custom_fields", {})
         try:
             log_record = StructuredLogRecord(
+                database_name=self._database_name,
+                data_delivery_period=self._data_delivery_period,
+                attempt_no=self._attempt_no,
                 logger_name=record.name,
                 module=record.module,
                 function=record.funcName,
                 line_number=record.lineno,
                 log_level=record.levelname,
                 log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
-                message=record.getMessage(),
                 **custom_fields_dict,
+                message=record.getMessage(),
             )
         except ValidationError:
-            log_record = StructuredLogRecord(
-                logger_name=record.name if isinstance(record.name, str) else "Unknown",
-                module=record.module if isinstance(record.module, str) else "Unknown",
-                function=(
-                    record.funcName if isinstance(record.funcName, str) else "Unknown"
+            log_record = self.create_error_log_record(
+                record=record,
+                table_name=(
+                    custom_fields_dict.get("table_name", "Unknown")
+                    if isinstance(custom_fields_dict, dict)
+                    else "Unknown"
                 ),
-                line_number=record.lineno if isinstance(record.lineno, int) else 0,
-                database_name="Unknown",
-                data_delivery_period=datetime(1970, 1, 1, tzinfo=UTC),
-                attempt_no=0,
-                pipeline_activity="Logging Error",
-                table_name="Unknown",
-                field_name="Unknown",
-                log_level=(
-                    record.levelname if isinstance(record.levelname, str) else "Unknown"
+                field_name=(
+                    custom_fields_dict.get("field_name", "Unknown")
+                    if isinstance(custom_fields_dict, dict)
+                    else "Unknown"
                 ),
-                log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
-                message="Failed to parse custom log fields: " + str(custom_fields_dict),
+                message="Failed to parse custom log fields.",
             )
 
         return log_record.model_dump()
 
+    def create_error_log_record(
+        self,
+        record: logging.LogRecord,
+        table_name: str,
+        field_name: str,
+        message: str,
+    ) -> StructuredLogRecord:
+        """Create a structured log record for error logging."""
+        return StructuredLogRecord(
+            database_name=(
+                self._database_name
+                if isinstance(self._database_name, str)
+                else "Unknown"
+            ),
+            data_delivery_period=(
+                self._data_delivery_period
+                if isinstance(self._data_delivery_period, datetime)
+                else datetime(1970, 1, 1, tzinfo=UTC)
+            ),
+            attempt_no=self._attempt_no if isinstance(self._attempt_no, int) else 0,
+            logger_name=record.name if isinstance(record.name, str) else "Unknown",
+            module=record.module if isinstance(record.module, str) else "Unknown",
+            function=record.funcName if isinstance(record.funcName, str) else "Unknown",
+            line_number=record.lineno if isinstance(record.lineno, int) else 0,
+            log_level="ERROR",
+            log_timestamp=datetime.now(tz=UTC),
+            pipeline_activity="Logging",
+            process_stage="Processing",
+            table_name=table_name if isinstance(table_name, str) else "Unknown",
+            field_name=field_name if isinstance(field_name, str) else "Unknown",
+            message=message,
+        )
+
 
 def configure_logging(
-    bucket: str, prefix: str, session_datetime: datetime, batch_size: int = 500
+    bucket: str,
+    prefix: str,
+    database_name: str,
+    data_delivery_period: datetime,
+    attempt_no: int,
+    batch_size: int = 500,
 ) -> logging.Logger:
     """Configure package logging once with a shared console handler."""
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
     package_logger.setLevel(logging.INFO)
     package_logger.propagate = False
 
-    if not any(
-        _CONSOLE_HANDLER_NAME == handler.get_name()
+    if any(
+        handler.get_name() in {_CONSOLE_HANDLER_NAME, _PARQUET_HANDLER_NAME}
         for handler in package_logger.handlers
     ):
-        stream_handler = logging.StreamHandler()
-        stream_handler.set_name(_CONSOLE_HANDLER_NAME)
-        package_logger.addHandler(stream_handler)
-
-        stream_handler.setLevel(logging.INFO)
-        stream_handler.setFormatter(
-            logging.Formatter(
-                fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-        )
-    else:
-        err = (
-            "Logger has already been configured with a console handler."
-            "This should only be done once per process."
-        )
-        raise RuntimeError(err)
-
-    if not any(
-        _PARQUET_HANDLER_NAME == handler.get_name()
-        for handler in package_logger.handlers
-    ):
-        parquet_handler = ParquetLogHandler(
-            bucket=bucket,
-            prefix=prefix,
-            session_datetime=session_datetime,
-            batch_size=batch_size,
+        raise RuntimeError(
+            "Logger has already been configured. This should only be done once per process."
         )
 
-        parquet_handler.set_name(_PARQUET_HANDLER_NAME)
-        package_logger.addHandler(parquet_handler)
+    _validate_logger_inputs(
+        bucket=bucket,
+        prefix=prefix,
+        database_name=database_name,
+        data_delivery_period=data_delivery_period,
+        attempt_no=attempt_no,
+        batch_size=batch_size,
+    )
+
+    _validate_log_location(
+        bucket, prefix, database_name, data_delivery_period, attempt_no
+    )
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.set_name(_CONSOLE_HANDLER_NAME)
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    package_logger.addHandler(stream_handler)
+
+    parquet_handler = ParquetLogHandler(
+        bucket=bucket,
+        prefix=prefix,
+        database_name=database_name,
+        data_delivery_period=data_delivery_period,
+        attempt_no=attempt_no,
+        batch_size=batch_size,
+    )
+
+    parquet_handler.set_name(_PARQUET_HANDLER_NAME)
+    package_logger.addHandler(parquet_handler)
 
     return package_logger

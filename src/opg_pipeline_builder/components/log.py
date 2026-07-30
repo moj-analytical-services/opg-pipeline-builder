@@ -91,9 +91,9 @@ class ParquetLogHandler(logging.Handler):
         database = os.environ.get("DATABASE", "Unknown")
 
         output_path = (
-            f"s3://{self._bucket}/{self._prefix}/run_date={self._session_datetime.strftime('%Y%m%d')}/"
+            f"s3://{self._bucket}/{self._prefix}/{database}/run_date={self._session_datetime.strftime('%Y%m%d')}/"
             f"run_datetime={self._session_datetime.strftime('%Y%m%dT%H%M%SZ')}/"
-            f"{database}_{pid}_{self._part_number}.snappy.parquet"
+            f"{pid}_{self._part_number}.snappy.parquet"
         )
         wr.s3.to_parquet(df, path=output_path, index=False, compression="snappy")
 

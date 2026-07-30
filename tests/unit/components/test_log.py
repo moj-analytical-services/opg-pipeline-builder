@@ -1,16 +1,15 @@
 import logging
 import os
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from threading import Thread
-from freezegun import freeze_time
-from collections.abc import Generator
+from unittest.mock import patch
 
 import awswrangler as wr
-
 import boto3
 import pandas as pd
 import pytest
-from unittest.mock import patch
+from freezegun import freeze_time
 
 from opg_pipeline_builder.components.log import (
     _CONSOLE_HANDLER_NAME,
@@ -78,7 +77,7 @@ def mock_flush_locked(self: ParquetLogHandler) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _reset_package_logger() -> Generator[None, None, None]:
+def _reset_package_logger() -> Generator[None]:
     """Reset the package logger before and after each test.
 
     Explicitly closes handlers after test to flush pending writes to S3 BEFORE
@@ -223,7 +222,7 @@ def test_flush_locked_single_part(s3: boto3.client) -> None:
     handler._flush_locked()
 
     written_log = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/run_date=20240104/run_datetime=20240104T101505Z/test-database_{pid}_0.snappy.parquet",
+        path=f"s3://test-bucket/prefix/to/log/test-database/run_date=20240104/run_datetime=20240104T101505Z/{pid}_0.snappy.parquet",
     )
 
     pd.testing.assert_frame_equal(
@@ -252,10 +251,10 @@ def test_flush_locked_multiple_parts(s3: boto3.client) -> None:
     handler._flush_locked()
 
     written_log_part_0 = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/run_date=20240104/run_datetime=20240104T101505Z/test-database_{pid}_0.snappy.parquet",
+        path=f"s3://test-bucket/prefix/to/log/test-database/run_date=20240104/run_datetime=20240104T101505Z/{pid}_0.snappy.parquet",
     )
     written_log_part_1 = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/run_date=20240104/run_datetime=20240104T101505Z/test-database_{pid}_1.snappy.parquet",
+        path=f"s3://test-bucket/prefix/to/log/test-database/run_date=20240104/run_datetime=20240104T101505Z/{pid}_1.snappy.parquet",
     )
 
     pd.testing.assert_frame_equal(
@@ -409,7 +408,7 @@ def test_multiple_module_loggers_write_to_mocked_s3(
     pid = os.getpid()
 
     written_log = wr.s3.read_parquet(
-        path=f"s3://test-bucket/pipeline-logs/run_date=20240106/run_datetime=20240106T103000Z/test-database_{pid}_0.snappy.parquet",
+        path=f"s3://test-bucket/pipeline-logs/test-database/run_date=20240106/run_datetime=20240106T103000Z/{pid}_0.snappy.parquet",
     )
 
     assert list(written_log["logger_name"]) == [
@@ -482,14 +481,14 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
     expected_num_of_log_files = 4
 
     all_logs = wr.s3.list_objects(
-        path="s3://test-bucket/pipeline-logs/run_date=20240106/run_datetime=20240106T103000Z/"
+        path="s3://test-bucket/pipeline-logs/test-database/run_date=20240106/run_datetime=20240106T103000Z/"
     )
     assert len(all_logs) == expected_num_of_log_files
 
     loaded_files = []
     for i in range(expected_num_of_log_files):
         log_file = wr.s3.read_parquet(
-            path=f"s3://test-bucket/pipeline-logs/run_date=20240106/run_datetime=20240106T103000Z/test-database_{os.getpid()}_{i}.snappy.parquet",
+            path=f"s3://test-bucket/pipeline-logs/test-database/run_date=20240106/run_datetime=20240106T103000Z/{os.getpid()}_{i}.snappy.parquet",
         )
         loaded_files.append(log_file)
 
@@ -504,7 +503,7 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
                     "logger_name": PACKAGE_LOGGER_NAME,
                     "module": "test_log",
                     "function": "_mp_worker",
-                    "line_number": 450,
+                    "line_number": 449,
                     "database_name": "test-database",
                     "data_delivery_period": datetime(2024, 1, 2, tzinfo=UTC),
                     "attempt_no": 1,

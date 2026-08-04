@@ -110,7 +110,7 @@
 #             tmp_file = NamedTemporaryFile(suffix=".snappy.parquet")
 #             wr.s3.download(path=p, local_file=tmp_file.name)
 
-#             df = reader.read(  # noqa: F841
+#             df = reader.read(
 #                 tmp_file.name, metadata=glue_meta if use_glue_meta else None
 #             )
 #             prt = extract_mojap_timestamp(
@@ -166,7 +166,7 @@
 #     ) -> None:
 #         tmp_file = NamedTemporaryFile(suffix=".snappy.parquet")
 #         wr.s3.download(path=s3_path, local_file=tmp_file.name)
-#         mock_df = reader.read(tmp_file.name)  # noqa: F841
+#         mock_df = reader.read(tmp_file.name)
 
 #         duckdb_sql = sqlglot.transpile(sql, read="presto", write="duckdb")
 
@@ -372,7 +372,7 @@
 #         monkeypatch.setattr(
 #             pydb_utils, "get_database_name_from_userid", lambda _: "__temp__"
 #         )
-#         con = duckdb.connect(database="__temp_derived__")  # noqa: F841
+#         con = duckdb.connect(database="__temp_derived__")
 
 #         athena, timestamp = self.setup_data(s3, stage="output")
 #         transform = create_athena_instance()

@@ -61,9 +61,9 @@ def _validate_logger_inputs(
     batch_size: int,
 ) -> None:
     if not bucket.strip():
-        raise ValueError("bucket must be non-empty")
+        raise ValueError("bucket name must be non-empty")
     if not prefix.strip():
-        raise ValueError("prefix must be non-empty")
+        raise ValueError("prefix name must be non-empty")
     if not database_name.strip():
         raise ValueError("database_name must be non-empty")
     if data_delivery_period.tzinfo is None or data_delivery_period.utcoffset() is None:
@@ -86,16 +86,16 @@ def _validate_log_location(
     try:
         wr.s3.to_parquet(
             test_log,
-            path=f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%SZ')}_{attempt_no}.parquet",
+            path=f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet",
             index=False,
             compression="snappy",
         )
     except Exception as e:
         raise RuntimeError(
-            f"Failed to write test log to s3://{bucket}/{prefix}/ for {database_name}: {data_delivery_period.strftime('%Y%m%dT%H%M%SZ')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
+            f"Failed to write test log to s3://{bucket}/{prefix}/ for {database_name}: {data_delivery_period.strftime('%Y%m%dT%H%M%S')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
         ) from e
     wr.s3.delete_objects(
-        f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%SZ')}_{attempt_no}.parquet"
+        f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet"
     )
 
 
@@ -167,11 +167,10 @@ class ParquetLogHandler(logging.Handler):
         except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as e:
             self._write_failures += 1
             print(
-                f"Failed to write a batch of logs to S3 (failure_count={self._write_failures}). "
-                "Increasing batch size and resuming."
+                f"Failed to write a batch of logs to S3 (failure_count={self._write_failures}). Error: {e}"
             )
 
-            self._batch_size += self._batch_size
+            self._batch_size += self._base_batch_size
 
             if self._batch_size > self._base_batch_size * 4:
                 print(
@@ -197,7 +196,7 @@ class ParquetLogHandler(logging.Handler):
                 field_name="Unknown",
                 message=(
                     f"Failed to write {len(self._buffer)} logs to {output_path}: {e} "
-                    f"(failure_count={self._write_failures})"
+                    f"(failure_count={self._write_failures})."
                 ),
             )
             self._buffer.append(log_record.model_dump())
@@ -243,7 +242,7 @@ class ParquetLogHandler(logging.Handler):
                     if isinstance(custom_fields_dict, dict)
                     else "Unknown"
                 ),
-                message="Failed to parse custom log fields.",
+                message=f"Failed to parse custom log fields: {custom_fields_dict}",
             )
 
         return log_record.model_dump()

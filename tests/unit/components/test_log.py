@@ -25,6 +25,13 @@ from opg_pipeline_builder.components.log import (
     configure_logging,
 )
 
+_CUSTOM_FIELDS = {
+    "pipeline_activity": "Validation",
+    "process_stage": "Processing",
+    "table_name": "table_a",
+    "field_name": "field_a",
+}
+
 
 def create_parquet_handler(
     data_delivery_period: datetime = datetime(2024, 1, 2, tzinfo=UTC),
@@ -111,6 +118,13 @@ def create_log_record(
 
 def mock_flush_locked(self: ParquetLogHandler) -> None:
     self._buffer.clear()
+
+
+def _create_test_bucket(s3: boto3.client) -> None:
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -227,7 +241,7 @@ def test_structured_log_record_invalid_datetime(
             "bucket",
             "prefix",
             "db",
-            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 1),  # noqa: DTZ001
             1,
             2,
             "data_delivery_period must be timezone-aware",
@@ -275,10 +289,7 @@ def test_validate_logger_inputs(
 
 def test_validate_log_location_success(s3: boto3.client) -> None:
     """Test that validate log location correctly creates and deletes test file in S3."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     _validate_log_location(
         bucket="test-bucket",
@@ -295,10 +306,7 @@ def test_validate_log_location_success(s3: boto3.client) -> None:
 
 def test_validate_log_location_fail(s3: boto3.client) -> None:
     """Test that validate log location correctly raises a RuntimeError."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     with (
         patch(
@@ -396,10 +404,7 @@ def test_close_fail() -> None:
 
 def test_flush_locked_single_part(s3: boto3.client) -> None:
     """Test that _flush_locked writes to mocked S3."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     pid = os.getpid()
 
@@ -424,10 +429,7 @@ def test_flush_locked_single_part(s3: boto3.client) -> None:
 
 def test_flush_locked_multiple_parts(s3: boto3.client) -> None:
     """Test that _flush_locked writes multiple parts to mocked S3 when buffer exceeds batch size."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     pid = os.getpid()
 
@@ -474,10 +476,7 @@ def test_flush_locked_fail(
     s3: boto3.client, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Test that _flush_locked increases batch size to hard limit and fails, if repeated writes fail."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
@@ -517,10 +516,7 @@ def test_flush_locked_fail_then_success(
     s3: boto3.client, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Test that _flush_locked increases batch size to hard limit and fails, if repeated writes fail."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
@@ -706,10 +702,7 @@ def test_multiple_module_loggers_write_to_mocked_s3(
     s3: boto3.client,
 ) -> None:
     """Test that multiple loggers from different modules write to the same ParquetLogHandler and mocked S3."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     package_logger = configure_logging(
         bucket="test-bucket",
@@ -723,18 +716,11 @@ def test_multiple_module_loggers_write_to_mocked_s3(
     logger_1 = logging.getLogger("opg_pipeline_builder.module_1")
     logger_2 = logging.getLogger("opg_pipeline_builder.module_2")
 
-    custom_fields = {
-        "pipeline_activity": "Validation",
-        "process_stage": "Processing",
-        "table_name": "table_a",
-        "field_name": "field_a",
-    }
-
-    logger_1.info("Log 1 from module 1", extra={"custom_fields": custom_fields})
-    logger_1.info("Log 2 from module 1", extra={"custom_fields": custom_fields})
-    logger_2.info("Log 1 from module 2", extra={"custom_fields": custom_fields})
-    logger_2.info("Log 2 from module 2", extra={"custom_fields": custom_fields})
-    logger_1.info("Log 3 from module 1", extra={"custom_fields": custom_fields})
+    logger_1.info("Log 1 from module 1", extra={"custom_fields": _CUSTOM_FIELDS})
+    logger_1.info("Log 2 from module 1", extra={"custom_fields": _CUSTOM_FIELDS})
+    logger_2.info("Log 1 from module 2", extra={"custom_fields": _CUSTOM_FIELDS})
+    logger_2.info("Log 2 from module 2", extra={"custom_fields": _CUSTOM_FIELDS})
+    logger_1.info("Log 3 from module 1", extra={"custom_fields": _CUSTOM_FIELDS})
 
     package_logger.handlers[1].close()
 
@@ -767,26 +753,16 @@ def _mp_worker(process_num: int) -> None:
     """Emit logs in a thread using parent's logger."""
     logger = logging.getLogger(PACKAGE_LOGGER_NAME)
 
-    custom_fields = {
-        "pipeline_activity": "Validation",
-        "process_stage": "Processing",
-        "table_name": "table_a",
-        "field_name": "field_a",
-    }
-
     for i in range(6):
         logger.info(
             f"Log {i + 1} from process {process_num}",
-            extra={"custom_fields": custom_fields},
+            extra={"custom_fields": _CUSTOM_FIELDS},
         )
 
 
 def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -> None:
     """Test that two threads write logs with PID-isolated output paths and parts logic works."""
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+    _create_test_bucket(s3)
 
     logger = configure_logging(
         bucket="test-bucket",
@@ -839,7 +815,7 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
                     "logger_name": PACKAGE_LOGGER_NAME,
                     "module": "test_log",
                     "function": "_mp_worker",
-                    "line_number": 778,
+                    "line_number": 757,
                     "log_level": "INFO",
                     "pipeline_activity": "Validation",
                     "process_stage": "Processing",

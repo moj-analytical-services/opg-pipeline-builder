@@ -82,11 +82,12 @@ def _validate_log_location(
     attempt_no: int,
 ) -> None:
     """Validate that the s3 bucket exists and the prefix is writable."""
+    test_log_path = f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet"
     test_log = pd.DataFrame({"test": ["test"]})
     try:
         wr.s3.to_parquet(
             test_log,
-            path=f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet",
+            path=test_log_path,
             index=False,
             compression="snappy",
         )
@@ -94,9 +95,7 @@ def _validate_log_location(
         raise RuntimeError(
             f"Failed to write test log to s3://{bucket}/{prefix}/ for {database_name}: {data_delivery_period.strftime('%Y%m%dT%H%M%S')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
         ) from e
-    wr.s3.delete_objects(
-        f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet"
-    )
+    wr.s3.delete_objects(test_log_path)
 
 
 class ParquetLogHandler(logging.Handler):
@@ -210,43 +209,6 @@ class ParquetLogHandler(logging.Handler):
         if self._batch_size != self._base_batch_size:
             self._batch_size = self._base_batch_size
 
-    def _record_to_row(
-        self, record: logging.LogRecord
-    ) -> dict[str, str | int | datetime]:
-
-        custom_fields_dict = getattr(record, "custom_fields", {})
-        try:
-            log_record = StructuredLogRecord(
-                database_name=self._database_name,
-                data_delivery_period=self._data_delivery_period,
-                attempt_no=self._attempt_no,
-                logger_name=record.name,
-                module=record.module,
-                function=record.funcName,
-                line_number=record.lineno,
-                log_level=record.levelname,
-                log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
-                **custom_fields_dict,
-                message=record.getMessage(),
-            )
-        except ValidationError:
-            log_record = self.create_error_log_record(
-                record=record,
-                table_name=(
-                    custom_fields_dict.get("table_name", "Unknown")
-                    if isinstance(custom_fields_dict, dict)
-                    else "Unknown"
-                ),
-                field_name=(
-                    custom_fields_dict.get("field_name", "Unknown")
-                    if isinstance(custom_fields_dict, dict)
-                    else "Unknown"
-                ),
-                message=f"Failed to parse custom log fields: {custom_fields_dict}",
-            )
-
-        return log_record.model_dump()
-
     def create_error_log_record(
         self,
         record: logging.LogRecord,
@@ -279,6 +241,41 @@ class ParquetLogHandler(logging.Handler):
             field_name=field_name if isinstance(field_name, str) else "Unknown",
             message=message,
         )
+
+    def _record_to_row(
+        self, record: logging.LogRecord
+    ) -> dict[str, str | int | datetime]:
+
+        custom_fields_dict = getattr(record, "custom_fields", {})
+        table_name = "Unknown"
+        field_name = "Unknown"
+        if isinstance(custom_fields_dict, dict):
+            table_name = custom_fields_dict.get("table_name", "Unknown")
+            field_name = custom_fields_dict.get("field_name", "Unknown")
+
+        try:
+            log_record = StructuredLogRecord(
+                database_name=self._database_name,
+                data_delivery_period=self._data_delivery_period,
+                attempt_no=self._attempt_no,
+                logger_name=record.name,
+                module=record.module,
+                function=record.funcName,
+                line_number=record.lineno,
+                log_level=record.levelname,
+                log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
+                **custom_fields_dict,
+                message=record.getMessage(),
+            )
+        except ValidationError:
+            log_record = self.create_error_log_record(
+                record=record,
+                table_name=table_name,
+                field_name=field_name,
+                message=f"Failed to parse custom log fields: {custom_fields_dict}",
+            )
+
+        return log_record.model_dump()
 
 
 def configure_logging(

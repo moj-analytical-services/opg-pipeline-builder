@@ -11,8 +11,6 @@ import boto3
 import pandas as pd
 import pytest
 from freezegun import freeze_time
-from pydantic import ValidationError
-
 from opg_pipeline_builder.components.log import (
     _CONSOLE_HANDLER_NAME,
     _PARQUET_HANDLER_NAME,
@@ -24,6 +22,7 @@ from opg_pipeline_builder.components.log import (
     _validate_logger_inputs,
     configure_logging,
 )
+from pydantic import ValidationError
 
 _CUSTOM_FIELDS = {
     "pipeline_activity": "Validation",
@@ -155,7 +154,7 @@ def test_custom_fields_reject_extra() -> None:
             process_stage="Processing",
             table_name="table_a",
             field_name="field_a",
-            extra_field="not_allowed",  # type: ignore
+            extra_field="not_allowed",
         )
 
     assert "Extra inputs are not permitted" in str(exc_info.value)
@@ -167,7 +166,7 @@ def test_structured_log_record_reject_extra() -> None:
         _, __, structured_log_record_dict = create_log_record()
         StructuredLogRecord(
             **structured_log_record_dict,
-            extra_field="not_allowed",  # type: ignore
+            extra_field="not_allowed",
         )
     assert "Extra inputs are not permitted" in str(exc_info.value)
 
@@ -413,7 +412,7 @@ def test_flush_locked_single_part(s3: boto3.client) -> None:
     _, _, record_2 = create_log_record(line_number=43)
     _, _, record_3 = create_log_record(line_number=44)
 
-    handler._buffer = [record_1, record_2, record_3]  # type: ignore[list-item]
+    handler._buffer = [record_1, record_2, record_3]
 
     handler._flush_locked()
 
@@ -438,9 +437,9 @@ def test_flush_locked_multiple_parts(s3: boto3.client) -> None:
     _, _, record_2 = create_log_record(line_number=43)
     _, _, record_3 = create_log_record(line_number=44)
 
-    handler._buffer = [record_1, record_2]  # type: ignore[list-item]
+    handler._buffer = [record_1, record_2]
     handler._flush_locked()
-    handler._buffer = [record_3]  # type: ignore[list-item]
+    handler._buffer = [record_3]
     handler._flush_locked()
 
     written_log_part_0 = wr.s3.read_parquet(
@@ -480,7 +479,7 @@ def test_flush_locked_fail(
 
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
-    handler._buffer = [record_1]  # type: ignore[list-item]
+    handler._buffer = [record_1]
 
     with (
         patch(
@@ -520,7 +519,7 @@ def test_flush_locked_fail_then_success(
 
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
-    handler._buffer = [record_1]  # type: ignore[list-item]
+    handler._buffer = [record_1]
 
     with (
         patch(
@@ -662,7 +661,7 @@ def test_configure_logging_create_correct_handlers() -> None:
 
     assert package_logger.level == logging.INFO
     assert package_logger.propagate is False
-    parquet_handler: ParquetLogHandler = package_logger.handlers[1]  # type: ignore[assignment]
+    parquet_handler: ParquetLogHandler = package_logger.handlers[1]
     assert parquet_handler._bucket == "test-bucket"
     assert parquet_handler._prefix == "pipeline-logs"
     assert parquet_handler._database_name == "test-database"

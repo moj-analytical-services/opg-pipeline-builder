@@ -127,6 +127,7 @@ def extract_mojap_partition(
              'mojap_file_land_timestamp=XXXXXXXXXX'
     """
     # Attempt to match 10 digit string first
+    print(f"FILEPATH IS: {filepath}")
     regex_pattern = rf"{timestamp_partition_name}=(?:\d{{10}}|\d{{8}})"
     stamp_str = re.search(regex_pattern, filepath)
 

@@ -129,6 +129,7 @@ def extract_mojap_partition(
         str: Hive partition of the format
              'mojap_file_land_timestamp=XXXXXXXXXX'
     """
+    print(f"FILEPATH IS: {filepath}")
     # Attempt to match 10 digit string first
     regex_pattern = rf"{timestamp_partition_name}=(?:\d{{10}}|\d{{8}})"
     stamp_str = re.search(regex_pattern, filepath)
@@ -300,10 +301,8 @@ def check_s3_for_existing_timestamp_file(
         # get max timestamp in raw-hist for given table
         ts = [re.search(filename_regex, Path(i).name).group(3) for i in existing_data]
     except AttributeError:
-        raise ValueError(
-            """a file timestamp in raw-hist is not
-               in the expected format"""
-        )
+        raise ValueError("""a file timestamp in raw-hist is not
+               in the expected format""")
 
     try:
         max_ts = int(max(ts))
@@ -313,10 +312,8 @@ def check_s3_for_existing_timestamp_file(
     try:
         new_file_timestamp = re.search(filename_regex, Path(new_file).name).group(3)
     except AttributeError:
-        raise ValueError(
-            f"""the new filename, {new_file}, is not
-               in the expected format"""
-        )
+        raise ValueError(f"""the new filename, {new_file}, is not
+               in the expected format""")
 
     if not isinstance(new_file_timestamp, int) and not len(new_file_timestamp) == 10:
         raise ValueError("wrong format for new timestamp")

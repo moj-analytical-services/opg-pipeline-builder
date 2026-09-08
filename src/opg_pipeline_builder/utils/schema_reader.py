@@ -2,7 +2,7 @@ import os
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Union
+from typing import Any
 
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 from mojap_metadata import Metadata
@@ -48,7 +48,7 @@ class SchemaReader:
         schemas for comparison.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Parameters
         ----------
@@ -111,15 +111,15 @@ class SchemaReader:
         return schema
 
     @staticmethod
-    def _split_type(x):
+    def _split_type(x: str) -> list[str]:
         no_commas = x.count(", ")
         split_x = x.split(", ")
         i = 0
-        indicies = []
+        indices: list[int] = []
         split = []
 
         while i <= no_commas:
-            max_index = max([*indicies, 0])
+            max_index = max([*indices, 0])
             i += 1
 
             val_i = ", ".join(split_x[max_index:i])
@@ -127,13 +127,13 @@ class SchemaReader:
             count_close_bracket = val_i.count(">")
 
             if count_open_brackets == count_close_bracket:
-                indicies.append(i)
+                indices.append(i)
                 split.append(val_i)
 
         return split
 
     @classmethod
-    def _unpack_type(cls, value, contains_field: bool = True):
+    def _unpack_type(cls, value: str, contains_field: bool = True) -> dict[Any, Any]:
         if contains_field:
             split_type = value.split(":")
             field = split_type[0]
@@ -148,31 +148,33 @@ class SchemaReader:
         elif ftype.startswith("list<") and ftype.endswith(">"):
             new_type = re.sub("^list<|>$", "", ftype)
             if new_type.startswith("struct"):
-                final_vals = cls._unpack_type(new_type, contains_field=False)
+                final_vals = cls._unpack_type(new_type, contains_field=False)  # type: ignore
             else:
-                final_vals = ftype
+                final_vals = ftype  # type: ignore
         else:
-            final_vals = ftype
+            final_vals = ftype  # type: ignore
 
         full_final_val = {field: final_vals} if contains_field else final_vals
 
-        return full_final_val
+        return full_final_val  # type: ignore
 
     @classmethod
-    def _struct_validator(cls, col_type, meta_col_type, unpack=True):
+    def _struct_validator(
+        cls, col_type: Any, meta_col_type: str, unpack: bool = True
+    ) -> bool:
         valid = True
 
         if unpack:
-            meta_col_type = cls._unpack_type(meta_col_type, contains_field=False)
+            meta_col_type = cls._unpack_type(meta_col_type, contains_field=False)  # type: ignore
             col_type = cls._unpack_type(col_type, contains_field=False)
 
         ds_map = {}
         for ds_col in col_type:
-            ds_name, ds_type = list(ds_col.items())[0]
+            ds_name, ds_type = next(iter(ds_col.items()))
             ds_map[ds_name] = ds_type
 
         for ms_col in meta_col_type:
-            ms_name, ms_type = list(ms_col.items())[0]
+            ms_name, ms_type = next(iter(ms_col.items()))  # type: ignore
             if ms_name in ds_map:
                 cds_type = ds_map[ms_name]
                 if isinstance(ms_type, str):
@@ -190,7 +192,7 @@ class SchemaReader:
         return valid
 
     @classmethod
-    def _validate(cls, data_columns, meta_columns):
+    def _validate(cls, data_columns, meta_columns) -> bool:  # type: ignore
         valid = True
         data_column_lookup = {c["name"]: c["type"] for c in data_columns}
         for col in meta_columns:
@@ -213,8 +215,8 @@ class SchemaReader:
         return valid
 
     def read_schema(
-        self, s3_path: str, moj_meta: bool = False, ext: Union[str, None] = None
-    ) -> Union[Metadata, Schema]:
+        self, s3_path: str, moj_meta: bool = False, ext: str | None = None
+    ) -> Metadata | Schema:
         """Method for reading schemas
 
         Reads a schema from an object in S3 and optionally converts
@@ -253,11 +255,11 @@ class SchemaReader:
 
     def check_schemas_match(
         self,
-        s3_paths: List[str],
-        expected_meta: Union[Metadata, str],
+        s3_paths: list[str],
+        expected_meta: Metadata | str,
         keep_partitions: bool = False,
         mojap_base: bool = True,
-        ext: Union[str, None] = None,
+        ext: str | None = None,
     ) -> bool:
         """Method for checking files match a schema
 

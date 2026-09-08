@@ -5,13 +5,12 @@ from ast import literal_eval
 from binascii import Error
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Union
 
 from dateutil.tz import tzutc
 
 # Constants for pipelines
 aws_region = "eu-west-1"
-etl_stages = ["land", "raw", "raw-hist", "processed", "curated", "derived", "export"]
+etl_stages = ["land", "raw", "raw_hist", "processed", "curated", "derived", "export"]
 etl_steps = [
     "to_land",
     "land_to_raw_hist",
@@ -60,9 +59,9 @@ def get_env() -> str:
         Database environment (e.g. dev, prod)
     """
     try:
-        db_env = os.environ["DEFAULT_DB_ENV"]
+        db_env = os.environ["DATABASE_VERSION"]
     except KeyError:
-        raise KeyError("DEFAULT_DB_ENV env_var needs to be set")
+        raise KeyError("DATABASE_VERSION env_var needs to be set")
     return db_env
 
 
@@ -79,13 +78,13 @@ def get_source_db() -> str:
         Database (e.g. sirius, surveys)
     """
     try:
-        source_env = os.environ["SOURCE_DB_ENV"]
+        source_env = os.environ["DATABASE"]
     except KeyError:
-        raise KeyError("SOURCE_DB_ENV env_var needs to be set")
+        raise KeyError("DATABASE env_var needs to be set")
     return source_env
 
 
-def get_source_tbls() -> Union[List[str], None]:
+def get_source_tbls() -> list[str]:
     """Retrieves source database
 
     Retrieved source database tables to use
@@ -100,7 +99,7 @@ def get_source_tbls() -> Union[List[str], None]:
     try:
         source_tables = os.environ["SOURCE_TBLS_ENV"].split(";")
     except KeyError:
-        source_tables = None
+        source_tables = [""]
     return source_tables
 
 
@@ -117,13 +116,13 @@ def get_etl_stage() -> str:
         ETL stage
     """
     try:
-        etl_stage = os.environ["ETL_STAGE_ENV"]
+        etl_stage = os.environ["STEP"]
     except KeyError:
-        raise KeyError("ETL_STAGE_ENV env_var needs to be set")
+        raise KeyError("STEP env_var needs to be set")
     return etl_stage
 
 
-def get_multiprocessing_settings() -> Union[dict, None]:
+def get_multiprocessing_settings() -> dict[str, str] | None:
     """Retrieves data_linter multiprocessing settings
 
     Retrieves base64 encoded dictionary from MULTI_PROC_ENV
@@ -141,7 +140,7 @@ def get_multiprocessing_settings() -> Union[dict, None]:
         mp_settings_str = os.environ["MULTI_PROC_ENV"]
         try:
             mp_decode = base64.b64decode(mp_settings_str.encode("ascii"))
-            mp_settings = json.loads(mp_decode.decode("ascii"))
+            mp_settings: dict[str, str] = json.loads(mp_decode.decode("ascii"))
 
         except (UnicodeDecodeError, Error):
             mp_settings = literal_eval(mp_settings_str)
@@ -151,13 +150,13 @@ def get_multiprocessing_settings() -> Union[dict, None]:
                     "as a string, or as a base64 encoded string"
                 )
 
+        return mp_settings
+
     except KeyError:
-        mp_settings = None
-
-    return mp_settings
+        return None
 
 
-def get_start_date() -> Union[datetime, None]:
+def get_start_date() -> datetime | None:
     """Retrieves start date for pipeline
 
     Retrieves START_DATE environment variable. Converts
@@ -183,7 +182,7 @@ def get_start_date() -> Union[datetime, None]:
     return start_dt
 
 
-def get_end_date() -> Union[datetime, None]:
+def get_end_date() -> datetime | None:
     """Retrieves end date for pipeline
 
     Retrieves END_DATE environment variable. Converts
@@ -221,9 +220,9 @@ def get_use_glue() -> bool:
         Indicator of whether to use AWS Glue jobs or not.
     """
     try:
-        glue_enable = literal_eval(os.environ["USE_GLUE"])
+        glue_enable: bool = literal_eval(os.environ["USE_GLUE"])
         if not isinstance(glue_enable, bool):
-            raise ValueError(
+            raise TypeError(
                 "Expecting True or False for 'USE_GLUE' environment variable"
             )
     except KeyError:
@@ -232,7 +231,7 @@ def get_use_glue() -> bool:
     return glue_enable
 
 
-def get_no_glue_workers() -> Union[int, None]:
+def get_no_glue_workers() -> int | None:
     """Retrieves no. of glue workers to use
 
     Retrieves NO_GLUE_WORKERS environment variable.
@@ -257,10 +256,10 @@ def get_no_glue_workers() -> Union[int, None]:
 
 
 def get_full_db_name(
-    db_name: Optional[str] = None,
-    env: Optional[str] = None,
-    prefix: Optional[str] = None,
-    derived: Optional[bool] = False,
+    db_name: str = "",
+    env: str = "",
+    prefix: str = "",
+    derived: bool = False,
 ) -> str:
     """Returns full database name
 
@@ -282,26 +281,26 @@ def get_full_db_name(
     str
         Full database name
     """
-    if db_name is None:
+    if not db_name:
         db_name = get_source_db()
 
-    if env is None:
+    if not env:
         env = get_env()
 
-    if prefix is None:
+    if not prefix:
         prefix = os.environ.get("ATHENA_DB_PREFIX", "")
 
     env_suffix = f"derived_{env}" if derived else env
 
     if db_name == "all":
-        full_db_name = "_".join([prefix, env_suffix])
+        full_db_name = f"{prefix}_{env_suffix}"
     else:
-        full_db_name = "_".join([prefix, db_name, env_suffix])
+        full_db_name = f"{prefix}_{db_name}_{env_suffix}"
 
     return full_db_name
 
 
-def get_metadata_path(db_name: Optional[str] = None, env: Optional[str] = None) -> str:
+def get_metadata_path(db_name: str = "", env: str = "") -> str:
     """Returns metadata base path
 
     Returns the base path for the specified
@@ -322,17 +321,17 @@ def get_metadata_path(db_name: Optional[str] = None, env: Optional[str] = None) 
     str
         Base metadata path for db in specified env
     """
-    if db_name is None:
+    if not db_name:
         db_name = get_source_db()
 
-    if env is None:
+    if not env:
         env = get_env()
 
     mp = os.path.join(meta_data_base_path, env, db_name)
     return mp
 
 
-def get_chunk_size() -> Union[int, bool]:
+def get_chunk_size() -> int | bool:
     """Returns chunk size for high memory tables
 
     Returns chunk size option environment variable
@@ -347,11 +346,11 @@ def get_chunk_size() -> Union[int, bool]:
     """
     try:
         chunk_str = os.environ["CHUNK_SIZE"]
-        chunk = literal_eval(chunk_str)
+        chunk: int = literal_eval(chunk_str)
 
         if not isinstance(chunk, bool) and not isinstance(chunk, int):
-            raise ValueError(
-                "CHUNK_SIZE must be a string corresponding " "to a boolean or integer"
+            raise TypeError(
+                "CHUNK_SIZE must be a string corresponding to a boolean or integer"
             )
 
     except KeyError:
@@ -360,7 +359,7 @@ def get_chunk_size() -> Union[int, bool]:
     return chunk
 
 
-def get_dag_timestamp() -> Union[int, None]:
+def get_dag_timestamp() -> int | None:
     """Returns DAG run timestamp
 
     Returns timestamp for when DAG was executed. This will
@@ -374,51 +373,9 @@ def get_dag_timestamp() -> Union[int, None]:
     Union[int, None]
         Timestamp int for DAG run or None, if not applicable
     """
-    # mp_args = get_multiprocessing_settings()
 
-    # raise_error = False
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
         return dag_ts
-    except Exception:  # pylint: disable=broad-exception-caught
+    except (KeyError, TypeError, ValueError):
         return None
-
-    # if mp_args is not None:
-    #     tmp_staging = mp_args.get("temp_staging", False)
-    #     if tmp_staging is True:
-    #         raise_error = True
-
-    # try:
-    #     dag_run_id = os.environ["DAG_RUN_ID"]
-    #     dag_interval_end = os.environ["DAG_INTERVAL_END"]
-
-    #     manual_run = re.search("manual__", dag_run_id)
-
-    #     try:
-    #         if manual_run is not None:
-    #             dag_ts = int(
-    #                 datetime.fromisoformat(
-    #                     dag_run_id.replace("manual__", "")
-    #                 ).timestamp()
-    #             )
-
-    #         else:
-    #             dag_ts = int(datetime.fromisoformat(dag_interval_end).timestamp())
-
-    #     except Exception as e:
-    #         raise ValueError(
-    #             f"""
-    #             DAG_RUN_TIMESTAMP must be a string in ISO format.
-    #             Error: {e}
-    #             """
-    #         )
-
-    # except KeyError:
-    #     if raise_error:
-    #         raise ValueError(
-    #             "DAG_RUN_ID and DAG_INTERVAL_END must be set when temp staging enabled."
-    #         )
-    #     else:
-    #         dag_ts = None
-
-    # return dag_ts

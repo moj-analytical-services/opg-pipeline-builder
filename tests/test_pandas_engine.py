@@ -1,81 +1,96 @@
 import json
+from collections.abc import Generator
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 from logging import getLogger
 
 import awswrangler as wr
 import boto3
 import numpy as np
 import pandas as pd
-import pyarrow.fs as fs
 import pytest
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
 from moto import mock_aws
+from pyarrow import fs
 
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
+from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file, mock_reader_read, mock_writer_write
 
 log = getLogger()
 
 DEFAULT_DATA_FILE = "tests/data/dummy_data/dummy_data1.csv"
-DEFAULT_METADATA_FILE = "tests/data/meta_data/testdb/raw-hist/table1.json"
+DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine_class():
-    from opg_pipeline_builder.transform_engines.pandas import PandasTransformEngine
-
+def pandas_engine_class() -> Generator[type[PandasTransformEngine], None, None]:
     yield PandasTransformEngine
 
 
 @pytest.fixture
-def pandas_engine(pandas_engine_class):
-    yield pandas_engine_class()
+def pandas_engine(
+    pandas_engine_class: PandasTransformEngine,
+    config: PipelineConfig,
+    database: Database,
+) -> Generator[type[PandasTransformEngine], None, None]:
+    yield pandas_engine_class(config=config, db=database)  # type: ignore[operator]
 
 
 @pytest.fixture
-def default_metadata():
+def default_metadata() -> Generator[Metadata, None, None]:
     yield Metadata.from_json(DEFAULT_METADATA_FILE)
 
 
 @pytest.fixture
-def default_df():
+def default_df() -> Generator[pd.DataFrame, None, None]:
     yield pd.read_csv(DEFAULT_DATA_FILE)
 
 
-def test_remove_columns_not_in_metadata(pandas_engine, default_df, default_metadata):
+def test_remove_columns_not_in_metadata(
+    pandas_engine: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    default_metadata: Metadata,
+) -> None:
     df_with_dummy_data = default_df.copy()
     df_with_dummy_data["dummy_col"] = "dummy value"
 
-    df = pandas_engine.transforms.remove_columns_not_in_metadata(
+    df = pandas_engine.transforms.remove_columns_not_in_metadata(  # type: ignore[union-attr]
         df_with_dummy_data, default_metadata
     )
 
     assert default_df.equals(df)
 
 
-def test_set_column_names_to_lower(pandas_engine, default_df):
-    df = pandas_engine.transforms.set_colnames_to_lower(default_df)
-    assert all([c.islower() for c in df.columns.to_list()])
+def test_set_column_names_to_lower(
+    pandas_engine: PandasTransformEngine, default_df: pd.DataFrame
+) -> None:
+    df = pandas_engine.transforms.set_colnames_to_lower(default_df)  # type: ignore[union-attr]
+    assert all(c.islower() for c in df.columns.to_list())
 
 
 def test_add_attributes_from_headers_and_rename(
-    pandas_engine_class,
-    default_df,
-    default_metadata,
-):
-    pandas_engine = pandas_engine_class(
+    pandas_engine_class: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    default_metadata: Metadata,
+    config: PipelineConfig,
+    database: Database,
+) -> None:
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
         extract_header_values={
             "field_name": "dummy_field",
             "header_regex": "[0-9]{2}",
         },
+        config=config,
+        db=database,
     )
 
     input_df = default_df.copy()
     input_df.columns = [f"{c}12" for c in input_df.columns]
 
     expected_df = default_df.copy()
-    import json  # minimal addition
 
     expected_df["dummy_field"] = [
         json.dumps([{"value": 12, "fields": expected_df.columns.to_list()}])
@@ -90,13 +105,17 @@ def test_add_attributes_from_headers_and_rename(
 
 
 def test_add_primary_partition_column(
-    pandas_engine_class,
-    default_df,
-):
-    ts = int(datetime.utcnow().timestamp())
-    partition_value = f"mojap_file_land_timestamp={str(ts)}"
+    pandas_engine_class: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    config: PipelineConfig,
+    database: Database,
+) -> None:
+    ts = int(datetime.now(tz=UTC).timestamp())
+    partition_value = f"mojap_file_land_timestamp={ts!s}"
 
-    pandas_engine = pandas_engine_class(add_partition_column=True)
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
+        add_partition_column=True, config=config, db=database
+    )
 
     expected_df = default_df.copy()
     expected_df["mojap_file_land_timestamp"] = ts
@@ -109,10 +128,12 @@ def test_add_primary_partition_column(
     assert expected_df.equals(df)
 
 
-def test_add_etl_column(pandas_engine, default_df):
+def test_add_etl_column(
+    pandas_engine: PandasTransformEngine, default_df: pd.DataFrame
+) -> None:
     expected_df = default_df.copy()
     expected_df["testdb_etl_version"] = "testing"
-    df = pandas_engine.transforms.add_etl_column(default_df)
+    df = pandas_engine.transforms.add_etl_column(default_df)  # type: ignore[union-attr]
     assert expected_df.equals(df)
 
 
@@ -136,9 +157,17 @@ def test_add_etl_column(pandas_engine, default_df):
     ],
 )
 def test_add_attributes_from_config(
-    pandas_engine_class, default_df, attributes, error, new_column
-):
-    pandas_engine = pandas_engine_class(attributes=attributes)
+    pandas_engine_class: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    attributes: dict[str, str],
+    error: bool,
+    new_column: pd.DataFrame | None,
+    config: PipelineConfig,
+    database: Database,
+) -> None:
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
+        attributes=attributes, config=config, db=database
+    )
 
     if error:
         with pytest.raises(ValueError):
@@ -147,11 +176,11 @@ def test_add_attributes_from_config(
         expected_df = default_df.copy()
         df = pandas_engine.transforms.add_attributes_from_config(default_df)
 
-        single_column = new_column.copy()
+        single_column = new_column.copy()  # type: ignore
         for _ in range(expected_df.shape[0] - 1):
             new_column = pd.concat([new_column, single_column], ignore_index=True)
 
-        new_column = new_column.reset_index()
+        new_column = new_column.reset_index()  # type: ignore
 
         expected_df = pd.concat([expected_df, new_column], axis=1)
         expected_df = expected_df.drop(columns=["index"])
@@ -159,35 +188,45 @@ def test_add_attributes_from_config(
         assert expected_df.equals(df)
 
 
-def test_remove_null_columns(pandas_engine, default_df, default_metadata):
+def test_remove_null_columns(
+    pandas_engine: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    default_metadata: Metadata,
+) -> None:
     default_metadata.update_column({"name": "dummy_column", "type": "null"})
     updated_df = default_df.copy()
     updated_df["dummy_column"] = np.NaN
-    df = pandas_engine.transforms.remove_null_columns(updated_df, default_metadata)
+    df = pandas_engine.transforms.remove_null_columns(updated_df, default_metadata)  # type: ignore[union-attr]
     assert df.equals(default_df)
 
 
 def test_create_null_columns_for_columns_in_meta_not_in_data(
-    pandas_engine, default_df, default_metadata
-):
+    pandas_engine: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    default_metadata: Metadata,
+) -> None:
     default_metadata.update_column({"name": "dummy_column", "type": "string"})
     expected_df = default_df.copy()
     expected_df["dummy_column"] = np.NaN
-    df = pandas_engine.transforms.create_null_columns_for_columns_in_meta_not_in_data(
+    df = pandas_engine.transforms.create_null_columns_for_columns_in_meta_not_in_data(  # type: ignore[union-attr]
         default_df,
         default_metadata,
     )
     assert expected_df.equals(df)
 
 
-def test_input_transform_methods(pandas_engine, default_df, default_metadata):
+def test_input_transform_methods(
+    pandas_engine: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    default_metadata: Metadata,
+) -> None:
     default_metadata.update_column({"name": "dummy_column", "type": "null"})
 
     updated_df = default_df.copy()
     updated_df["dummy_column"] = np.NaN
     updated_df.columns = [x.upper() for x in updated_df.columns]
 
-    df = pandas_engine.transforms.input_transform_methods(
+    df = pandas_engine.transforms.input_transform_methods(  # type: ignore[union-attr]
         updated_df,
         default_metadata,
     )
@@ -236,41 +275,45 @@ def test_input_transform_methods(pandas_engine, default_df, default_metadata):
             ),
         ),
         (
-            None,
+            {},
             False,
-            None,
+            {},
             None,
             None,
         ),
     ],
 )
 def test_output_transform_methods(
-    pandas_engine_class,
-    default_df,
-    default_metadata,
-    extract_header_values,
-    add_partition_column,
-    attributes,
-    header_values_suffix,
-    new_columns,
-):
-    pandas_engine = pandas_engine_class(
+    pandas_engine_class: PandasTransformEngine,
+    default_df: pd.DataFrame,
+    default_metadata: Metadata,
+    extract_header_values: dict[str, str] | None,
+    add_partition_column: bool,
+    attributes: dict[str, str] | None,
+    header_values_suffix: str | None,
+    new_columns: pd.DataFrame | None,
+    config: PipelineConfig,
+    database: Database,
+) -> None:
+    pandas_engine = pandas_engine_class(  # type: ignore[operator]
         attributes=attributes,
         extract_header_values=extract_header_values,
         add_partition_column=add_partition_column,
+        config=config,
+        db=database,
     )
 
     default_metadata.update_column({"name": "string_column", "type": "string"})
     default_metadata.update_column({"name": "testdb_etl_version", "type": "string"})
 
-    if attributes is not None:
+    if attributes:
         default_metadata.update_column(
-            {"name": list(attributes.keys())[0], "type": "string"}
+            {"name": next(iter(attributes.keys())), "type": "string"}
         )
 
     input_df = default_df.copy()
 
-    if extract_header_values is not None:
+    if extract_header_values:
         input_df.columns = [f"{c}{header_values_suffix}" for c in input_df.columns]
         default_metadata.update_column({"name": "header_field", "type": "string"})
 
@@ -281,8 +324,8 @@ def test_output_transform_methods(
     expected_df["testdb_etl_version"] = "testing"
 
     if add_partition_column:
-        ts = int(datetime.utcnow().timestamp())
-        partition_value = f"mojap_file_land_timestamp={str(ts)}"
+        ts = int(datetime.now(tz=UTC).timestamp())
+        partition_value = f"mojap_file_land_timestamp={ts!s}"
         expected_df["mojap_file_land_timestamp"] = ts
         default_metadata.update_column(
             {"name": "mojap_file_land_timestamp", "type": "int64"}
@@ -309,13 +352,12 @@ def test_output_transform_methods(
     expected_df = expected_df.reindex(sorted(expected_df.columns), axis=1)
     df = df.reindex(sorted(df.columns), axis=1)
 
-    print(df.columns)
-    print(expected_df.columns)
-
     pd.testing.assert_frame_equal(df, expected_df)
 
 
-def test_remove_columns_in_meta_not_in_data(pandas_engine, default_metadata):
+def test_remove_columns_in_meta_not_in_data(
+    pandas_engine: PandasTransformEngine, default_metadata: Metadata
+) -> None:
     expected_metadata = deepcopy(default_metadata)
 
     default_metadata.update_column(
@@ -348,12 +390,12 @@ def test_remove_columns_in_meta_not_in_data(pandas_engine, default_metadata):
     ],
 )
 def test_transform(
-    pandas_engine_class,
-    chunk_rest_threshold,
-    monkeypatch,
-    default_metadata,
-    default_df,
-):
+    pandas_engine_class: PandasTransformEngine,
+    chunk_rest_threshold: int,
+    monkeypatch: pytest.MonkeyPatch,
+    default_metadata: Metadata,
+    default_df: pd.DataFrame,
+) -> None:
     s3_client = boto3.client("s3")
     _ = s3_client.create_bucket(
         Bucket="my-dummy-bucket",
@@ -364,7 +406,7 @@ def test_transform(
     monkeypatch.setattr(writer, "write", mock_writer_write)
     monkeypatch.setattr(reader, "read", mock_reader_read)
 
-    pandas_engine = pandas_engine_class(chunk_rest_threshold=chunk_rest_threshold)
+    pandas_engine = pandas_engine_class(chunk_rest_threshold=chunk_rest_threshold)  # type: ignore[operator]
     output_metadata = deepcopy(default_metadata)
     output_metadata.update_column(
         {
@@ -373,11 +415,11 @@ def test_transform(
         }
     )
 
-    ts = int(datetime.utcnow().timestamp())
+    ts = int(datetime.now(tz=UTC).timestamp())
     partition = f"mojap_file_land_timestamp={ts}"
 
     input_partition_path = (
-        f"s3://my-dummy-bucket/dev/testdb/raw-hist/table1/{partition}/"
+        f"s3://my-dummy-bucket/dev/testdb/raw_hist/table1/{partition}/"
     )
     output_partition_path = (
         f"s3://my-dummy-bucket/dev/testdb/processed/table1/{partition}/"

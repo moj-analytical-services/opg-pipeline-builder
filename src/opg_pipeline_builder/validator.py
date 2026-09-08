@@ -1,30 +1,25 @@
-import importlib
-import inspect
 import os
 from copy import deepcopy
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import yaml
 from croniter import croniter
 from data_linter import validation
-from pkg_resources import resource_filename
-from pydantic import (BaseModel, ValidationError, field_validator,
-                      model_validator)
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from opg_pipeline_builder.utils.constants import (etl_stages, etl_steps,
-                                                  sql_path, transform_types)
+from opg_pipeline_builder.utils.constants import etl_stages, sql_path, transform_types
 
 
 class TableConfig(BaseModel):
-    etl_stages: Dict[str, Dict[str, str]]
+    etl_stages: dict[str, dict[str, str]]
     transform_type: str
     frequency: str
-    sql: Optional[Dict[str, Union[List[str], bool]]] = None
-    lint_options: Optional[Dict[str, Any]] = None
-    input_data: Optional[Dict[str, Dict[str, str]]] = None
-    optional_arguments: Optional[Dict[str, Any]] = None
+    sql: dict[str, list[str] | bool] | None = None
+    lint_options: dict[str, Any] | None = None
+    input_data: dict[str, dict[str, str]] | None = None
+    optional_arguments: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def check_transform_type_consistency(self) -> "TableConfig":
@@ -44,9 +39,8 @@ class TableConfig(BaseModel):
                     f"{self.transform_type} table should not have input_data"
                 )
 
-            if self.transform_type == "default":
-                if self.sql:
-                    raise ValueError("default table should not have sql")
+            if self.transform_type == "default" and self.sql:
+                raise ValueError("default table should not have sql")
 
         return self
 
@@ -81,75 +75,26 @@ class TableConfig(BaseModel):
 class ETLStepConfig(BaseModel):
     step: str
     engine_name: str
-    transform_name: Optional[str] = None
-    transform_kwargs: Optional[Dict[str, object]] = None
-
-    @field_validator("step")
-    @classmethod
-    def check_in_etl_steps(cls, v: str) -> str:
-        if v not in etl_steps:
-            raise ValueError(f"{v} not one of the following: {', '.join(etl_steps)}")
-        return v
+    transform_name: str | None = None
+    transform_kwargs: dict[str, object] | None = None
 
     @model_validator(mode="after")
     def check_engine_exists(self) -> "ETLStepConfig":
         if not self.transform_name:
             self.transform_name = "run"
 
-        engine_spec = os.path.exists(
-            resource_filename(
-                "opg_pipeline_builder", f"transform_engines/{self.engine_name}.py"
-            )
-        )
-
-        if not engine_spec:
-            module_path = f"engines.{self.engine_name}"
-            try:
-                engine_module = importlib.import_module(module_path)
-            except ModuleNotFoundError:
-                raise ModuleNotFoundError(
-                    f"Cannot find transform engine {self.engine_name}"
-                )
-        else:
-            engine_module = importlib.import_module(
-                f"opg_pipeline_builder.transform_engines.{self.engine_name}"
-            )
-
-        class_name = (
-            "".join([n[0].upper() + n[1:].lower() for n in self.engine_name.split("_")])
-            + "TransformEngine"
-        )
-
-        try:
-            engine = getattr(engine_module, class_name)
-        except AttributeError:
-            raise AttributeError(
-                f"Engine {self.engine_name} should contain a {class_name} class."
-            )
-
-        functions = [
-            f
-            for f in inspect.getmembers(engine, predicate=inspect.isfunction)
-            if f[0] == self.transform_name
-        ]
-
-        if len(functions) != 1:
-            raise ValueError(
-                f"{class_name} class is missing {self.transform_name} method"
-            )
-
         return self
 
 
 class PipelineConfig(BaseModel):
     db_name: str
-    etl: List[ETLStepConfig]
+    etl: list[ETLStepConfig]
     description: str
-    paths: Dict[str, str]
-    db_lint_options: Dict[str, Any]
-    shared_sql: Optional[Dict[str, List[str]]] = None
-    optional_arguments: Optional[Dict[str, Any]] = None
-    tables: Dict[str, TableConfig]
+    paths: dict[str, str]
+    db_lint_options: dict[str, Any]
+    shared_sql: dict[str, list[str]] | None = None
+    optional_arguments: dict[str, Any] | None = None
+    tables: dict[str, TableConfig]
 
     @model_validator(mode="after")
     def check_shared_sql_exists(self) -> "PipelineConfig":
@@ -176,7 +121,7 @@ class PipelineConfig(BaseModel):
     @field_validator("paths")
     @classmethod
     def check_in_etl_stages(cls, v: dict[str, str]) -> dict[str, str]:
-        stage = [k for k in v][0]
+        stage = next(iter(v))
         if stage not in etl_stages:
             raise ValueError(f"{stage} is not a valid ETL stage")
         return v
@@ -184,9 +129,9 @@ class PipelineConfig(BaseModel):
     @field_validator("shared_sql")
     @classmethod
     def check_in_transform_types(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
-        transform_type = [k for k, _ in v.items()][0]
+        transform_type = next(k for k, _ in v.items())
         valid_type = transform_type in transform_types
-        error_message = f'{transform_type} is not one of {", ".join(transform_types)}'
+        error_message = f"{transform_type} is not one of {', '.join(transform_types)}"
         if not valid_type:
             raise ValueError(error_message)
         return v
@@ -219,7 +164,9 @@ class PipelineConfig(BaseModel):
 
                 else:
                     input_db_config_paths = [
-                        p for p in os.listdir("configs") if Path(p).stem == input_db
+                        p
+                        for p in os.listdir("src/opg_pipeline/configs")
+                        if Path(p).stem == input_db
                     ]
 
                     if len(input_db_config_paths) != 1:
@@ -241,7 +188,7 @@ class PipelineConfig(BaseModel):
                     missing_tables = [
                         tbl
                         for tbl, _ in input_table_dict.items()
-                        if tbl not in db_tables
+                        if tbl not in db_tables  # type: ignore
                     ]
                     if missing_tables:
                         raise ValueError(
@@ -287,12 +234,10 @@ class PipelineConfig(BaseModel):
                 table_tf = table.transform_type
 
                 if table_tf != "derived":
-                    try:
-                        lint_opt = table.lint_options
-                        full_lint_config["tables"][table_name] = lint_opt
-
-                    except Exception:
+                    lint_opt = table.lint_options
+                    if lint_opt is None:
                         raise KeyError(f"{table} does not have lint options")
+                    full_lint_config["tables"][table_name] = lint_opt
 
             dummy_s3_paths = {
                 "land-base-path": "s3://testing-bucket/land/",
@@ -311,6 +256,11 @@ class PipelineConfig(BaseModel):
             )
 
         return self
+
+    @property
+    def etl_steps(self) -> list[str]:
+        """Set of all etl steps configured for this pipeline."""
+        return [step.step for step in self.etl]
 
 
 def read_pipeline_config(db_name: str) -> PipelineConfig:

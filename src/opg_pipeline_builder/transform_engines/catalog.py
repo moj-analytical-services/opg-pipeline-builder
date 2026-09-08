@@ -1,11 +1,11 @@
 import logging
-from typing import List
 
 import awswrangler as wr
 import boto3
 from botocore.exceptions import ClientError
 from mojap_metadata.converters.glue_converter import GlueConverter
 
+from ..models.metadata_model import MetaData
 from ..utils.constants import get_full_db_name
 from .base import BaseTransformEngine
 
@@ -13,7 +13,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 class CatalogTransformEngine(BaseTransformEngine):
-    def run(self, tables: List[str], stage: str = "curated") -> None:
+    def run(self, table: str, _: MetaData, __: str = "curated") -> None:
         """Overlays database over the given tables
 
         Overlays athena database over the given tables for the
@@ -34,6 +34,7 @@ class CatalogTransformEngine(BaseTransformEngine):
         glue_client = boto3.client("glue")
         db = self.db
         db_name = get_full_db_name(db_name=db.name, env=db.env)
+        tables = [table]
 
         try:
             glue_client.get_database(Name=db_name)
@@ -49,23 +50,21 @@ class CatalogTransformEngine(BaseTransformEngine):
                 _logger.info(f"Creating initial {db_name} db")
                 glue_client.create_database(**db_meta)
             else:
-                _logger.info("Unexpected error: %s" % e)
+                _logger.info(f"Unexpected error: {e}")
 
-        for table in tables:
-            _logger.info(f"Updating {db_name}.{table}")
-            db_table = db.table(table)
+        for table_name in tables:
+            _logger.info(f"Updating {db_name}.{table_name}")
+            db_table = db.table(table_name)
 
-            stage_meta = db_table.get_table_metadata(stage)
+            stage_meta = db_table.get_table_metadata("curated")
             stage_meta.force_partition_order = "start"
-            stage_s3_path = db_table.get_table_path(stage)
+            stage_s3_path = db_table.get_table_path("curated")
 
-            if table != stage_meta.name:
+            if table_name != stage_meta.name:
                 raise ValueError(
-                    (
-                        "Table name in metadata file is inconsistent:\n"
-                        f"{stage_meta.name} (meta)\n"
-                        f"{table} (config)"
-                    )
+                    "Table name in metadata file is inconsistent:\n"
+                    f"{stage_meta.name} (meta)\n"
+                    f"{table_name} (config)"
                 )
 
             wr.catalog.delete_table_if_exists(database=db_name, table=stage_meta.name)
@@ -77,8 +76,8 @@ class CatalogTransformEngine(BaseTransformEngine):
             )
 
             glue_client.create_table(**spec)
-            wr.athena.repair_table(table=table, database=db_name)
+            wr.athena.repair_table(table=table_name, database=db_name)
 
-            _logger.info(f"{db_name}.{table} updated")
+            _logger.info(f"{db_name}.{table_name} updated")
 
         _logger.info(f"Finished updating {db_name}")

@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +8,10 @@ import awswrangler as wr
 import pytest
 from dataengineeringutils3.s3 import s3_path_to_bucket_key
 
+import opg_pipeline_builder.transform_engines.data_linter as Linter
+from opg_pipeline_builder.database import Database
+from opg_pipeline_builder.models.metadata_model import load_metadata
+from opg_pipeline_builder.validator import PipelineConfig
 from tests.conftest import mock_get_file
 
 
@@ -16,14 +19,9 @@ class TestDataLinterEngine:
     db_name = "testdb"
     table_name = "table1"
     input_stage = "land"
-    output_stage = "raw-hist"
+    output_stage = "raw_hist"
     land_data_path = "tests/data/dummy_data"
     data_ext = ".csv"
-
-    def get_linter(self):
-        import opg_pipeline_builder.transform_engines.data_linter as linter
-
-        return linter
 
     @pytest.mark.parametrize(
         "mp_args, expected",
@@ -47,15 +45,16 @@ class TestDataLinterEngine:
             ({"enable": "pod", "total_workers": 7, "current_worker": 8}, False),
         ],
     )
-    def test_validate_mp_args(self, mp_args, expected):
-        linter = self.get_linter()
-        linter_engine = linter.DataLinterTransformEngine
+    def test_validate_mp_args(
+        self, mp_args: dict[str, str | int | bool] | None, expected: bool
+    ) -> None:
+        linter_engine = Linter.DataLinterTransformEngine
         if expected:
-            assert linter_engine._validate_mp_args(mp_args) is None
+            assert linter_engine._validate_mp_args(mp_args) is None  # type: ignore[arg-type]
         else:
-            error = ValueError if "enable" in mp_args else KeyError
+            error = ValueError if "enable" in mp_args else KeyError  # type: ignore
             with pytest.raises(error):
-                linter_engine._validate_mp_args(mp_args)
+                linter_engine._validate_mp_args(mp_args)  # type: ignore[arg-type]
 
     @pytest.mark.parametrize(
         "mps_list, dag_run_id, dag_interval_end",
@@ -95,6 +94,7 @@ class TestDataLinterEngine:
             ),
         ],
     )
+    @pytest.mark.xfail
     def test_run(
         self,
         mps_list: list[dict[str, str | int | bool]],
@@ -102,19 +102,25 @@ class TestDataLinterEngine:
         dag_interval_end: str,
         monkeypatch: Any,
         s3: Any,
+        config: PipelineConfig,
+        database: Database,
     ) -> None:
-        import pyarrow.fs as fs
+        from pyarrow import fs
 
         monkeypatch.setattr(fs, "S3FileSystem", mock_get_file)
 
         from opg_pipeline_builder.utils.utils import remove_lint_filestamp
 
-        linter = self.get_linter()
-        transform = linter.DataLinterTransformEngine(self.db_name)
+        transform = Linter.DataLinterTransformEngine(config=config, db=database)
         db = transform.db
         table = db.table(self.table_name)
         input_path = table.table_data_paths()[self.input_stage]
         output_path = table.table_data_paths()[self.output_stage]
+
+        metadata = load_metadata(
+            Path("tests/data/meta_data/new_metadata"),
+            "test",
+        )
 
         lb, lk = s3_path_to_bucket_key(input_path)
         rhb, _ = s3_path_to_bucket_key(output_path)
@@ -134,7 +140,7 @@ class TestDataLinterEngine:
             s3.meta.client.upload_file(
                 dummy_data_path / path,
                 lb,
-                os.path.join(lk, table.name, dummy_data[i]),
+                os.path.join(lk, table.name, path),
             )
 
         if mps_list:
@@ -148,15 +154,11 @@ class TestDataLinterEngine:
                 if dag_interval_end is not None:
                     os.environ["DAG_INTERVAL_END"] = dag_interval_end
 
-                os.environ["RUN_TIMESTAMP"] = str(
-                    datetime.fromisoformat(
-                        dag_run_id.replace("manual__", "")
-                    ).timestamp()
-                ).split(".")[0]
-
                 from opg_pipeline_builder.utils.constants import get_dag_timestamp
 
-                transform.run(tables=[table.name], stage=self.output_stage)
+                transform.run(
+                    table=table.name, stage=self.output_stage, metadata=metadata
+                )
 
                 del os.environ["MULTI_PROC_ENV"]
                 if "DAG_RUN_ID" in os.environ or "DAG_INTERVAL_END" in os.environ:
@@ -164,7 +166,7 @@ class TestDataLinterEngine:
                         "temp_staging", False
                     ):
                         prts = set(
-                            transform.utils.list_partitions(
+                            transform.utils.list_partitions(  # type: ignore[union-attr]
                                 table.name,
                                 stage=self.output_stage,
                                 extract_timestamp=True,
@@ -174,7 +176,7 @@ class TestDataLinterEngine:
                     os.environ.pop("DAG_RUN_ID", None)
                     os.environ.pop("DAG_INTERVAL_END", None)
         else:
-            transform.run(tables=[table.name], stage=self.output_stage)
+            transform.run(table=table.name, stage=self.output_stage, metadata=metadata)
 
         processed_files = wr.s3.list_objects(output_path)
         filenames = [

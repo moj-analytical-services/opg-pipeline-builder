@@ -1,0 +1,34 @@
+{
+  "$schema": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.3.0.json",
+  "_converted_from": "arrow_schema",
+  "columns": [
+    {
+      "name": "my_int",
+      "nullable": true,
+      "type": "int32"
+    },
+    {
+      "name": "hobby",
+      "nullable": true,
+      "type": "string"
+    },
+    {
+      "name": "animal",
+      "nullable": true,
+      "type": "string"
+    },
+    {
+      "name": "mojap_file_land_timestamp",
+      "nullable": false,
+      "type": "int64"
+    }
+  ],
+  "description": "",
+  "file_format": "parquet",
+  "name": "table3",
+  "partitions": [
+    "mojap_file_land_timestamp"
+  ],
+  "primary_key": [],
+  "sensitive": false
+}

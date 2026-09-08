@@ -5,7 +5,7 @@ etl:
     engine_name: data_linter
 paths:
   land: s3://mojap-land/dep/{{env}}/{{db}}
-  raw-hist: s3://mojap-raw-hist/dep/{{env}}/{{db}}
+  raw_hist: s3://mojap-raw-hist/dep/{{env}}/{{db}}
   curated: s3://alpha-dep-etl/{{env}}/{{db}}/curated
   derived: s3://alpha-dep-etl/{{env}}/{{db}}/derived
 db_lint_options:
@@ -19,7 +19,7 @@ tables:
     etl_stages: &default_etl
       land:
         file_format: csv
-      raw-hist:
+      raw_hist:
         file_format: csv
       curated:
         file_format: parquet
@@ -42,6 +42,6 @@ tables:
     transform_type: derived
     input_data:
       testdb:
-        table1: raw-hist
-        table2: raw-hist
+        table1: raw_hist
+        table2: raw_hist
     frequency: "@daily"

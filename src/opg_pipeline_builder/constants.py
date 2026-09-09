@@ -1,3 +1,5 @@
+from typing import Literal
+
 ALLOWED_DATA_TYPES: tuple[str, ...] = (
     "string",
     "list<string>",
@@ -21,14 +23,8 @@ ALLOWED_DATA_TYPES: tuple[str, ...] = (
 
 ALLOWED_STRUCT_DATA_TYPES: tuple[str, ...] = ("list<struct<",)
 
-ALLOWED_ETL_STAGES: tuple[str, ...] = (
-    "land",
-    "raw",
-    "raw_hist",
-    "processed",
-    "curated",
-    "derived",
-)
-
 
 ALLOWED_FILE_FORMATS: tuple[str, ...] = ("parquet", "csv", "json", "xlsx")
+
+type ETLStage = Literal["raw", "curated"]
+ALLOWED_ETL_STAGES: tuple[ETLStage, ...] = ("raw", "curated")

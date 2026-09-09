@@ -10,64 +10,31 @@ from opg_pipeline_builder.constants import (
     ALLOWED_ETL_STAGES,
     ALLOWED_FILE_FORMATS,
     ALLOWED_STRUCT_DATA_TYPES,
+    ETLStage,
 )
+from opg_pipeline_builder.models import modelling_exceptions as exc
 
 
-class InvalidStageError(Exception):
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-
-
-class InvalidColumnError(Exception):
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-
-
-class InvalidTableError(Exception):
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-
-
-class InvalidTypeError(Exception):
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-
-
-class InvalidFormatError(Exception):
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-
-
-class DuplicateColumnsError(Exception):
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-
-
-class Stage(BaseModel):
-    """Pydantic model representing the metadata for a given ETL stage for a specific column."""
+class Column(BaseModel):
+    """Pydantic model representing a column that exists in the metadata for a specific table."""
 
     name: str
-    type: str
-    pattern: str = ""
-    format: str = ""
+    description: str = ""
+    semantic_type: str
+    etl_stages: list[ETLStage] = list(ALLOWED_ETL_STAGES)
+    sensitive: bool = True
+    is_composite_key: bool = False
+    is_partition: bool = False
+    input_data_type: str
+    output_data_type: str
+    input_value_format: str = ""
+    output_value_format: str = ""
+    regex_pattern: str = ""
+    nullable: bool = False
+    allowed_values: list[str | int] = []
+    default_value: str | int | bool | None = None
 
-    @field_validator("name")
-    @classmethod
-    def validate_stage_name(cls, value: str) -> str:
-        """Check the provided ETL stage name is valid."""
-        if value in ALLOWED_ETL_STAGES:
-            return value
-
-        err = f"ETL stage '{value}' is not in the ALLOWED_ETL_STAGES constant"
-        raise InvalidStageError(err)
-
-    @field_validator("type")
+    @field_validator("input_data_type", "output_data_type")
     @classmethod
     def validate_data_type(cls, value: str) -> str:
         """Check the provided data type is valid."""
@@ -75,37 +42,9 @@ class Stage(BaseModel):
             return value
 
         err = f"Data type '{value}' is not in the ALLOWED_DATA_TYPES constant"
-        raise InvalidTypeError(err)
+        raise exc.InvalidTypeError(err)
 
-
-class Column(BaseModel):
-    """Pydantic model representing a column that exists in the metadata for a specific table."""
-
-    name: str
-    nullable: bool = False
-    enum: list[str | int] = []
-    stages: list[Stage]
-
-    def get_stage_for_column(self, stage_name: str) -> Stage:
-        """Return the Stage object for a column for a given ETL stage.
-
-        Args:
-            stage_name (str): The ETL stage that is running (as defined from airflow)
-
-        Returns:
-            Stage: The Stage object for the required ETL stage
-
-        Raises:
-            InvalidStageError: The column is not configured for the ETL stage searched for
-        """
-        for stage in self.stages:
-            if stage.name == stage_name:
-                return stage
-
-        err = f"No metadata is configured for stage '{stage_name}' for column '{self.name}'"
-        raise InvalidStageError(err)
-
-    def has_stage(self, stage_name: str) -> bool:
+    def exists_for_stage(self, stage_name: str) -> bool:
         """Return True if the column is configured for a specified stage.
 
         Args:
@@ -114,7 +53,7 @@ class Column(BaseModel):
         Returns:
             bool: Whether the column is configured for the stage
         """
-        return any(stage.name == stage_name for stage in self.stages)
+        return stage_name in self.etl_stages
 
 
 class FileFormat(BaseModel):
@@ -131,7 +70,7 @@ class FileFormat(BaseModel):
             return value
 
         err = f"ETL stage '{value}' is not in the ALLOWED_ETL_STAGES constant"
-        raise InvalidStageError(err)
+        raise exc.InvalidStageError(err)
 
     @field_validator("format")
     @classmethod
@@ -141,18 +80,15 @@ class FileFormat(BaseModel):
             return value
 
         err = f"File format '{value}' is not in the ALLOWED_FILE_FORMATS constant"
-        raise InvalidFormatError(err)
+        raise exc.InvalidFormatError(err)
 
 
 class TableMetaData(BaseModel):
     """Pydantic model representing a metadata entry for a specific table."""
 
-    converted_from: str
-    schema_link: str
     name: str
     description: str
     file_formats: list[FileFormat]
-    sensitive: bool
     primary_key: list[str] = []
     partitions: list[str]
     columns: list[Column]
@@ -164,7 +100,7 @@ class TableMetaData(BaseModel):
         all_columns = [column.name for column in self.columns]
         if len(set(all_columns)) != len(all_columns):
             err = "One or more columns are defined twice for the same table"
-            raise DuplicateColumnsError(err)
+            raise exc.DuplicateColumnsError(err)
         return self
 
     @model_validator(mode="after")
@@ -175,7 +111,7 @@ class TableMetaData(BaseModel):
         for partition in self.partitions:
             if partition not in all_columns:
                 err = f"Partition column '{partition}' is not a defined column in the metadata for '{self.name}'."
-                raise InvalidColumnError(err)
+                raise exc.InvalidColumnError(err)
 
         return self
 
@@ -197,7 +133,7 @@ class TableMetaData(BaseModel):
                 return format_obj
 
         err = f"No file format metadata is configured for stage '{stage_name}' for table '{self.name}'"
-        raise InvalidStageError(err)
+        raise exc.InvalidStageError(err)
 
     def get_columns_for_stage(self, stage_name: str) -> list[Column]:
         """Return all of the column definitions for a specific ETL stage.
@@ -225,7 +161,7 @@ class TableMetaData(BaseModel):
                 return column
 
         err = f"Column '{column_name}' was not found in the metadata for table '{self.name}'."
-        raise InvalidColumnError(err)
+        raise exc.InvalidColumnError(err)
 
     def create_old_style_metadata(self, stage: str) -> dict[Any, Any]:
         output_metadata: dict[Any, Any] = {}
@@ -276,7 +212,7 @@ class MetaData(BaseModel):
 
         if not table:
             err = f"Table '{table_name}' is not configured in the metadata for '{self.database}'"
-            raise InvalidTableError(err)
+            raise exc.InvalidTableError(err)
 
         return table
 

@@ -13,18 +13,9 @@ _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _PARQUET_HANDLER_NAME = "opg_pipeline_builder_parquet"
 
 
-class CustomFields(BaseModel):
-    """Model to validate that all required custom fields have been provided."""
-
-    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
-    process_stage: Literal["Start", "Processing", "End"]
-    table_name: str
-    field_name: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class StructuredLogRecord(BaseModel):
+    """Pydantic model representing a structured log record that is written to parquet."""
+
     database_name: str
     data_delivery_period: datetime
     attempt_no: int
@@ -60,6 +51,7 @@ def _validate_logger_inputs(
     attempt_no: int,
     batch_size: int,
 ) -> None:
+    """Check that logger configuration inputs are valid."""
     if not bucket.strip():
         raise ValueError("bucket name must be non-empty")
     if not prefix.strip():
@@ -135,6 +127,7 @@ class ParquetLogHandler(logging.Handler):
             self.release()
 
     def close(self) -> None:
+        """Flush any remaining logs to S3 and close the handler."""
         try:
             self.acquire()
             try:
@@ -149,6 +142,7 @@ class ParquetLogHandler(logging.Handler):
             super().close()
 
     def _flush_locked(self) -> None:
+        """Flush the buffer to S3 as a parquet file. Assumes the lock is already acquired."""
         if not self._buffer:
             return
 
@@ -184,7 +178,7 @@ class ParquetLogHandler(logging.Handler):
                 data_delivery_period=self._data_delivery_period,
                 attempt_no=self._attempt_no,
                 logger_name=PACKAGE_LOGGER_NAME,
-                module="opg_pipeline_builder.components.log",
+                module="opg_pipeline_builder.logging.log",
                 function="_flush_locked",
                 line_number=0,
                 log_level="ERROR",
@@ -245,7 +239,7 @@ class ParquetLogHandler(logging.Handler):
     def _record_to_row(
         self, record: logging.LogRecord
     ) -> dict[str, str | int | datetime]:
-
+        """Convert a logging.LogRecord to a dictionary suitable for writing to parquet."""
         custom_fields_dict = getattr(record, "custom_fields", {})
         table_name = "Unknown"
         field_name = "Unknown"
@@ -286,7 +280,24 @@ def configure_logging(
     attempt_no: int,
     batch_size: int = 500,
 ) -> logging.Logger:
-    """Configure package logging once with a shared console handler."""
+    """Configure package logging once with a shared console handler.
+
+    Args:
+        bucket: str
+            The S3 bucket where logs will be stored.
+        prefix: str
+            The S3 prefix (folder path) under which logs will be stored.
+        database_name: str
+            The name of the database associated with the logs.
+        data_delivery_period: datetime
+            The data delivery period for the logs.
+        attempt_no: int
+            The attempt number for this data delivery period.
+        batch_size: int, optional
+            The number of log records to batch together before writing to S3, by default 500.
+    Returns:
+        logging.Logger: The configured package logger.
+    """
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
     package_logger.setLevel(logging.INFO)
     package_logger.propagate = False
@@ -336,3 +347,64 @@ def configure_logging(
     package_logger.addHandler(parquet_handler)
 
     return package_logger
+
+
+class CustomFields(BaseModel):
+    """Model to validate that all required custom fields have been provided."""
+
+    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
+    process_stage: Literal["Start", "Processing", "End"]
+    table_name: str
+    field_name: str
+
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def set_custom_fields(
+        self,
+        pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"],
+        process_stage: Literal["Start", "Processing", "End"],
+        table_name: str,
+        field_name: str,
+    ) -> "CustomFields":
+        """Create a new instance of CustomFields with the provided values.
+
+        Args:
+            pipeline_activity (str): The pipeline activity.
+            process_stage (str): The process stage.
+            table_name (str): The name of the table.
+            field_name (str): The name of the field.
+
+        Returns:
+            CustomFields: A new instance of CustomFields with the provided values.
+        """
+        return CustomFields(
+            pipeline_activity=pipeline_activity,
+            process_stage=process_stage,
+            table_name=table_name,
+            field_name=field_name,
+        )
+
+    def update(
+        self,
+        pipeline_activity: (
+            Literal["BAU", "Deletion", "Logging", "Validation"] | None
+        ) = None,
+        process_stage: Literal["Start", "Processing", "End"] | None = None,
+        table_name: str | None = None,
+        field_name: str | None = None,
+    ) -> None:
+        """Updates the custom fields of the current instance.
+
+        Args:
+            pipeline_activity (str, optional): The new pipeline activity. Defaults to None.
+            process_stage (str, optional): The new process stage. Defaults to None.
+            table_name (str, optional): The new table name. Defaults to None.
+            field_name (str, optional): The new field name. Defaults to None.
+        """
+        self.pipeline_activity = (
+            pipeline_activity if pipeline_activity else self.pipeline_activity
+        )
+        self.process_stage = process_stage if process_stage else self.process_stage
+        self.table_name = table_name if table_name else self.table_name
+        self.field_name = field_name if field_name else self.field_name

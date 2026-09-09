@@ -11,7 +11,9 @@ import boto3
 import pandas as pd
 import pytest
 from freezegun import freeze_time
-from opg_pipeline_builder.components.log import (
+from pydantic import ValidationError
+
+from opg_pipeline_builder.logging.log import (
     _CONSOLE_HANDLER_NAME,
     _PARQUET_HANDLER_NAME,
     PACKAGE_LOGGER_NAME,
@@ -22,7 +24,6 @@ from opg_pipeline_builder.components.log import (
     _validate_logger_inputs,
     configure_logging,
 )
-from pydantic import ValidationError
 
 _CUSTOM_FIELDS = {
     "pipeline_activity": "Validation",
@@ -149,7 +150,7 @@ def _reset_package_logger() -> Generator[None]:
 def test_custom_fields_reject_extra() -> None:
     """Test that StructuredLogRecord rejects extra fields."""
     with pytest.raises(ValidationError) as exc_info:
-        CustomFields(
+        CustomFields(  # type: ignore [call-arg]
             pipeline_activity="Validation",
             process_stage="Processing",
             table_name="table_a",
@@ -164,7 +165,7 @@ def test_structured_log_record_reject_extra() -> None:
     """Test that StructuredLogRecord rejects extra fields."""
     with pytest.raises(ValidationError) as exc_info:
         _, __, structured_log_record_dict = create_log_record()
-        StructuredLogRecord(
+        StructuredLogRecord(  # type: ignore [call-arg]
             **structured_log_record_dict,
             extra_field="not_allowed",
         )
@@ -309,7 +310,7 @@ def test_validate_log_location_fail(s3: boto3.client) -> None:
 
     with (
         patch(
-            "opg_pipeline_builder.components.log.wr.s3.to_parquet",
+            "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
             side_effect=ValueError("S3 write failed"),
         ),
         pytest.raises(RuntimeError) as exc_info,
@@ -333,7 +334,7 @@ def test_emit_with_flush() -> None:
     record_2, _, __ = create_log_record(line_number=43)
 
     with patch(
-        "opg_pipeline_builder.components.log.ParquetLogHandler._flush_locked",
+        "opg_pipeline_builder.logging.log.ParquetLogHandler._flush_locked",
         side_effect=mock_flush_locked,
         autospec=True,
     ) as mock_flush:
@@ -351,7 +352,7 @@ def test_emit_without_flush() -> None:
     record_2, __, structured_log_record_dict_2 = create_log_record(line_number=43)
 
     with patch(
-        "opg_pipeline_builder.components.log.ParquetLogHandler._flush_locked",
+        "opg_pipeline_builder.logging.log.ParquetLogHandler._flush_locked",
         side_effect=mock_flush_locked,
         autospec=True,
     ) as mock_flush:
@@ -372,7 +373,7 @@ def test_close_success() -> None:
     handler._buffer.append({"mock": "record"})
 
     with patch(
-        "opg_pipeline_builder.components.log.ParquetLogHandler._flush_locked",
+        "opg_pipeline_builder.logging.log.ParquetLogHandler._flush_locked",
         side_effect=mock_flush_locked,
         autospec=True,
     ) as mock_flush:
@@ -390,7 +391,7 @@ def test_close_fail() -> None:
 
     with (
         patch(
-            "opg_pipeline_builder.components.log.ParquetLogHandler._flush_locked",
+            "opg_pipeline_builder.logging.log.ParquetLogHandler._flush_locked",
             side_effect=None,
         ) as mock_flush,
         pytest.raises(RuntimeError, match="Failed to write all log records to S3"),
@@ -412,7 +413,7 @@ def test_flush_locked_single_part(s3: boto3.client) -> None:
     _, _, record_2 = create_log_record(line_number=43)
     _, _, record_3 = create_log_record(line_number=44)
 
-    handler._buffer = [record_1, record_2, record_3]
+    handler._buffer = [record_1, record_2, record_3]  # type: ignore [list-item]
 
     handler._flush_locked()
 
@@ -437,9 +438,9 @@ def test_flush_locked_multiple_parts(s3: boto3.client) -> None:
     _, _, record_2 = create_log_record(line_number=43)
     _, _, record_3 = create_log_record(line_number=44)
 
-    handler._buffer = [record_1, record_2]
+    handler._buffer = [record_1, record_2]  # type: ignore [list-item]
     handler._flush_locked()
-    handler._buffer = [record_3]
+    handler._buffer = [record_3]  # type: ignore [list-item]
     handler._flush_locked()
 
     written_log_part_0 = wr.s3.read_parquet(
@@ -462,7 +463,7 @@ def test_flush_locked_empty_buffer() -> None:
     handler = create_parquet_handler()
 
     with patch(
-        "opg_pipeline_builder.components.log.wr.s3.to_parquet",
+        "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
         autospec=True,
     ) as mock_to_parquet:
         handler._flush_locked()
@@ -479,11 +480,11 @@ def test_flush_locked_fail(
 
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
-    handler._buffer = [record_1]
+    handler._buffer = [record_1]  # type: ignore [list-item]
 
     with (
         patch(
-            "opg_pipeline_builder.components.log.wr.s3.to_parquet",
+            "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
             side_effect=ValueError("S3 write failed"),
             autospec=True,
         ) as mock_write,
@@ -519,11 +520,11 @@ def test_flush_locked_fail_then_success(
 
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
-    handler._buffer = [record_1]
+    handler._buffer = [record_1]  # type: ignore [list-item]
 
     with (
         patch(
-            "opg_pipeline_builder.components.log.wr.s3.to_parquet",
+            "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
             side_effect=ValueError("S3 write failed"),
             autospec=True,
         ) as mock_write,
@@ -557,7 +558,7 @@ def test_flush_locked_fail_then_success(
                     "data_delivery_period": datetime(2024, 1, 2, tzinfo=UTC),
                     "attempt_no": 1,
                     "logger_name": PACKAGE_LOGGER_NAME,
-                    "module": "opg_pipeline_builder.components.log",
+                    "module": "opg_pipeline_builder.logging.log",
                     "function": "_flush_locked",
                     "line_number": 0,
                     "log_level": "ERROR",
@@ -633,11 +634,11 @@ def test_configure_logging_create_correct_handlers() -> None:
     """Test that configure_logging creates both console and parquet handlers."""
     with (
         patch(
-            "opg_pipeline_builder.components.log._validate_logger_inputs",
+            "opg_pipeline_builder.logging.log._validate_logger_inputs",
             autospec=True,
         ) as mock_validate_inputs,
         patch(
-            "opg_pipeline_builder.components.log._validate_log_location",
+            "opg_pipeline_builder.logging.log._validate_log_location",
             autospec=True,
         ) as mock_validate_location,
     ):
@@ -661,7 +662,7 @@ def test_configure_logging_create_correct_handlers() -> None:
 
     assert package_logger.level == logging.INFO
     assert package_logger.propagate is False
-    parquet_handler: ParquetLogHandler = package_logger.handlers[1]
+    parquet_handler: ParquetLogHandler = package_logger.handlers[1]  # type: ignore [assignment]
     assert parquet_handler._bucket == "test-bucket"
     assert parquet_handler._prefix == "pipeline-logs"
     assert parquet_handler._database_name == "test-database"
@@ -675,7 +676,7 @@ def test_configure_logging_create_correct_handlers() -> None:
 def test_configure_logging_no_second_configure() -> None:
     """Test that configure_logging raises RuntimeError if called a second time."""
     with patch(
-        "opg_pipeline_builder.components.log._validate_log_location", autospec=True
+        "opg_pipeline_builder.logging.log._validate_log_location", autospec=True
     ):
         _ = configure_logging(
             bucket="test-bucket",
@@ -814,7 +815,7 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
                     "logger_name": PACKAGE_LOGGER_NAME,
                     "module": "test_log",
                     "function": "_mp_worker",
-                    "line_number": 757,
+                    "line_number": 756,
                     "log_level": "INFO",
                     "pipeline_activity": "Validation",
                     "process_stage": "Processing",
@@ -852,3 +853,72 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
         expected_df_sorted,
         check_dtype=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("pipeline_activity", "process_stage"),
+    [
+        ("wrong", "Processing"),
+        ("BAU", "wrong"),
+        ("wrong", "wrong"),
+    ],
+)
+def test_custom_fields_rejects_invalid_values(
+    pipeline_activity: Literal["BAU", "wrong"],
+    process_stage: Literal["Processing", "wrong"],
+) -> None:
+    """Test that CustomFields raises a ValidationError for invalid pipeline_activity or process_stage values."""
+    with pytest.raises(ValidationError):
+        CustomFields(
+            pipeline_activity=pipeline_activity,  # type: ignore [arg-type]
+            process_stage=process_stage,  # type: ignore [arg-type]
+            table_name="table_a",
+            field_name="field_a",
+        )
+
+
+def test_custom_fields_rejects_extra() -> None:
+    """Test that CustomFields raises a ValidationError when extra fields are provided."""
+    with pytest.raises(ValidationError):
+        CustomFields(  # type: ignore [call-arg]
+            pipeline_activity="BAU",
+            process_stage="Processing",
+            table_name="table_a",
+            field_name="field_a",
+            extra_field="extra",
+        )
+
+
+def test_set_custom_fields() -> None:
+    """Test that the set_custom_fields class method correctly creates a new instance of CustomFields."""
+    custom_fields_instance = CustomFields.set_custom_fields(
+        pipeline_activity="BAU",
+        process_stage="Processing",
+        table_name="table_a",
+        field_name="field_a",
+    )
+    assert isinstance(custom_fields_instance, CustomFields)
+    assert custom_fields_instance.pipeline_activity == "BAU"
+    assert custom_fields_instance.process_stage == "Processing"
+    assert custom_fields_instance.table_name == "table_a"
+    assert custom_fields_instance.field_name == "field_a"
+
+
+def test_update_custom_fields() -> None:
+    """Test that the update method correctly updates the custom fields of an existing instance."""
+    custom_fields_instance = CustomFields.set_custom_fields(
+        pipeline_activity="BAU",
+        process_stage="Processing",
+        table_name="table_a",
+        field_name="field_a",
+    )
+    custom_fields_instance.update(
+        pipeline_activity="Deletion",
+        process_stage="Start",
+        table_name="table_b",
+        field_name="field_b",
+    )
+    assert custom_fields_instance.pipeline_activity == "Deletion"
+    assert custom_fields_instance.process_stage == "Start"
+    assert custom_fields_instance.table_name == "table_b"
+    assert custom_fields_instance.field_name == "field_b"

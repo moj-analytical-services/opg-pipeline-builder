@@ -1,18 +1,33 @@
 import json
+from logging import getLogger
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ValidationInfo, field_validator, model_validator
 
 from opg_pipeline_builder.constants import (
     ALLOWED_DATA_TYPES,
     ALLOWED_ETL_STAGES,
     ALLOWED_FILE_FORMATS,
+    ALLOWED_SEMANTIC_TYPES,
     ALLOWED_STRUCT_DATA_TYPES,
-    ETLStage,
+    ALLOWED_VALUE_FORMATS,
 )
+from opg_pipeline_builder.logging.log import CustomFields
 from opg_pipeline_builder.models import modelling_exceptions as exc
+from opg_pipeline_builder.validation.validators import is_valid_identifier
+
+logger = getLogger(__name__)
+log_fields: CustomFields = CustomFields.set_custom_fields(
+    "Validation", "Processing", "None", "None"
+)
+
+
+def _get_table_name(info: ValidationInfo) -> str:
+    """Extract the table name from the validation context."""
+    table_name: str = (info.context or {}).get("table_name", "")
+    return table_name
 
 
 class Column(BaseModel):
@@ -21,30 +36,141 @@ class Column(BaseModel):
     name: str
     description: str = ""
     semantic_type: str
-    etl_stages: list[ETLStage] = list(ALLOWED_ETL_STAGES)
+    etl_stages: list[str]
     sensitive: bool = True
     is_composite_key: bool = False
     is_partition: bool = False
-    input_data_type: str
-    output_data_type: str
+    input_data_type: Any
+    output_data_type: Any
     input_value_format: str = ""
     output_value_format: str = ""
     regex_pattern: str = ""
     nullable: bool = False
-    allowed_values: list[str | int] = []
-    default_value: str | int | bool | None = None
+    allowed_values: list[Any] | None = None
+    default_value: Any | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str, info: ValidationInfo) -> str:
+        """Validate that the column name is a valid SQL/Athena identifier."""
+        err = is_valid_identifier(value)
+        if err:
+            log_fields.update(table=_get_table_name(info), field=info.field_name)
+            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            raise exc.InvalidColumnNameError(err)
+
+        return value
+
+    @field_validator("semantic_type")
+    @classmethod
+    def _validate_semantic_type(cls, value: str, info: ValidationInfo) -> str:
+        """Check the provided semantic type is valid."""
+        if value in ALLOWED_SEMANTIC_TYPES:
+            return value
+
+        err = f"Semantic type '{value}' is not in the ALLOWED_SEMANTIC_TYPES constant"
+        log_fields.update(table=_get_table_name(info), field=info.field_name)
+        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        raise exc.InvalidSemanticTypeError(err)
+
+    @field_validator("etl_stages")
+    @classmethod
+    def _validate_etl_stage(cls, value: list[str], info: ValidationInfo) -> list[str]:
+        """Check the provided ETL stage is valid and not empty."""
+        if not value:
+            err = "ETL stages list cannot be empty"
+            log_fields.update(table=_get_table_name(info), field=info.field_name)
+            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            raise exc.InvalidStageError(err)
+
+        for stage in value:
+            if stage not in ALLOWED_ETL_STAGES:
+                err = f"ETL stage '{stage}' is not in the ALLOWED_ETL_STAGES constant"
+                log_fields.update(table=_get_table_name(info), field=info.field_name)
+                logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+                raise exc.InvalidStageError(err)
+        return value
 
     @field_validator("input_data_type", "output_data_type")
     @classmethod
-    def validate_data_type(cls, value: str) -> str:
+    def _validate_data_type(cls, value: type, info: ValidationInfo) -> Any:
         """Check the provided data type is valid."""
-        if value in ALLOWED_DATA_TYPES or value.startswith(ALLOWED_STRUCT_DATA_TYPES):
+        if value in ALLOWED_DATA_TYPES or str(value).startswith(
+            ALLOWED_STRUCT_DATA_TYPES
+        ):
             return value
 
-        err = f"Data type '{value}' is not in the ALLOWED_DATA_TYPES constant"
+        err = f"Data type '{value}' for field '{info.field_name}' is not in the ALLOWED_DATA_TYPES constant"
+        log_fields.update(table=_get_table_name(info), field=info.field_name)
+        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+
         raise exc.InvalidTypeError(err)
 
-    def exists_for_stage(self, stage_name: str) -> bool:
+    @field_validator("input_value_format", "output_value_format")
+    @classmethod
+    def _validate_value_format(cls, value: str, info: ValidationInfo) -> str:
+        """Check the provided value format is valid."""
+        if value == "" or value in ALLOWED_VALUE_FORMATS:
+            return value
+
+        err = f"Value format '{value}' for field '{info.field_name}' is not in the ALLOWED_VALUE_FORMATS constant"
+        log_fields.update(table=_get_table_name(info), field=info.field_name)
+        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        raise exc.InvalidFormatError(err)
+
+    @model_validator(mode="after")
+    def _partition_and_composite_keys_not_nullable(
+        self, info: ValidationInfo
+    ) -> "Column":
+        """Ensure that partition and composite key columns are not nullable."""
+
+        if (self.is_composite_key or self.is_partition) and self.nullable:
+            err = f"Column '{self.name}' is part of a composite key or partition and cannot be nullable"
+            log_fields.update(table=_get_table_name(info), field="nullable")
+            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            raise exc.InvalidColumnError(err)
+        return self
+
+    @model_validator(mode="after")
+    def _allowed_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
+        """Ensure that allowed values match the input data type."""
+        log_fields.update(table=_get_table_name(info), field="allowed_values")
+
+        if self.allowed_values:
+            if self.input_data_type in (str, int):
+                for value in self.allowed_values:
+                    if not isinstance(value, self.input_data_type):
+                        err = f"Allowed value '{value}' with type '{type(value)}' does not match the input data type '{self.input_data_type}'"
+                        logger.error(
+                            err, extra={"custom_fields": log_fields.model_dump()}
+                        )
+                        raise exc.InvalidTypeError(err)
+            else:
+                logger.info(
+                    "Only check allowed values for 'str' and 'int' input data types. Skipping check for '%s'",
+                    _get_table_name(info),
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _default_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
+        """Ensure that default values match the input data type."""
+        log_fields.update(table=_get_table_name(info), field="default_value")
+
+        if self.default_value:
+            if self.input_data_type in (str, int):
+                if not isinstance(self.default_value, self.input_data_type):
+                    err = f"Default value '{self.default_value}' with type '{type(self.default_value)}' does not match the input data type '{self.input_data_type}'"
+                    logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+                    raise exc.InvalidTypeError(err)
+            else:
+                logger.info(
+                    "Only check default value for 'str' and 'int' input data types. Skipping check for '%s'",
+                    _get_table_name(info),
+                )
+        return self
+
+    def exists_in_stage(self, stage_name: str) -> bool:
         """Return True if the column is configured for a specified stage.
 
         Args:
@@ -54,6 +180,17 @@ class Column(BaseModel):
             bool: Whether the column is configured for the stage
         """
         return stage_name in self.etl_stages
+
+    def value_is_allowed(self, value: Any) -> bool:
+        """Return True if the provided value is allowed for the column.
+
+        Args:
+            value (Any): The value to check against the allowed values.
+
+        Returns:
+            bool: Whether the value is allowed for the column.
+        """
+        return value in self.allowed_values
 
 
 class FileFormat(BaseModel):
@@ -147,20 +284,20 @@ class TableMetaData(BaseModel):
         """
         return [column for column in self.columns if column.has_stage(stage_name)]
 
-    def get_column(self, column_name: str) -> Column:
+    def get_column(self, name: str) -> Column:
         """Get the definition of a specific column from the metadata
 
         Args:
-            column_name (str): The name of the column to be returned
+            name (str): The name of the column to be returned
 
         Returns:
             Column: The column object
         """
         for column in self.columns:
-            if column.name == column_name:
+            if column.name == name:
                 return column
 
-        err = f"Column '{column_name}' was not found in the metadata for table '{self.name}'."
+        err = f"Column '{name}' was not found in the metadata for table '{self.name}'."
         raise exc.InvalidColumnError(err)
 
     def create_old_style_metadata(self, stage: str) -> dict[Any, Any]:

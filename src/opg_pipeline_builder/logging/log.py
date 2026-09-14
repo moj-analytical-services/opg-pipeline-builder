@@ -16,7 +16,7 @@ _PARQUET_HANDLER_NAME = "opg_pipeline_builder_parquet"
 class StructuredLogRecord(BaseModel):
     """Pydantic model representing a structured log record that is written to parquet."""
 
-    database_name: str
+    database: str
     data_delivery_period: datetime
     attempt_no: int
     logger_name: str
@@ -27,8 +27,8 @@ class StructuredLogRecord(BaseModel):
     log_timestamp: datetime
     pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
     process_stage: Literal["Start", "Processing", "End"]
-    table_name: str
-    field_name: str
+    table: str
+    field: str
     message: str
 
     model_config = ConfigDict(extra="forbid")
@@ -46,7 +46,7 @@ def _validate_logger_inputs(
     *,
     bucket: str,
     prefix: str,
-    database_name: str,
+    database: str,
     data_delivery_period: datetime,
     attempt_no: int,
     batch_size: int,
@@ -56,8 +56,8 @@ def _validate_logger_inputs(
         raise ValueError("bucket name must be non-empty")
     if not prefix.strip():
         raise ValueError("prefix name must be non-empty")
-    if not database_name.strip():
-        raise ValueError("database_name must be non-empty")
+    if not database.strip():
+        raise ValueError("database must be non-empty")
     if data_delivery_period.tzinfo is None or data_delivery_period.utcoffset() is None:
         raise ValueError("data_delivery_period must be timezone-aware")
     if attempt_no < 1:
@@ -69,12 +69,12 @@ def _validate_logger_inputs(
 def _validate_log_location(
     bucket: str,
     prefix: str,
-    database_name: str,
+    database: str,
     data_delivery_period: datetime,
     attempt_no: int,
 ) -> None:
     """Validate that the s3 bucket exists and the prefix is writable."""
-    test_log_path = f"s3://{bucket}/{prefix}/test_{database_name}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet"
+    test_log_path = f"s3://{bucket}/{prefix}/test_{database}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet"
     test_log = pd.DataFrame({"test": ["test"]})
     try:
         wr.s3.to_parquet(
@@ -85,7 +85,7 @@ def _validate_log_location(
         )
     except Exception as e:
         raise RuntimeError(
-            f"Failed to write test log to s3://{bucket}/{prefix}/ for {database_name}: {data_delivery_period.strftime('%Y%m%dT%H%M%S')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
+            f"Failed to write test log to s3://{bucket}/{prefix}/ for {database}: {data_delivery_period.strftime('%Y%m%dT%H%M%S')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
         ) from e
     wr.s3.delete_objects(test_log_path)
 
@@ -98,7 +98,7 @@ class ParquetLogHandler(logging.Handler):
         *,
         bucket: str,
         prefix: str,
-        database_name: str,
+        database: str,
         data_delivery_period: datetime,
         attempt_no: int,
         batch_size: int = 500,
@@ -106,7 +106,7 @@ class ParquetLogHandler(logging.Handler):
         super().__init__(level=logging.INFO)
         self._bucket = bucket
         self._prefix = prefix
-        self._database_name = database_name
+        self._database = database
         self._data_delivery_period = data_delivery_period
         self._attempt_no = attempt_no
         self._base_batch_size = batch_size
@@ -150,7 +150,7 @@ class ParquetLogHandler(logging.Handler):
         pid = os.getpid()  # Differentiate between parallel processes in the same run
 
         output_path = (
-            f"s3://{self._bucket}/{self._prefix}/{self._database_name}/data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
+            f"s3://{self._bucket}/{self._prefix}/{self._database}/data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
             f"attempt_no={self._attempt_no}/{pid}_{self._part_number}.snappy.parquet"
         )
 
@@ -174,7 +174,7 @@ class ParquetLogHandler(logging.Handler):
                 ) from e
 
             log_record = StructuredLogRecord(
-                database_name=self._database_name,
+                database=self._database,
                 data_delivery_period=self._data_delivery_period,
                 attempt_no=self._attempt_no,
                 logger_name=PACKAGE_LOGGER_NAME,
@@ -185,8 +185,8 @@ class ParquetLogHandler(logging.Handler):
                 log_timestamp=datetime.now(tz=UTC),
                 pipeline_activity="Logging",
                 process_stage="Processing",
-                table_name="Unknown",
-                field_name="Unknown",
+                table="Unknown",
+                field="Unknown",
                 message=(
                     f"Failed to write {len(self._buffer)} logs to {output_path}: {e} "
                     f"(failure_count={self._write_failures})."
@@ -206,17 +206,13 @@ class ParquetLogHandler(logging.Handler):
     def create_error_log_record(
         self,
         record: logging.LogRecord,
-        table_name: str,
-        field_name: str,
+        table: str,
+        field: str,
         message: str,
     ) -> StructuredLogRecord:
         """Create a structured log record for error logging."""
         return StructuredLogRecord(
-            database_name=(
-                self._database_name
-                if isinstance(self._database_name, str)
-                else "Unknown"
-            ),
+            database=(self._database if isinstance(self._database, str) else "Unknown"),
             data_delivery_period=(
                 self._data_delivery_period
                 if isinstance(self._data_delivery_period, datetime)
@@ -231,8 +227,8 @@ class ParquetLogHandler(logging.Handler):
             log_timestamp=datetime.now(tz=UTC),
             pipeline_activity="Logging",
             process_stage="Processing",
-            table_name=table_name if isinstance(table_name, str) else "Unknown",
-            field_name=field_name if isinstance(field_name, str) else "Unknown",
+            table=table if isinstance(table, str) else "Unknown",
+            field=field if isinstance(field, str) else "Unknown",
             message=message,
         )
 
@@ -241,15 +237,15 @@ class ParquetLogHandler(logging.Handler):
     ) -> dict[str, str | int | datetime]:
         """Convert a logging.LogRecord to a dictionary suitable for writing to parquet."""
         custom_fields_dict = getattr(record, "custom_fields", {})
-        table_name = "Unknown"
-        field_name = "Unknown"
+        table = "Unknown"
+        field = "Unknown"
         if isinstance(custom_fields_dict, dict):
-            table_name = custom_fields_dict.get("table_name", "Unknown")
-            field_name = custom_fields_dict.get("field_name", "Unknown")
+            table = custom_fields_dict.get("table", "Unknown")
+            field = custom_fields_dict.get("field", "Unknown")
 
         try:
             log_record = StructuredLogRecord(
-                database_name=self._database_name,
+                database=self._database,
                 data_delivery_period=self._data_delivery_period,
                 attempt_no=self._attempt_no,
                 logger_name=record.name,
@@ -264,8 +260,8 @@ class ParquetLogHandler(logging.Handler):
         except ValidationError:
             log_record = self.create_error_log_record(
                 record=record,
-                table_name=table_name,
-                field_name=field_name,
+                table=table,
+                field=field,
                 message=f"Failed to parse custom log fields: {custom_fields_dict}",
             )
 
@@ -275,7 +271,7 @@ class ParquetLogHandler(logging.Handler):
 def configure_logging(
     bucket: str,
     prefix: str,
-    database_name: str,
+    database: str,
     data_delivery_period: datetime,
     attempt_no: int,
     batch_size: int = 500,
@@ -287,7 +283,7 @@ def configure_logging(
             The S3 bucket where logs will be stored.
         prefix: str
             The S3 prefix (folder path) under which logs will be stored.
-        database_name: str
+        database: str
             The name of the database associated with the logs.
         data_delivery_period: datetime
             The data delivery period for the logs.
@@ -313,15 +309,13 @@ def configure_logging(
     _validate_logger_inputs(
         bucket=bucket,
         prefix=prefix,
-        database_name=database_name,
+        database=database,
         data_delivery_period=data_delivery_period,
         attempt_no=attempt_no,
         batch_size=batch_size,
     )
 
-    _validate_log_location(
-        bucket, prefix, database_name, data_delivery_period, attempt_no
-    )
+    _validate_log_location(bucket, prefix, database, data_delivery_period, attempt_no)
 
     stream_handler = logging.StreamHandler()
     stream_handler.set_name(_CONSOLE_HANDLER_NAME)
@@ -337,7 +331,7 @@ def configure_logging(
     parquet_handler = ParquetLogHandler(
         bucket=bucket,
         prefix=prefix,
-        database_name=database_name,
+        database=database,
         data_delivery_period=data_delivery_period,
         attempt_no=attempt_no,
         batch_size=batch_size,
@@ -354,8 +348,8 @@ class CustomFields(BaseModel):
 
     pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
     process_stage: Literal["Start", "Processing", "End"]
-    table_name: str
-    field_name: str
+    table: str
+    field: str
 
     model_config = ConfigDict(extra="forbid")
 
@@ -364,16 +358,16 @@ class CustomFields(BaseModel):
         self,
         pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"],
         process_stage: Literal["Start", "Processing", "End"],
-        table_name: str,
-        field_name: str,
+        table: str,
+        field: str,
     ) -> "CustomFields":
         """Create a new instance of CustomFields with the provided values.
 
         Args:
             pipeline_activity (str): The pipeline activity.
             process_stage (str): The process stage.
-            table_name (str): The name of the table.
-            field_name (str): The name of the field.
+            table (str): The name of the table.
+            field (str): The name of the field.
 
         Returns:
             CustomFields: A new instance of CustomFields with the provided values.
@@ -381,8 +375,8 @@ class CustomFields(BaseModel):
         return CustomFields(
             pipeline_activity=pipeline_activity,
             process_stage=process_stage,
-            table_name=table_name,
-            field_name=field_name,
+            table=table,
+            field=field,
         )
 
     def update(
@@ -391,20 +385,20 @@ class CustomFields(BaseModel):
             Literal["BAU", "Deletion", "Logging", "Validation"] | None
         ) = None,
         process_stage: Literal["Start", "Processing", "End"] | None = None,
-        table_name: str | None = None,
-        field_name: str | None = None,
+        table: str | None = None,
+        field: str | None = None,
     ) -> None:
         """Updates the custom fields of the current instance.
 
         Args:
             pipeline_activity (str, optional): The new pipeline activity. Defaults to None.
             process_stage (str, optional): The new process stage. Defaults to None.
-            table_name (str, optional): The new table name. Defaults to None.
-            field_name (str, optional): The new field name. Defaults to None.
+            table (str, optional): The new table name. Defaults to None.
+            field (str, optional): The new field name. Defaults to None.
         """
         self.pipeline_activity = (
             pipeline_activity if pipeline_activity else self.pipeline_activity
         )
         self.process_stage = process_stage if process_stage else self.process_stage
-        self.table_name = table_name if table_name else self.table_name
-        self.field_name = field_name if field_name else self.field_name
+        self.table = table if table else self.table
+        self.field = field if field else self.field

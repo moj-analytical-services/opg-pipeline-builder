@@ -28,20 +28,21 @@ from opg_pipeline_builder.logging.log import (
 _CUSTOM_FIELDS = {
     "pipeline_activity": "Validation",
     "process_stage": "Processing",
-    "table_name": "table_a",
-    "field_name": "field_a",
+    "table": "table_a",
+    "field": "field_a",
 }
 
 
 def create_parquet_handler(
+    bucket: str = "log-bucket",
     data_delivery_period: datetime = datetime(2024, 1, 2, tzinfo=UTC),
     batch_size: int = 2,
 ) -> ParquetLogHandler:
     """Fixture to provide a ParquetLogHandler instance for tests."""
     return ParquetLogHandler(
-        bucket=os.environ.get("DEFAULT_BUCKET", ""),
+        bucket=bucket,
         prefix="prefix/to/log",
-        database_name="test-database",
+        database="test-database",
         data_delivery_period=data_delivery_period,
         attempt_no=1,
         batch_size=batch_size,
@@ -57,13 +58,13 @@ class LogRecordTypedDict(TypedDict):
     log_timestamp: datetime
     pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
     process_stage: Literal["Start", "Processing", "End"]
-    table_name: str
-    field_name: str
+    table: str
+    field: str
     message: str
 
 
 class StructuredLogRecordTypedDict(LogRecordTypedDict):
-    database_name: str
+    database: str
     data_delivery_period: datetime
     attempt_no: int
 
@@ -87,8 +88,8 @@ def create_log_record(
         "custom_fields": {
             "pipeline_activity": "Validation",
             "process_stage": "Processing",
-            "table_name": "table_a",
-            "field_name": "field_a",
+            "table": "table_a",
+            "field": "field_a",
         },
     }
 
@@ -102,12 +103,12 @@ def create_log_record(
         "log_timestamp": log_timestamp,
         "pipeline_activity": "Validation",
         "process_stage": "Processing",
-        "table_name": "table_a",
-        "field_name": "field_a",
+        "table": "table_a",
+        "field": "field_a",
         "message": msg,
     }
     structured_log_record_dict: StructuredLogRecordTypedDict = {
-        "database_name": "test-database",
+        "database": "test-database",
         "data_delivery_period": data_delivery_period,
         "attempt_no": 1,
         **log_record_dict,
@@ -118,13 +119,6 @@ def create_log_record(
 
 def mock_flush_locked(self: ParquetLogHandler) -> None:
     self._buffer.clear()
-
-
-def _create_test_bucket(s3: boto3.client) -> None:
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -153,8 +147,8 @@ def test_custom_fields_reject_extra() -> None:
         CustomFields(  # type: ignore [call-arg]
             pipeline_activity="Validation",
             process_stage="Processing",
-            table_name="table_a",
-            field_name="field_a",
+            table="table_a",
+            field="field_a",
             extra_field="not_allowed",
         )
 
@@ -203,7 +197,7 @@ def test_structured_log_record_invalid_datetime(
     (
         "bucket",
         "prefix",
-        "database_name",
+        "database",
         "data_delivery_period",
         "attempt_no",
         "batch_size",
@@ -235,7 +229,7 @@ def test_structured_log_record_invalid_datetime(
             datetime(2024, 1, 1, tzinfo=UTC),
             1,
             2,
-            "database_name must be non-empty",
+            "database must be non-empty",
         ),
         (
             "bucket",
@@ -269,7 +263,7 @@ def test_structured_log_record_invalid_datetime(
 def test_validate_logger_inputs(
     bucket: str,
     prefix: str,
-    database_name: str,
+    database: str,
     data_delivery_period: datetime,
     attempt_no: int,
     batch_size: int,
@@ -280,7 +274,7 @@ def test_validate_logger_inputs(
         _validate_logger_inputs(
             bucket=bucket,
             prefix=prefix,
-            database_name=database_name,
+            database=database,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
             batch_size=batch_size,
@@ -289,25 +283,21 @@ def test_validate_logger_inputs(
 
 def test_validate_log_location_success(s3: boto3.client) -> None:
     """Test that validate log location correctly creates and deletes test file in S3."""
-    _create_test_bucket(s3)
-
     _validate_log_location(
-        bucket="test-bucket",
+        bucket="log-bucket",
         prefix="test/log",
-        database_name="test-database",
+        database="test-database",
         data_delivery_period=datetime(2024, 1, 2, tzinfo=UTC),
         attempt_no=1,
     )
 
     assert not wr.s3.does_object_exist(
-        path="s3://test-bucket/test/log/test_test-database_20240102T000000_1.snappy.parquet"
+        path="s3://log-bucket/test/log/test_test-database_20240102T000000_1.snappy.parquet"
     )
 
 
 def test_validate_log_location_fail(s3: boto3.client) -> None:
     """Test that validate log location correctly raises a RuntimeError."""
-    _create_test_bucket(s3)
-
     with (
         patch(
             "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
@@ -316,9 +306,9 @@ def test_validate_log_location_fail(s3: boto3.client) -> None:
         pytest.raises(RuntimeError) as exc_info,
     ):
         _validate_log_location(
-            bucket="test-bucket",
+            bucket="log-bucket",
             prefix="test/log",
-            database_name="test-database",
+            database="test-database",
             data_delivery_period=datetime(2024, 1, 2, tzinfo=UTC),
             attempt_no=1,
         )
@@ -404,8 +394,6 @@ def test_close_fail() -> None:
 
 def test_flush_locked_single_part(s3: boto3.client) -> None:
     """Test that _flush_locked writes to mocked S3."""
-    _create_test_bucket(s3)
-
     pid = os.getpid()
 
     handler = create_parquet_handler()
@@ -418,7 +406,7 @@ def test_flush_locked_single_part(s3: boto3.client) -> None:
     handler._flush_locked()
 
     written_log = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{pid}_0.snappy.parquet",
+        path=f"s3://log-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{pid}_0.snappy.parquet",
     )
 
     pd.testing.assert_frame_equal(
@@ -429,8 +417,6 @@ def test_flush_locked_single_part(s3: boto3.client) -> None:
 
 def test_flush_locked_multiple_parts(s3: boto3.client) -> None:
     """Test that _flush_locked writes multiple parts to mocked S3 when buffer exceeds batch size."""
-    _create_test_bucket(s3)
-
     pid = os.getpid()
 
     handler = create_parquet_handler(batch_size=2)
@@ -444,10 +430,10 @@ def test_flush_locked_multiple_parts(s3: boto3.client) -> None:
     handler._flush_locked()
 
     written_log_part_0 = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{pid}_0.snappy.parquet",
+        path=f"s3://log-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{pid}_0.snappy.parquet",
     )
     written_log_part_1 = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{pid}_1.snappy.parquet",
+        path=f"s3://log-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{pid}_1.snappy.parquet",
     )
 
     pd.testing.assert_frame_equal(
@@ -476,8 +462,6 @@ def test_flush_locked_fail(
     s3: boto3.client, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Test that _flush_locked increases batch size to hard limit and fails, if repeated writes fail."""
-    _create_test_bucket(s3)
-
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
     handler._buffer = [record_1]  # type: ignore [list-item]
@@ -516,8 +500,6 @@ def test_flush_locked_fail_then_success(
     s3: boto3.client, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Test that _flush_locked increases batch size to hard limit and fails, if repeated writes fail."""
-    _create_test_bucket(s3)
-
     handler = create_parquet_handler(batch_size=1)
     _, _, record_1 = create_log_record(line_number=42)
     handler._buffer = [record_1]  # type: ignore [list-item]
@@ -543,7 +525,7 @@ def test_flush_locked_fail_then_success(
     handler._flush_locked()
 
     out_file = wr.s3.read_parquet(
-        path=f"s3://test-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{os.getpid()}_0.snappy.parquet",
+        path=f"s3://log-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{os.getpid()}_0.snappy.parquet",
     )
 
     assert handler._batch_size == 1
@@ -554,7 +536,7 @@ def test_flush_locked_fail_then_success(
             [
                 record_1,
                 {
-                    "database_name": "test-database",
+                    "database": "test-database",
                     "data_delivery_period": datetime(2024, 1, 2, tzinfo=UTC),
                     "attempt_no": 1,
                     "logger_name": PACKAGE_LOGGER_NAME,
@@ -565,10 +547,10 @@ def test_flush_locked_fail_then_success(
                     "log_timestamp": datetime(2024, 1, 2, 12, 0, tzinfo=UTC),
                     "pipeline_activity": "Logging",
                     "process_stage": "Processing",
-                    "table_name": "Unknown",
-                    "field_name": "Unknown",
+                    "table": "Unknown",
+                    "field": "Unknown",
                     "message": (
-                        f"Failed to write 1 logs to s3://test-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{os.getpid()}_0.snappy.parquet: S3 write failed (failure_count=1)."
+                        f"Failed to write 1 logs to s3://log-bucket/prefix/to/log/test-database/data_delivery_period=20240102/attempt_no=1/{os.getpid()}_0.snappy.parquet: S3 write failed (failure_count=1)."
                     ),
                 },
             ]
@@ -585,7 +567,7 @@ def test_record_to_row_success() -> None:
     out_dict = handler._record_to_row(log_record)
 
     assert out_dict == {
-        "database_name": "test-database",
+        "database": "test-database",
         "data_delivery_period": datetime(2024, 1, 2, tzinfo=UTC),
         "attempt_no": 1,
         "logger_name": "opg_pipeline_builder.test_module",
@@ -596,8 +578,8 @@ def test_record_to_row_success() -> None:
         "log_timestamp": datetime(2024, 1, 4, 10, 16, 6, tzinfo=UTC),
         "pipeline_activity": "Validation",
         "process_stage": "Processing",
-        "table_name": "table_a",
-        "field_name": "field_a",
+        "table": "table_a",
+        "field": "field_a",
         "message": "test log",
     }
 
@@ -611,7 +593,7 @@ def test_record_to_row_validation_error() -> None:
         out_dict = handler._record_to_row(record)
 
     assert out_dict == {
-        "database_name": "test-database",
+        "database": "test-database",
         "data_delivery_period": datetime(2024, 1, 2, tzinfo=UTC),
         "attempt_no": 1,
         "logger_name": "opg_pipeline_builder.test_module",
@@ -622,10 +604,10 @@ def test_record_to_row_validation_error() -> None:
         "log_timestamp": datetime(2024, 1, 2, 0, 0, tzinfo=UTC),
         "pipeline_activity": "Logging",
         "process_stage": "Processing",
-        "table_name": "table_a",
-        "field_name": "field_a",
+        "table": "table_a",
+        "field": "field_a",
         "message": (
-            "Failed to parse custom log fields: {'pipeline_activity': 'Validation', 'process_stage': 'Processing', 'table_name': 'table_a', 'field_name': 'field_a'}"
+            "Failed to parse custom log fields: {'pipeline_activity': 'Validation', 'process_stage': 'Processing', 'table': 'table_a', 'field': 'field_a'}"
         ),
     }
 
@@ -643,9 +625,9 @@ def test_configure_logging_create_correct_handlers() -> None:
         ) as mock_validate_location,
     ):
         package_logger = configure_logging(
-            bucket="test-bucket",
+            bucket="log-bucket",
             prefix="pipeline-logs",
-            database_name="test-database",
+            database="test-database",
             data_delivery_period=datetime(2024, 1, 2, tzinfo=UTC),
             attempt_no=1,
             batch_size=100,
@@ -663,9 +645,9 @@ def test_configure_logging_create_correct_handlers() -> None:
     assert package_logger.level == logging.INFO
     assert package_logger.propagate is False
     parquet_handler: ParquetLogHandler = package_logger.handlers[1]  # type: ignore [assignment]
-    assert parquet_handler._bucket == "test-bucket"
+    assert parquet_handler._bucket == "log-bucket"
     assert parquet_handler._prefix == "pipeline-logs"
-    assert parquet_handler._database_name == "test-database"
+    assert parquet_handler._database == "test-database"
     assert parquet_handler._data_delivery_period == datetime(2024, 1, 2, tzinfo=UTC)
     assert parquet_handler._attempt_no == 1
     assert parquet_handler._batch_size == 100
@@ -679,9 +661,9 @@ def test_configure_logging_no_second_configure() -> None:
         "opg_pipeline_builder.logging.log._validate_log_location", autospec=True
     ):
         _ = configure_logging(
-            bucket="test-bucket",
+            bucket="log-bucket",
             prefix="pipeline-logs",
-            database_name="test-database",
+            database="test-database",
             data_delivery_period=datetime(2024, 1, 2, tzinfo=UTC),
             attempt_no=1,
             batch_size=100,
@@ -689,9 +671,9 @@ def test_configure_logging_no_second_configure() -> None:
 
     with pytest.raises(RuntimeError, match="Logger has already been configured"):
         configure_logging(
-            bucket="test-bucket",
+            bucket="log-bucket",
             prefix="pipeline-logs",
-            database_name="test-database",
+            database="test-database",
             data_delivery_period=datetime(2024, 1, 3, tzinfo=UTC),
             attempt_no=1,
             batch_size=100,
@@ -702,12 +684,10 @@ def test_multiple_module_loggers_write_to_mocked_s3(
     s3: boto3.client,
 ) -> None:
     """Test that multiple loggers from different modules write to the same ParquetLogHandler and mocked S3."""
-    _create_test_bucket(s3)
-
     package_logger = configure_logging(
-        bucket="test-bucket",
+        bucket="log-bucket",
         prefix="pipeline-logs",
-        database_name="test-database",
+        database="test-database",
         attempt_no=1,
         data_delivery_period=datetime(2024, 1, 6, tzinfo=UTC),
         batch_size=5,
@@ -727,7 +707,7 @@ def test_multiple_module_loggers_write_to_mocked_s3(
     pid = os.getpid()
 
     written_log = wr.s3.read_parquet(
-        path=f"s3://test-bucket/pipeline-logs/test-database/data_delivery_period=20240106/attempt_no=1/{pid}_0.snappy.parquet",
+        path=f"s3://log-bucket/pipeline-logs/test-database/data_delivery_period=20240106/attempt_no=1/{pid}_0.snappy.parquet",
     )
 
     assert list(written_log["logger_name"]) == [
@@ -744,7 +724,7 @@ def test_multiple_module_loggers_write_to_mocked_s3(
         "Log 2 from module 2",
         "Log 3 from module 1",
     ]
-    assert list(written_log["database_name"]) == ["test-database"] * 5
+    assert list(written_log["database"]) == ["test-database"] * 5
     assert list(written_log["pipeline_activity"]) == ["Validation"] * 5
     assert len(written_log) == 5
 
@@ -762,12 +742,10 @@ def _mp_worker(process_num: int) -> None:
 
 def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -> None:
     """Test that two threads write logs with PID-isolated output paths and parts logic works."""
-    _create_test_bucket(s3)
-
     logger = configure_logging(
-        bucket="test-bucket",
+        bucket="log-bucket",
         prefix="pipeline-logs",
-        database_name="test-database",
+        database="test-database",
         data_delivery_period=datetime(2024, 1, 6, tzinfo=UTC),
         attempt_no=1,
         batch_size=3,
@@ -790,14 +768,14 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
     expected_num_of_log_files = 4
 
     all_logs = wr.s3.list_objects(
-        path="s3://test-bucket/pipeline-logs/test-database/data_delivery_period=20240106/"
+        path="s3://log-bucket/pipeline-logs/test-database/data_delivery_period=20240106/"
     )
     assert len(all_logs) == expected_num_of_log_files
 
     loaded_files = []
     for i in range(expected_num_of_log_files):
         log_file = wr.s3.read_parquet(
-            path=f"s3://test-bucket/pipeline-logs/test-database/data_delivery_period=20240106/attempt_no=1/{os.getpid()}_{i}.snappy.parquet",
+            path=f"s3://log-bucket/pipeline-logs/test-database/data_delivery_period=20240106/attempt_no=1/{os.getpid()}_{i}.snappy.parquet",
         )
         loaded_files.append(log_file)
 
@@ -809,18 +787,18 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
         for log_num in range(1, 7):
             expected_logs.append(
                 {
-                    "database_name": "test-database",
+                    "database": "test-database",
                     "data_delivery_period": datetime(2024, 1, 6, tzinfo=UTC),
                     "attempt_no": 1,
                     "logger_name": PACKAGE_LOGGER_NAME,
                     "module": "test_log",
                     "function": "_mp_worker",
-                    "line_number": 756,
+                    "line_number": 737,
                     "log_level": "INFO",
                     "pipeline_activity": "Validation",
                     "process_stage": "Processing",
-                    "table_name": "table_a",
-                    "field_name": "field_a",
+                    "table": "table_a",
+                    "field": "field_a",
                     "message": f"Log {log_num} from process {process_num}",
                 }
             )
@@ -872,8 +850,8 @@ def test_custom_fields_rejects_invalid_values(
         CustomFields(
             pipeline_activity=pipeline_activity,  # type: ignore [arg-type]
             process_stage=process_stage,  # type: ignore [arg-type]
-            table_name="table_a",
-            field_name="field_a",
+            table="table_a",
+            field="field_a",
         )
 
 
@@ -883,8 +861,8 @@ def test_custom_fields_rejects_extra() -> None:
         CustomFields(  # type: ignore [call-arg]
             pipeline_activity="BAU",
             process_stage="Processing",
-            table_name="table_a",
-            field_name="field_a",
+            table="table_a",
+            field="field_a",
             extra_field="extra",
         )
 
@@ -894,14 +872,14 @@ def test_set_custom_fields() -> None:
     custom_fields_instance = CustomFields.set_custom_fields(
         pipeline_activity="BAU",
         process_stage="Processing",
-        table_name="table_a",
-        field_name="field_a",
+        table="table_a",
+        field="field_a",
     )
     assert isinstance(custom_fields_instance, CustomFields)
     assert custom_fields_instance.pipeline_activity == "BAU"
     assert custom_fields_instance.process_stage == "Processing"
-    assert custom_fields_instance.table_name == "table_a"
-    assert custom_fields_instance.field_name == "field_a"
+    assert custom_fields_instance.table == "table_a"
+    assert custom_fields_instance.field == "field_a"
 
 
 def test_update_custom_fields() -> None:
@@ -909,16 +887,16 @@ def test_update_custom_fields() -> None:
     custom_fields_instance = CustomFields.set_custom_fields(
         pipeline_activity="BAU",
         process_stage="Processing",
-        table_name="table_a",
-        field_name="field_a",
+        table="table_a",
+        field="field_a",
     )
     custom_fields_instance.update(
         pipeline_activity="Deletion",
         process_stage="Start",
-        table_name="table_b",
-        field_name="field_b",
+        table="table_b",
+        field="field_b",
     )
     assert custom_fields_instance.pipeline_activity == "Deletion"
     assert custom_fields_instance.process_stage == "Start"
-    assert custom_fields_instance.table_name == "table_b"
-    assert custom_fields_instance.field_name == "field_b"
+    assert custom_fields_instance.table == "table_b"
+    assert custom_fields_instance.field == "field_b"

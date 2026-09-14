@@ -64,7 +64,7 @@ def setup_logging(s3: boto3.client) -> Generator[None]:
     configure_logging(
         bucket="log-bucket",
         prefix="prefix",
-        database_name="database_name",
+        database="database_name",
         data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
         attempt_no=1,
     )

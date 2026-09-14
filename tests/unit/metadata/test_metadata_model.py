@@ -1,32 +1,60 @@
-# from pathlib import Path
-# from typing import Any
+import re
+from datetime import UTC, date, datetime
+from typing import Any
+from unittest.mock import patch
 
-# import numpy as np
-# import pandas as pd
-# import pytest
+import pytest
 
-# from opg_pipeline_builder.models import metadata_model as m
-
-
-# def create_stage(
-#     name: str = "raw", data_type: str = "string", pattern: str = "pattern"
-# ) -> m.Stage:
-#     return m.Stage(name=name, type=data_type, pattern=pattern)
+from opg_pipeline_builder.models import metadata_model as m
+from opg_pipeline_builder.models import modelling_exceptions as exc
 
 
-# def create_column(
-#     name: str = "id",
-#     nullable: bool = True,
-#     enum: list[str | int] | None = None,
-#     stages: list[m.Stage] | None = None,
-# ) -> m.Column:
-#     enum = enum or ["A", "B"]
-#     stages = stages or [create_stage()]
-#     return m.Column(name=name, nullable=nullable, enum=enum, stages=stages)
+def create_column(
+    name: str = "id",
+    description: str = "description",
+    semantic_type: str = "generic_string",
+    etl_stages: list[str] | None = None,
+    sensitive: bool = False,
+    is_composite_key: bool = False,
+    is_partition: bool = False,
+    input_data_type: type = str,
+    output_data_type: type = str,
+    input_value_format: str = "",
+    output_value_format: str = "",
+    regex_pattern: str = "",
+    nullable: bool = True,
+    allowed_values: list[str | int] | None = None,
+    default_value: str | int | None = "default",
+) -> m.Column:
+    """Create a Column instance with the given parameters."""
+
+    allowed_values = allowed_values or []
+    etl_stages = etl_stages or ["raw", "curated"]
+
+    return m.Column.model_validate(
+        {
+            "name": name,
+            "description": description,
+            "semantic_type": semantic_type,
+            "etl_stages": etl_stages,
+            "sensitive": sensitive,
+            "is_composite_key": is_composite_key,
+            "is_partition": is_partition,
+            "input_data_type": input_data_type,
+            "output_data_type": output_data_type,
+            "input_value_format": input_value_format,
+            "output_value_format": output_value_format,
+            "regex_pattern": regex_pattern,
+            "nullable": nullable,
+            "allowed_values": allowed_values,
+            "default_value": default_value,
+        },
+        context={"table_name": "test_table"},
+    )
 
 
-# def create_file_format(name: str = "raw", file_format: str = "parquet") -> m.FileFormat:
-#     return m.FileFormat(name=name, format=file_format)
+def create_file_format(name: str = "raw", file_format: str = "parquet") -> m.FileFormat:
+    return m.FileFormat(name=name, format=file_format)
 
 
 # def create_table_metadata(
@@ -36,8 +64,6 @@
 #     columns: list[m.Column],
 # ) -> m.TableMetaData:
 #     return m.TableMetaData(
-#         converted_from="arrow_schema",
-#         schema_link="https://link-to-schema.com",
 #         name=name,
 #         description="description",
 #         file_formats=file_formats,
@@ -48,122 +74,421 @@
 #     )
 
 
-# @pytest.mark.parametrize(
-#     ("data_type"),
-#     [
-#         ("string"),
-#         ("list<struct<"),
-#         ("list<struct<stuff_and_more_stuff"),
-#         ("list<struct<stuff_and_list<struct<"),
-#     ],
-# )
-# def test_stage_valid(data_type: str) -> None:
-#     stage = create_stage(data_type=data_type)
-#     assert stage.name == "raw"
-#     assert stage.type == data_type
-#     assert stage.pattern == "pattern"
+def test_column_valid() -> None:
+    column = create_column(
+        name="address",
+        description="An address",
+        semantic_type="postcode",
+        sensitive=True,
+        is_composite_key=True,
+        is_partition=True,
+        input_data_type=int,
+        output_data_type=str,
+        input_value_format="date-time",
+        output_value_format="date-time",
+        regex_pattern=".*",
+        nullable=False,
+        allowed_values=[1, 2],
+        default_value=1,
+    )
+    assert column.name == "address"
+    assert column.description == "An address"
+    assert column.semantic_type == "postcode"
+    assert column.etl_stages == ["raw", "curated"]
+    assert column.sensitive is True
+    assert column.is_composite_key is True
+    assert column.is_partition is True
+    assert column.input_data_type == int
+    assert column.output_data_type == str
+    assert column.input_value_format == "date-time"
+    assert column.output_value_format == "date-time"
+    assert column.regex_pattern == ".*"
+    assert column.nullable is False
+    assert column.allowed_values == [1, 2]
+    assert column.default_value == 1
 
 
-# @pytest.mark.parametrize(
-#     ("name", "data_type", "exception", "err"),
-#     [
-#         (
-#             "invalid",
-#             "string",
-#             m.InvalidStageError,
-#             "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
-#         ),
-#         (
-#             "raw",
-#             "invalid",
-#             m.InvalidTypeError,
-#             "Data type 'invalid' is not in the ALLOWED_DATA_TYPES constant",
-#         ),
-#         (
-#             "raw",
-#             "strong",
-#             m.InvalidTypeError,
-#             "Data type 'strong' is not in the ALLOWED_DATA_TYPES constant",
-#         ),
-#         (
-#             "raw",
-#             "list<struct",
-#             m.InvalidTypeError,
-#             "Data type 'list<struct' is not in the ALLOWED_DATA_TYPES constant",
-#         ),
-#         (
-#             "raw",
-#             "list<string<",
-#             m.InvalidTypeError,
-#             "Data type 'list<string<' is not in the ALLOWED_DATA_TYPES constant",
-#         ),
-#     ],
-# )
-# def test_stage_invalid(name: str, data_type: str, exception: Any, err: str) -> None:
-#     with pytest.raises(exception) as e:
-#         create_stage(name, data_type)
-
-#     assert str(e.value) == err
+def test_column_validate_name_valid() -> None:
+    """Test that an invalid column name raises InvalidColumnNameError"""
+    with patch(
+        "opg_pipeline_builder.models.metadata_model.is_valid_identifier"
+    ) as mock_valid:
+        mock_valid.return_value = ""
+        col = create_column()
+    assert col.name == "id"
 
 
-# def test_column_valid() -> None:
-#     column = create_column(
-#         stages=[
-#             create_stage(),
-#             create_stage(name="processed"),
-#             create_stage(name="curated", data_type="int64"),
-#         ],
-#     )
-#     assert column.name == "id"
-#     assert column.nullable
-#     assert column.enum == ["A", "B"]
-#     assert column.stages[0].name == "raw"
-#     assert column.stages[0].type == "string"
-#     assert column.stages[1].name == "processed"
-#     assert column.stages[2].name == "curated"
-#     assert column.stages[2].type == "int64"
+def test_column_validate_name_invalid(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that an invalid column name raises InvalidColumnNameError"""
+    with patch(
+        "opg_pipeline_builder.models.metadata_model.is_valid_identifier"
+    ) as mock_valid:
+        mock_valid.return_value = "Validation error"
+        with pytest.raises(exc.InvalidColumnNameError):
+            create_column()
+
+    assert any("Validation error" in record.message for record in caplog.records)
 
 
-# def test_column_get_stage_for_column_valid() -> None:
-#     column = create_column(
-#         stages=[
-#             create_stage(),
-#             create_stage(name="processed"),
-#             create_stage(name="curated", data_type="int64"),
-#         ],
-#     )
-
-#     stage = column.get_stage_for_column("processed")
-#     assert stage.name == "processed"
-#     assert stage.type == "string"
-
-
-# def test_column_get_stage_for_column_invalid() -> None:
-#     column = create_column(
-#         stages=[
-#             create_stage(),
-#             create_stage(name="processed"),
-#             create_stage(name="curated", data_type="int64"),
-#         ],
-#     )
-
-#     with pytest.raises(m.InvalidStageError) as e:
-#         column.get_stage_for_column("invalid")
-
-#     assert (
-#         str(e.value) == "No metadata is configured for stage 'invalid' for column 'id'"
-#     )
+@pytest.mark.parametrize(
+    ("semantic_type"),
+    [
+        ("postcode"),
+        ("boolean_flag"),
+        ("country"),
+    ],
+)
+def test_validate_semantic_type_valid(semantic_type: str) -> None:
+    """Test that valid semantic types are accepted."""
+    create_column(semantic_type=semantic_type)
 
 
-# @pytest.mark.parametrize(
-#     ("stage", "present"), [("raw", True), ("processed", True), ("invalid", False)]
-# )
-# def test_column_has_stage_valid(stage: str, present: bool) -> None:
-#     column = create_column(
-#         stages=[create_stage(), create_stage(name="processed")],
-#     )
+@pytest.mark.parametrize(
+    ("semantic_type"),
+    [
+        ("pcode"),
+        ("invalid"),
+        (""),
+    ],
+)
+def test_validate_semantic_type_invalid(
+    semantic_type: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that invalid semantic types raise InvalidSemanticTypeError."""
+    with pytest.raises(
+        exc.InvalidSemanticTypeError,
+        match=f"Semantic type '{semantic_type}' is not in the ALLOWED_SEMANTIC_TYPES constant",
+    ):
+        create_column(semantic_type=semantic_type)
+    assert any("Semantic type" in record.message for record in caplog.records)
 
-#     assert column.has_stage(stage) is present
+
+@pytest.mark.parametrize(
+    ("etl_stage"),
+    [(["raw"]), (["curated"]), (["raw", "curated"]), ([])],
+)
+def test_validate_etl_stage_valid(etl_stage: list[str]) -> None:
+    """Test that valid ETL stages are accepted."""
+    create_column(etl_stages=etl_stage)
+
+
+@pytest.mark.parametrize(
+    ("etl_stage", "exp_err"),
+    [
+        (["invalid"], "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant"),
+        (
+            ["invalid", "raw"],
+            "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
+        ),
+        (
+            ["invalid", "also_invalid"],
+            "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
+        ),
+        (
+            ["raw", "invalid"],
+            "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
+        ),
+    ],
+)
+def test_validate_etl_stage_invalid(
+    etl_stage: list[str], exp_err: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that invalid ETL stages raise InvalidStageError."""
+    with pytest.raises(exc.InvalidStageError, match=exp_err):
+        create_column(etl_stages=etl_stage)
+    assert any(exp_err in record.message for record in caplog.records)
+
+
+def test_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that an empty ETL stages list raises InvalidStageError."""
+    with pytest.raises(exc.InvalidStageError, match="ETL stages list cannot be empty"):
+        m.Column(
+            name="name",
+            semantic_type="postcode",
+            etl_stages=[],
+            input_data_type="string",
+            output_data_type="string",
+        )
+    assert any(
+        "ETL stages list cannot be empty" in record.message for record in caplog.records
+    )
+
+
+@pytest.mark.parametrize(
+    ("data_type"),
+    [
+        str,
+        list[str],
+        list[list[str]],
+        int,
+        list[int],
+        float,
+        list[float],
+        bool,
+        list[bool],
+        date,
+        list[date],
+        datetime,
+        type(None),
+        list[dict[str, dict[str, int]]],
+        list[dict[str, int]],
+    ],
+)
+def test_validate_data_type_valid(data_type: type) -> None:
+    """Test that valid data types are accepted."""
+    create_column(
+        input_data_type=data_type, output_data_type=data_type, default_value=None
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_data_type", "output_data_type", "err_attr"),
+    [
+        (list[list[list[str]]], str, "input_data_type"),
+        (str, dict[str, list[str]], "output_data_type"),
+        (list[datetime], list[list[str]], "input_data_type"),
+        (list[dict[str, dict[str, int]]], list[list[list[str]]], "output_data_type"),
+        (type(None), list[list[list[str]]], "output_data_type"),
+    ],
+)
+def test_validate_data_type_invalid(
+    input_data_type: type,
+    output_data_type: type,
+    err_attr: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that invalid data types raise InvalidDataTypeError."""
+    err_attr_val = (
+        input_data_type if err_attr == "input_data_type" else output_data_type
+    )
+    with pytest.raises(
+        exc.InvalidTypeError,
+        match=re.escape(f"Data type '{err_attr_val}' for field '{err_attr}' is not"),
+    ):
+        create_column(
+            input_data_type=input_data_type, output_data_type=output_data_type
+        )
+    assert any(
+        f"Data type '{err_attr_val}' for field '{err_attr}' is not" in record.message
+        for record in caplog.records
+    )
+
+
+def test_validate_value_format_valid() -> None:
+    """Test that a valid value format is accepted."""
+    create_column(input_value_format="date-time", output_value_format="date-time")
+
+
+@pytest.mark.parametrize(
+    ("input_value_format", "output_value_format", "err_attr"),
+    [
+        ("invalid", "date-time", "input_value_format"),
+        ("date-time", "invalid", "output_value_format"),
+        ("invalid", "invalid", "input_value_format"),
+    ],
+)
+def test_validate_value_format_invalid(
+    input_value_format: str,
+    output_value_format: str,
+    err_attr: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that an invalid value format raises InvalidValueFormatError."""
+    err_attr_val = (
+        input_value_format if err_attr == "input_value_format" else output_value_format
+    )
+    with pytest.raises(
+        exc.InvalidFormatError,
+        match=re.escape(f"Value format '{err_attr_val}' for field '{err_attr}' is not"),
+    ):
+        create_column(
+            input_value_format=input_value_format,
+            output_value_format=output_value_format,
+        )
+    assert any(
+        f"Value format '{err_attr_val}' for field '{err_attr}' is not" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "partition", "nullable"),
+    [
+        (True, False, False),
+        (False, False, True),
+    ],
+)
+def test_partition_and_composite_keys_not_nullable_valid(
+    key: bool, partition: bool, nullable: bool
+) -> None:
+    """Test that partition and composite keys cannot be nullable."""
+    create_column(is_composite_key=key, is_partition=partition, nullable=nullable)
+
+
+@pytest.mark.parametrize(
+    ("key", "partition", "nullable"),
+    [
+        (True, False, True),
+        (False, True, True),
+        (True, True, True),
+    ],
+)
+def test_partition_and_composite_keys_not_nullable_invalid(
+    key: bool, partition: bool, nullable: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that partition and composite keys cannot be nullable."""
+    with pytest.raises(
+        exc.InvalidColumnError,
+        match="Column 'id' is part of a composite key or partition and cannot be nullable",
+    ):
+        create_column(is_composite_key=key, is_partition=partition, nullable=nullable)
+
+    assert any(
+        "Column 'id' is part of a composite key or partition and cannot be nullable"
+        in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.parametrize(
+    ("data_type", "allowed_values"),
+    [
+        (str, ["a", "bee"]),
+        (int, [1, 2]),
+    ],
+)
+def test_allowed_values_match_input_data_type_valid(
+    data_type: type, allowed_values: list[Any]
+) -> None:
+    """Test that allowed values match the input data type."""
+    create_column(
+        input_data_type=data_type,
+        allowed_values=allowed_values,
+        default_value=allowed_values[0],
+    )
+
+
+@pytest.mark.parametrize(
+    ("data_type", "allowed_values"),
+    [
+        (list[str], [["a"], ["a", "b"]]),
+        (list[list[str]], [[["a"]], [["a", "b"]]]),
+        (list[int], [[1], [1, 2, 3]]),
+        (float, [12.3334324, 22.4939332]),
+        (list[float], [[12.3334324], [12.3334324, 22.4939332]]),
+        (bool, [True, False]),
+        (list[bool], [[True], [True, False]]),
+        (date, [date(2024, 6, 1), date(2024, 6, 2)]),
+        (list[date], [[date(2024, 6, 1), date(2024, 6, 1), date(2024, 6, 2)]]),
+        (
+            datetime,
+            [
+                datetime(2024, 6, 1, 12, tzinfo=UTC),
+                datetime(2024, 6, 2, 12, tzinfo=UTC),
+            ],
+        ),
+        (
+            datetime,
+            [
+                datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
+                datetime(2024, 6, 2, 12, 0, 0, tzinfo=UTC),
+            ],
+        ),
+        (type(None), [None]),
+    ],
+)
+def test_allowed_values_match_input_data_type_skipped(
+    data_type: type, allowed_values: list[Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that allowed values check is skipped for unsupported data types."""
+    create_column(input_data_type=data_type, allowed_values=allowed_values)
+    assert (
+        "Only check allowed values for 'str' and 'int' input data types. Skipping check for"
+        in caplog.text
+    )
+
+
+@pytest.mark.parametrize(
+    ("data_type", "allowed_values"),
+    [
+        (int, ["a", "b"]),
+        (str, [1, 2]),
+    ],
+)
+def test_allowed_values_match_input_data_type_invalid(
+    data_type: type,
+    allowed_values: list[Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that allowed values check raises an error for mismatched input data types."""
+    with pytest.raises(exc.InvalidTypeError):
+        create_column(input_data_type=data_type, allowed_values=allowed_values)
+
+    assert (
+        f"Allowed value '{allowed_values[0]}' with type '{type(allowed_values[0])}' does not match the input data type '{data_type}'"
+        in caplog.records[0].message
+    )
+
+
+@pytest.mark.parametrize(
+    ("data_type", "default_value"),
+    [
+        (str, "a"),
+        (int, 1),
+    ],
+)
+def test_default_value_match_input_data_type_valid(
+    data_type: type, default_value: str | int
+) -> None:
+    """Test that default value match the input data type."""
+    create_column(input_data_type=data_type, default_value=default_value)
+
+
+@pytest.mark.parametrize(
+    ("data_type", "default_value"),
+    [
+        (list[str], ["a"]),
+        (list[int], [1]),
+        (float, 22.4939332),
+        (list[float], [12.3334324]),
+        (bool, True),
+        (list[bool], True),
+        (date, date(2024, 6, 1)),
+        (list[date], [date(2024, 6, 1)]),
+        (datetime, datetime(2024, 6, 1, 12, tzinfo=UTC)),
+    ],
+)
+def test_default_value_match_input_data_type_skipped(
+    data_type: type, default_value: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that default value check is skipped for unsupported data types."""
+    create_column(input_data_type=data_type, default_value=default_value)
+    assert (
+        "Only check default value for 'str' and 'int' input data types. Skipping check for"
+        in caplog.text
+    )
+
+
+@pytest.mark.parametrize(
+    ("data_type", "default_value"),
+    [
+        (int, "a"),
+        (str, 1),
+    ],
+)
+def test_default_value_match_input_data_type_invalid(
+    data_type: type,
+    default_value: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that default value check raises an error for mismatched input data types."""
+    with pytest.raises(exc.InvalidTypeError):
+        create_column(input_data_type=data_type, default_value=default_value)
+
+    assert (
+        f"Default value '{default_value}' with type '{type(default_value)}' does not match the input data type '{data_type}'"
+        in caplog.records[0].message
+    )
 
 
 # def test_file_format_valid() -> None:

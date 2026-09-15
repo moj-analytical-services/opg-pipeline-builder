@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 ALLOWED_SEMANTIC_TYPES: tuple[str, ...] = (
     "date",
     "time",
@@ -20,28 +22,23 @@ ALLOWED_SEMANTIC_TYPES: tuple[str, ...] = (
 
 ALLOWED_ETL_STAGES: tuple[str, ...] = ("raw", "curated")
 
-ALLOWED_DATA_TYPES: tuple[str, ...] = (
-    "string",
-    "list<string>",
-    "list<list<string>>",
-    "int32",
-    "list<int32>",
-    "int64",
-    "float64",
-    "list<float64>",
-    "decimal128(12,2)",
-    "bool",
-    "list<bool>",
-    "date32",
-    "list<date32>",
-    "timestamp(ns)",
-    "timestamp(ms)",
-    "timestamp(s)",
-    "datetime",
-    "null",
+ALLOWED_DATA_TYPES: tuple[type, ...] = (
+    str,
+    list[str],
+    list[list[str]],
+    int,
+    list[int],
+    float,
+    list[float],
+    bool,
+    list[bool],
+    date,
+    list[date],
+    datetime,
+    type(None),
 )
 
-ALLOWED_STRUCT_DATA_TYPES: tuple[str, ...] = ("list<struct<",)
+ALLOWED_STRUCT_DATA_TYPES: tuple[str, ...] = ("list[dict[",)
 
 ALLOWED_VALUE_FORMATS: tuple[str, ...] = ("date-time",)
 

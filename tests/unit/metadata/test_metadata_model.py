@@ -8,6 +8,10 @@ import pytest
 from opg_pipeline_builder.models import metadata_model as m
 from opg_pipeline_builder.models import modelling_exceptions as exc
 
+####################
+### TEST HELPERS ###
+####################
+
 
 def create_column(
     name: str = "id",
@@ -53,25 +57,29 @@ def create_column(
     )
 
 
-def create_file_format(name: str = "raw", file_format: str = "parquet") -> m.FileFormat:
-    return m.FileFormat(name=name, format=file_format)
+def create_file_format(
+    stage: str = "raw", file_format: str = "parquet"
+) -> m.FileFormat:
+    return m.FileFormat(stage=stage, format=file_format)
 
 
-# def create_table_metadata(
-#     name: str,
-#     partitions: list[str],
-#     file_formats: list[m.FileFormat],
-#     columns: list[m.Column],
-# ) -> m.TableMetaData:
-#     return m.TableMetaData(
-#         name=name,
-#         description="description",
-#         file_formats=file_formats,
-#         sensitive=False,
-#         primary_key=[],
-#         partitions=partitions,
-#         columns=columns,
-#     )
+def create_table_metadata(
+    name: str,
+    file_formats: list[m.FileFormat],
+    columns: list[m.Column],
+    description: str = "description",
+) -> m.TableMetaData:
+    return m.TableMetaData(
+        name=name,
+        description=description,
+        file_formats=file_formats,
+        columns=columns,
+    )
+
+
+####################
+### COLUMN TESTS ###
+####################
 
 
 def test_column_valid() -> None:
@@ -138,7 +146,7 @@ def test_column_validate_name_invalid(caplog: pytest.LogCaptureFixture) -> None:
         ("country"),
     ],
 )
-def test_validate_semantic_type_valid(semantic_type: str) -> None:
+def test_column_validate_semantic_type_valid(semantic_type: str) -> None:
     """Test that valid semantic types are accepted."""
     create_column(semantic_type=semantic_type)
 
@@ -151,7 +159,7 @@ def test_validate_semantic_type_valid(semantic_type: str) -> None:
         (""),
     ],
 )
-def test_validate_semantic_type_invalid(
+def test_column_validate_semantic_type_invalid(
     semantic_type: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that invalid semantic types raise InvalidSemanticTypeError."""
@@ -167,7 +175,7 @@ def test_validate_semantic_type_invalid(
     ("etl_stage"),
     [(["raw"]), (["curated"]), (["raw", "curated"]), ([])],
 )
-def test_validate_etl_stage_valid(etl_stage: list[str]) -> None:
+def test_column_validate_etl_stage_valid(etl_stage: list[str]) -> None:
     """Test that valid ETL stages are accepted."""
     create_column(etl_stages=etl_stage)
 
@@ -190,7 +198,7 @@ def test_validate_etl_stage_valid(etl_stage: list[str]) -> None:
         ),
     ],
 )
-def test_validate_etl_stage_invalid(
+def test_column_validate_etl_stage_invalid(
     etl_stage: list[str], exp_err: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that invalid ETL stages raise InvalidStageError."""
@@ -199,7 +207,7 @@ def test_validate_etl_stage_invalid(
     assert any(exp_err in record.message for record in caplog.records)
 
 
-def test_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> None:
+def test_column_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> None:
     """Test that an empty ETL stages list raises InvalidStageError."""
     with pytest.raises(exc.InvalidStageError, match="ETL stages list cannot be empty"):
         m.Column(
@@ -234,7 +242,7 @@ def test_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> None:
         list[dict[str, int]],
     ],
 )
-def test_validate_data_type_valid(data_type: type) -> None:
+def test_column_validate_data_type_valid(data_type: type) -> None:
     """Test that valid data types are accepted."""
     create_column(
         input_data_type=data_type, output_data_type=data_type, default_value=None
@@ -251,7 +259,7 @@ def test_validate_data_type_valid(data_type: type) -> None:
         (type(None), list[list[list[str]]], "output_data_type"),
     ],
 )
-def test_validate_data_type_invalid(
+def test_column_validate_data_type_invalid(
     input_data_type: type,
     output_data_type: type,
     err_attr: str,
@@ -274,7 +282,7 @@ def test_validate_data_type_invalid(
     )
 
 
-def test_validate_value_format_valid() -> None:
+def test_column_validate_value_format_valid() -> None:
     """Test that a valid value format is accepted."""
     create_column(input_value_format="date-time", output_value_format="date-time")
 
@@ -287,7 +295,7 @@ def test_validate_value_format_valid() -> None:
         ("invalid", "invalid", "input_value_format"),
     ],
 )
-def test_validate_value_format_invalid(
+def test_column_validate_value_format_invalid(
     input_value_format: str,
     output_value_format: str,
     err_attr: str,
@@ -318,7 +326,7 @@ def test_validate_value_format_invalid(
         (False, False, True),
     ],
 )
-def test_partition_and_composite_keys_not_nullable_valid(
+def test_column_partition_and_composite_keys_not_nullable_valid(
     key: bool, partition: bool, nullable: bool
 ) -> None:
     """Test that partition and composite keys cannot be nullable."""
@@ -333,7 +341,7 @@ def test_partition_and_composite_keys_not_nullable_valid(
         (True, True, True),
     ],
 )
-def test_partition_and_composite_keys_not_nullable_invalid(
+def test_column_partition_and_composite_keys_not_nullable_invalid(
     key: bool, partition: bool, nullable: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that partition and composite keys cannot be nullable."""
@@ -357,7 +365,7 @@ def test_partition_and_composite_keys_not_nullable_invalid(
         (int, [1, 2]),
     ],
 )
-def test_allowed_values_match_input_data_type_valid(
+def test_column_allowed_values_match_input_data_type_valid(
     data_type: type, allowed_values: list[Any]
 ) -> None:
     """Test that allowed values match the input data type."""
@@ -397,7 +405,7 @@ def test_allowed_values_match_input_data_type_valid(
         (type(None), [None]),
     ],
 )
-def test_allowed_values_match_input_data_type_skipped(
+def test_column_allowed_values_match_input_data_type_skipped(
     data_type: type, allowed_values: list[Any], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that allowed values check is skipped for unsupported data types."""
@@ -415,7 +423,7 @@ def test_allowed_values_match_input_data_type_skipped(
         (str, [1, 2]),
     ],
 )
-def test_allowed_values_match_input_data_type_invalid(
+def test_column_allowed_values_match_input_data_type_invalid(
     data_type: type,
     allowed_values: list[Any],
     caplog: pytest.LogCaptureFixture,
@@ -437,7 +445,7 @@ def test_allowed_values_match_input_data_type_invalid(
         (int, 1),
     ],
 )
-def test_default_value_match_input_data_type_valid(
+def test_column_default_value_match_input_data_type_valid(
     data_type: type, default_value: str | int
 ) -> None:
     """Test that default value match the input data type."""
@@ -458,7 +466,7 @@ def test_default_value_match_input_data_type_valid(
         (datetime, datetime(2024, 6, 1, 12, tzinfo=UTC)),
     ],
 )
-def test_default_value_match_input_data_type_skipped(
+def test_column_default_value_match_input_data_type_skipped(
     data_type: type, default_value: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that default value check is skipped for unsupported data types."""
@@ -476,7 +484,7 @@ def test_default_value_match_input_data_type_skipped(
         (str, 1),
     ],
 )
-def test_default_value_match_input_data_type_invalid(
+def test_column_default_value_match_input_data_type_invalid(
     data_type: type,
     default_value: Any,
     caplog: pytest.LogCaptureFixture,
@@ -500,7 +508,9 @@ def test_default_value_match_input_data_type_invalid(
         (["raw", "curated"], "invalid", False),
     ],
 )
-def test_exists_in_stage(stages: list[str], check_stage: str, expected: bool) -> None:
+def test_column_exists_in_stage(
+    stages: list[str], check_stage: str, expected: bool
+) -> None:
     """Test that exists_in_stage returns the correct boolean value."""
     column = create_column(etl_stages=stages)
     assert column.exists_in_stage(check_stage) is expected
@@ -519,7 +529,7 @@ def test_exists_in_stage(stages: list[str], check_stage: str, expected: bool) ->
         ),
     ],
 )
-def test_value_is_allowed(
+def test_column_value_is_allowed(
     allowed_values: list[Any],
     value: Any,
     expected: bool,
@@ -533,47 +543,63 @@ def test_value_is_allowed(
         assert log in caplog.records[0].message
 
 
-# def test_file_format_valid() -> None:
-#     file_format = create_file_format()
-#     assert file_format.name == "raw"
-#     assert file_format.format == "parquet"
+#########################
+### FILE FORMAT TESTS ###
+#########################
 
 
-# @pytest.mark.parametrize(
-#     ("name", "file_format", "exception", "err"),
-#     [
-#         (
-#             "invalid",
-#             "parquet",
-#             m.InvalidStageError,
-#             "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
-#         ),
-#         (
-#             "raw",
-#             "invalid",
-#             m.InvalidFormatError,
-#             "File format 'invalid' is not in the ALLOWED_FILE_FORMATS constant",
-#         ),
-#     ],
-# )
-# def test_file_format_invalid(
-#     name: str, file_format: str, exception: Any, err: str
-# ) -> None:
-#     with pytest.raises(exception) as e:
-#         create_file_format(name, file_format)
+@pytest.mark.parametrize(("stage"), [("raw"), ("curated")])
+def test_file_format_validate_stage_valid(stage: str) -> None:
+    """Test that a valid ETL stage is correctly validated."""
+    file_format = create_file_format(stage=stage)
+    assert file_format.stage == stage
 
-#     assert str(e.value) == err
+
+def test_file_format_validate_stage_invalid(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that an invalid ETL stage raises an error."""
+    with pytest.raises(exc.InvalidStageError):
+        create_file_format(stage="invalid")
+
+    assert (
+        "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant"
+        in caplog.records[0].message
+    )
+
+
+@pytest.mark.parametrize(("file_format"), [("parquet"), ("json"), ("csv"), ("xlsx")])
+def test_file_format_validate_file_format_valid(file_format: str) -> None:
+    """Test that a valid file format is correctly validated."""
+    file_format_cls = create_file_format(file_format=file_format)
+    assert file_format_cls.format == file_format
+
+
+def test_file_format_validate_file_format_invalid(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that an invalid file format raises an error."""
+    with pytest.raises(exc.InvalidFormatError):
+        create_file_format(file_format="invalid")
+
+    assert (
+        "File format 'invalid' is not in the ALLOWED_FILE_FORMATS constant"
+        in caplog.records[0].message
+    )
+
+
+############################
+### TABLE METADATA TESTS ###
+############################
 
 
 # def test_table_metadata_valid() -> None:
 #     table_metadata = create_table_metadata(
-#         "test_table", ["id"], [create_file_format()], [create_column()]
+#         name="test_table",
+#         file_formats=[create_file_format()],
+#         columns=[create_column()],
 #     )
 
 #     assert table_metadata.name == "test_table"
-#     assert table_metadata.converted_from == "arrow_schema"
-#     assert table_metadata.file_formats[0].name == "raw"
-#     assert table_metadata.partitions == ["id"]
+#     assert table_metadata.file_formats[0].stage == "raw"
 #     assert table_metadata.columns[0].name == "id"
 
 
@@ -734,89 +760,6 @@ def test_value_is_allowed(
 #         str(e.value)
 #         == "Column 'invalid' was not found in the metadata for table 'test_table'."
 #     )
-
-
-# def test_create_old_style_metadata() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [create_file_format(name="curated", file_format="csv"), create_file_format()],
-#         [
-#             create_column(
-#                 name="id",
-#                 stages=[
-#                     create_stage(data_type="date32"),
-#                     create_stage(name="curated", data_type="string", pattern="blah"),
-#                 ],
-#                 nullable=False,
-#             ),
-#             create_column(
-#                 name="name",
-#                 stages=[
-#                     create_stage(data_type="int32"),
-#                     create_stage(
-#                         name="curated", data_type="float64", pattern="nrettap"
-#                     ),
-#                 ],
-#                 enum=["C", "D"],
-#             ),
-#         ],
-#     )
-
-#     curated_output = table_metadata.create_old_style_metadata("curated")
-#     raw_output = table_metadata.create_old_style_metadata("raw")
-
-#     assert curated_output == {
-#         "$schema": "https://link-to-schema.com",
-#         "_converted_from": "arrow_schema",
-#         "columns": [
-#             {
-#                 "enum": ["A", "B"],
-#                 "name": "id",
-#                 "pattern": "blah",
-#                 "type": "string",
-#             },
-#             {
-#                 "enum": ["C", "D"],
-#                 "name": "name",
-#                 "nullable": True,
-#                 "pattern": "nrettap",
-#                 "type": "float64",
-#             },
-#         ],
-#         "description": "description",
-#         "file_format": "csv",
-#         "name": "test_table",
-#         "partitions": ["id"],
-#         "primary_key": [],
-#         "sensitive": False,
-#     }
-
-#     assert raw_output == {
-#         "_converted_from": "arrow_schema",
-#         "$schema": "https://link-to-schema.com",
-#         "columns": [
-#             {
-#                 "enum": ["A", "B"],
-#                 "name": "id",
-#                 "pattern": "pattern",
-#                 "type": "date32",
-#             },
-#             {
-#                 "enum": ["C", "D"],
-#                 "name": "name",
-#                 "nullable": True,
-#                 "pattern": "pattern",
-#                 "type": "int32",
-#             },
-#         ],
-#         "description": "description",
-#         "file_format": "parquet",
-#         "name": "test_table",
-#         "partitions": [],
-#         "primary_key": [],
-#         "sensitive": False,
-#     }
 
 
 # def test_metadata_valid() -> None:

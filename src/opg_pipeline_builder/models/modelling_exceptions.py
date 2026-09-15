@@ -47,3 +47,9 @@ class DuplicateColumnsError(Exception):
     def __init__(self, error: str):
         super().__init__(error)
         self.error = error
+
+
+class DuplicateFileFormatStagesError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error

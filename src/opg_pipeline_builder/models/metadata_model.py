@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from logging import getLogger
 from pathlib import Path
 from typing import Any
@@ -205,27 +206,31 @@ class Column(BaseModel):
 class FileFormat(BaseModel):
     """Pydantic model representing the file format data is stored in for each ETL stage."""
 
-    name: str
+    stage: str
     format: str
 
-    @field_validator("name")
+    @field_validator("stage")
     @classmethod
-    def validate_stage_name(cls, value: str) -> str:
+    def validate_stage(cls, value: str, info: ValidationInfo) -> str:
         """Check the provided ETL stage name is valid."""
         if value in ALLOWED_ETL_STAGES:
             return value
 
         err = f"ETL stage '{value}' is not in the ALLOWED_ETL_STAGES constant"
+        log_fields.update(table=_get_table_name(info), field="stage")
+        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
         raise exc.InvalidStageError(err)
 
     @field_validator("format")
     @classmethod
-    def validate_file_format(cls, value: str) -> str:
+    def validate_file_format(cls, value: str, info: ValidationInfo) -> str:
         """Check the provided file format is valid."""
         if value in ALLOWED_FILE_FORMATS:
             return value
 
         err = f"File format '{value}' is not in the ALLOWED_FILE_FORMATS constant"
+        log_fields.update(table=_get_table_name(info), field="format")
+        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
         raise exc.InvalidFormatError(err)
 
 
@@ -235,31 +240,85 @@ class TableMetaData(BaseModel):
     name: str
     description: str
     file_formats: list[FileFormat]
-    primary_key: list[str] = []
-    partitions: list[str]
     columns: list[Column]
 
     @model_validator(mode="after")
     def validate_all_fields_unique(self) -> "TableMetaData":
         """Check if any columns have the same name."""
+        column_counts = Counter(column.name for column in self.columns)
+        duplicate = False
 
-        all_columns = [column.name for column in self.columns]
-        if len(set(all_columns)) != len(all_columns):
+        for column, count in column_counts.items():
+            if count > 1:
+                duplicate = True
+                log_fields.update(table=self.name, field=column)
+                logger.error(
+                    "Duplicate column found: %s",
+                    column,
+                    extra={"custom_fields": log_fields.model_dump()},
+                )
+        if duplicate:
             err = "One or more columns are defined twice for the same table"
             raise exc.DuplicateColumnsError(err)
         return self
 
     @model_validator(mode="after")
-    def validate_partition_columns_defined(self) -> "TableMetaData":
-        """Check that the partition columns are defined as columns."""
-        all_columns = [column.name for column in self.columns]
+    def validate_all_file_format_stages_unique(self) -> "TableMetaData":
+        """Check if any file format stages are defined more than once."""
+        stage_counts = Counter(format_obj.stage for format_obj in self.file_formats)
+        duplicate = False
 
-        for partition in self.partitions:
-            if partition not in all_columns:
-                err = f"Partition column '{partition}' is not a defined column in the metadata for '{self.name}'."
-                raise exc.InvalidColumnError(err)
+        for stage, count in stage_counts.items():
+            if count > 1:
+                duplicate = True
+                log_fields.update(table=self.name, field=stage)
+                logger.error(
+                    "Duplicate file format stage found: %s",
+                    stage,
+                    extra={"custom_fields": log_fields.model_dump()},
+                )
+        if duplicate:
+            err = "One or more file format stages are defined twice for the same table"
+            raise exc.DuplicateFileFormatStagesError(err)
+        return self
+
+    @model_validator(mode="after")
+    def validate_column_stages_match_file_format_stages(self) -> "TableMetaData":
+        """Check that all stages defined for columns have a corresponding file format."""
+        unreconciled_stages = [format_obj.stage for format_obj in self.file_formats]
+
+        for column in self.columns:
+            for stage in column.etl_stages:
+                if stage in unreconciled_stages:
+                    unreconciled_stages.remove(stage)
+                else:
+                    unreconciled_stages.append(stage)
+
+        if unreconciled_stages:
+            err = f"ETL stages: '{', '.join(unreconciled_stages)}' are defined for columns, or file formats, but not both in table '{self.name}'."
+            raise exc.InvalidStageError(err)
 
         return self
+
+    @property
+    def etl_stages(self) -> list[str]:
+        """Return a list of all ETL stages defined for this table."""
+        return [format_obj.stage for format_obj in self.file_formats]
+
+    @property
+    def contains_sensitive_data(self) -> bool:
+        """Return True if any column in this table contains sensitive data."""
+        return any(column.sensitive for column in self.columns)
+
+    @property
+    def composite_key(self) -> list[Column]:
+        """Return a list of columns that make up the composite key for this table."""
+        return [column for column in self.columns if column.is_composite_key]
+
+    @property
+    def partition_key(self) -> list[Column]:
+        """Return a list of columns that make up the partition key for this table."""
+        return [column for column in self.columns if column.is_partition]
 
     def get_file_format_for_stage(self, stage_name: str) -> FileFormat:
         """Return the file format for a specific ETL stage.
@@ -275,7 +334,7 @@ class TableMetaData(BaseModel):
 
         """
         for format_obj in self.file_formats:
-            if format_obj.name == stage_name:
+            if format_obj.stage == stage_name:
                 return format_obj
 
         err = f"No file format metadata is configured for stage '{stage_name}' for table '{self.name}'"
@@ -291,7 +350,7 @@ class TableMetaData(BaseModel):
             list[Column]: A list of column objects containing all columns that exist for this ETL stage
 
         """
-        return [column for column in self.columns if column.has_stage(stage_name)]
+        return [column for column in self.columns if column.exists_in_stage(stage_name)]
 
     def get_column(self, name: str) -> Column:
         """Get the definition of a specific column from the metadata
@@ -306,38 +365,14 @@ class TableMetaData(BaseModel):
             if column.name == name:
                 return column
 
+        log_fields.update(table=self.name, field=name)
         err = f"Column '{name}' was not found in the metadata for table '{self.name}'."
+        logger.error(err, extra={"log_fields": log_fields})
         raise exc.InvalidColumnError(err)
 
-    def create_old_style_metadata(self, stage: str) -> dict[Any, Any]:
-        output_metadata: dict[Any, Any] = {}
-
-        output_metadata["$schema"] = self.schema_link
-        output_metadata["_converted_from"] = self.converted_from
-
-        output_metadata["columns"] = []
-
-        for column in self.get_columns_for_stage(stage):
-            column_data: dict[str, str | bool | list[str | int]] = {}
-            if column.enum:
-                column_data["enum"] = column.enum
-            column_data["name"] = column.name
-            if column.nullable:
-                column_data["nullable"] = column.nullable
-            if column.get_stage_for_column(stage).pattern:
-                column_data["pattern"] = column.get_stage_for_column(stage).pattern
-            column_data["type"] = column.get_stage_for_column(stage).type
-
-            output_metadata["columns"].append(column_data)
-
-        output_metadata["description"] = self.description
-        output_metadata["file_format"] = self.get_file_format_for_stage(stage).format
-        output_metadata["name"] = self.name
-        output_metadata["partitions"] = self.partitions if stage == "curated" else []
-        output_metadata["primary_key"] = self.primary_key
-        output_metadata["sensitive"] = self.sensitive
-
-        return output_metadata
+    def get_sensitive_columns(self) -> list[Column]:
+        """Return a list of columns that are marked as sensitive for this table."""
+        return [column for column in self.columns if column.sensitive]
 
 
 class MetaData(BaseModel):

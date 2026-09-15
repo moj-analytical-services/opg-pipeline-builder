@@ -190,7 +190,16 @@ class Column(BaseModel):
         Returns:
             bool: Whether the value is allowed for the column.
         """
-        return value in self.allowed_values
+        if self.allowed_values:
+            return value in self.allowed_values
+
+        log_fields.update(field="allowed_values")
+        logger.info(
+            "There are no allowed values for column '%s'; skipping allowed values check.",
+            self.name,
+            extra={"custom_fields": log_fields.model_dump()},
+        )
+        return False
 
 
 class FileFormat(BaseModel):

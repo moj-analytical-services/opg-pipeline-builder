@@ -491,6 +491,48 @@ def test_default_value_match_input_data_type_invalid(
     )
 
 
+@pytest.mark.parametrize(
+    ("stages", "check_stage", "expected"),
+    [
+        (["raw", "curated"], "raw", True),
+        (["raw", "curated"], "curated", True),
+        (["raw"], "curated", False),
+        (["raw", "curated"], "invalid", False),
+    ],
+)
+def test_exists_in_stage(stages: list[str], check_stage: str, expected: bool) -> None:
+    """Test that exists_in_stage returns the correct boolean value."""
+    column = create_column(etl_stages=stages)
+    assert column.exists_in_stage(check_stage) is expected
+
+
+@pytest.mark.parametrize(
+    ("allowed_values", "value", "expected", "log"),
+    [
+        (["a", "b", "c"], "a", True, None),
+        (["a", "b", "c"], "d", False, None),
+        (
+            None,
+            "e",
+            False,
+            "There are no allowed values for column 'id'; skipping allowed values check.",
+        ),
+    ],
+)
+def test_value_is_allowed(
+    allowed_values: list[Any],
+    value: Any,
+    expected: bool,
+    log: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that value_is_allowed returns the correct boolean value."""
+    column = create_column(allowed_values=allowed_values)
+    assert column.value_is_allowed(value) is expected
+    if log:
+        assert log in caplog.records[0].message
+
+
 # def test_file_format_valid() -> None:
 #     file_format = create_file_format()
 #     assert file_format.name == "raw"
@@ -580,12 +622,12 @@ def test_default_value_match_input_data_type_invalid(
 #         ["id"],
 #         [
 #             create_file_format(name="raw", file_format="csv"),
-#             create_file_format(name="processed"),
+#             create_file_format(name="curated"),
 #         ],
 #         [create_column()],
 #     )
 
-#     file_format = table_metadata.get_file_format_for_stage("processed")
+#     file_format = table_metadata.get_file_format_for_stage("curated")
 #     assert file_format.format == "parquet"
 
 
@@ -595,7 +637,7 @@ def test_default_value_match_input_data_type_invalid(
 #         ["id"],
 #         [
 #             create_file_format(name="raw", file_format="csv"),
-#             create_file_format(name="processed"),
+#             create_file_format(name="curated"),
 #         ],
 #         [create_column()],
 #     )
@@ -617,11 +659,11 @@ def test_default_value_match_input_data_type_invalid(
 #         [
 #             create_column(
 #                 name="id",
-#                 stages=[create_stage(name="raw"), create_stage(name="processed")],
+#                 stages=[create_stage(name="raw"), create_stage(name="curated")],
 #             ),
 #             create_column(
 #                 name="type",
-#                 stages=[create_stage(name="processed"), create_stage(name="curated")],
+#                 stages=[create_stage(name="curated"), create_stage(name="curated")],
 #             ),
 #             create_column(
 #                 name="address",
@@ -629,12 +671,12 @@ def test_default_value_match_input_data_type_invalid(
 #             ),
 #             create_column(
 #                 name="name",
-#                 stages=[create_stage(name="processed"), create_stage(name="curated")],
+#                 stages=[create_stage(name="curated"), create_stage(name="curated")],
 #             ),
 #         ],
 #     )
 
-#     columns = table_metadata.get_columns_for_stage("processed")
+#     columns = table_metadata.get_columns_for_stage("curated")
 #     assert [column.name for column in columns] == ["id", "type", "name"]
 
 
@@ -663,7 +705,7 @@ def test_default_value_match_input_data_type_invalid(
 #         ],
 #     )
 
-#     assert not table_metadata.get_columns_for_stage("processed")
+#     assert not table_metadata.get_columns_for_stage("curated")
 
 
 # def test_table_metadata_get_column_valid() -> None:
@@ -787,7 +829,7 @@ def test_default_value_match_input_data_type_invalid(
 #             "test_table2": create_table_metadata(
 #                 "test_table2",
 #                 ["name"],
-#                 [create_file_format(name="processed")],
+#                 [create_file_format(name="curated")],
 #                 [create_column(name="name")],
 #             ),
 #         },
@@ -797,7 +839,7 @@ def test_default_value_match_input_data_type_invalid(
 #     assert metadata.tables["test_table"].file_formats[0].format == "parquet"
 #     assert metadata.tables["test_table"].partitions == ["id"]
 #     assert metadata.tables["test_table2"].columns[0].name == "name"
-#     assert metadata.tables["test_table2"].file_formats[0].name == "processed"
+#     assert metadata.tables["test_table2"].file_formats[0].name == "curated"
 
 
 # def test_metadata_get_table_metadata_valid() -> None:
@@ -810,7 +852,7 @@ def test_default_value_match_input_data_type_invalid(
 #             "test_table2": create_table_metadata(
 #                 "test_table2",
 #                 ["name"],
-#                 [create_file_format(name="processed")],
+#                 [create_file_format(name="curated")],
 #                 [create_column(name="name")],
 #             ),
 #         },
@@ -833,7 +875,7 @@ def test_default_value_match_input_data_type_invalid(
 #             "test_table2": create_table_metadata(
 #                 "test_table2",
 #                 ["name"],
-#                 [create_file_format(name="processed")],
+#                 [create_file_format(name="curated")],
 #                 [create_column(name="name")],
 #             ),
 #         },
@@ -869,7 +911,7 @@ def test_default_value_match_input_data_type_invalid(
 #             "test_table2": create_table_metadata(
 #                 "test_table2",
 #                 ["name"],
-#                 [create_file_format(name="processed")],
+#                 [create_file_format(name="curated")],
 #                 [
 #                     create_column(
 #                         stages=[create_stage(), create_stage(name="curated")]

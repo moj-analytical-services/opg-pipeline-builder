@@ -253,13 +253,13 @@ class TableMetaData(BaseModel):
                 duplicate = True
                 log_fields.update(table=self.name, field=column)
                 logger.error(
-                    "Duplicate column found: %s",
+                    "Duplicate field found: '%s'",
                     column,
                     extra={"custom_fields": log_fields.model_dump()},
                 )
         if duplicate:
             err = "One or more columns are defined twice for the same table"
-            raise exc.DuplicateColumnsError(err)
+            raise exc.DuplicateFieldsError(err)
         return self
 
     @model_validator(mode="after")
@@ -286,16 +286,37 @@ class TableMetaData(BaseModel):
     def validate_column_stages_match_file_format_stages(self) -> "TableMetaData":
         """Check that all stages defined for columns have a corresponding file format."""
         unreconciled_stages = [format_obj.stage for format_obj in self.file_formats]
+        reconciled_stages = []
+        file_format_stages = [format_obj.stage for format_obj in self.file_formats]
 
         for column in self.columns:
             for stage in column.etl_stages:
                 if stage in unreconciled_stages:
                     unreconciled_stages.remove(stage)
+                    reconciled_stages.append(stage)
                 else:
-                    unreconciled_stages.append(stage)
+                    if stage not in reconciled_stages:
+                        unreconciled_stages.append(stage)
+
+            if not unreconciled_stages:
+                break
 
         if unreconciled_stages:
-            err = f"ETL stages: '{', '.join(unreconciled_stages)}' are defined for columns, or file formats, but not both in table '{self.name}'."
+            log_fields.update(table=self.name, field="None")
+            for stage in unreconciled_stages:
+                if stage in file_format_stages:
+                    logger.error(
+                        "ETL stage '%s' is defined in the file formats but not for any columns",
+                        stage,
+                        extra={"custom_fields": log_fields.model_dump()},
+                    )
+                else:
+                    logger.error(
+                        "ETL stage '%s' is defined for columns but not in the file formats",
+                        stage,
+                        extra={"custom_fields": log_fields.model_dump()},
+                    )
+            err = f"ETL stages: '{', '.join(unreconciled_stages)}' are defined for columns, or file formats, but not both."
             raise exc.InvalidStageError(err)
 
         return self
@@ -338,13 +359,15 @@ class TableMetaData(BaseModel):
                 return format_obj
 
         err = f"No file format metadata is configured for stage '{stage_name}' for table '{self.name}'"
+        log_fields.update(table=self.name, field="None")
+        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
         raise exc.InvalidStageError(err)
 
     def get_columns_for_stage(self, stage_name: str) -> list[Column]:
         """Return all of the column definitions for a specific ETL stage.
 
         Args:
-            stage (str): The ETL stage that is running (as defined from airflow)
+            stage_name (str): The ETL stage that is running (as defined from airflow)
 
         Returns:
             list[Column]: A list of column objects containing all columns that exist for this ETL stage

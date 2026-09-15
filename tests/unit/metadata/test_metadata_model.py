@@ -26,7 +26,7 @@ def create_column(
     input_value_format: str = "",
     output_value_format: str = "",
     regex_pattern: str = "",
-    nullable: bool = True,
+    nullable: bool = False,
     allowed_values: list[str | int] | None = None,
     default_value: str | int | None = "default",
 ) -> m.Column:
@@ -111,7 +111,7 @@ def test_column_valid() -> None:
     assert column.input_value_format == "date-time"
     assert column.output_value_format == "date-time"
     assert column.regex_pattern == ".*"
-    assert column.nullable is False
+    assert not column.nullable
     assert column.allowed_values == [1, 2]
     assert column.default_value == 1
 
@@ -591,175 +591,338 @@ def test_file_format_validate_file_format_invalid(
 ############################
 
 
-# def test_table_metadata_valid() -> None:
-#     table_metadata = create_table_metadata(
-#         name="test_table",
-#         file_formats=[create_file_format()],
-#         columns=[create_column()],
-#     )
+def test_table_metadata_valid() -> None:
+    """Test that creating valid table metadata works correctly."""
+    table_metadata = create_table_metadata(
+        name="test_table",
+        file_formats=[
+            create_file_format(stage="raw"),
+            create_file_format(stage="curated"),
+        ],
+        columns=[create_column()],
+        description="description",
+    )
 
-#     assert table_metadata.name == "test_table"
-#     assert table_metadata.file_formats[0].stage == "raw"
-#     assert table_metadata.columns[0].name == "id"
-
-
-# @pytest.mark.parametrize(
-#     ("columns", "partitions", "exception", "err"),
-#     [
-#         (
-#             [
-#                 create_column(name="duplicate"),
-#                 create_column(name="unique"),
-#                 create_column(name="duplicate"),
-#             ],
-#             ["duplicate"],
-#             m.DuplicateColumnsError,
-#             "One or more columns are defined twice for the same table",
-#         ),
-#         (
-#             [
-#                 create_column(name="duplicate"),
-#                 create_column(name="unique"),
-#                 create_column(name="also_unqique"),
-#             ],
-#             ["not_present"],
-#             m.InvalidColumnError,
-#             "Partition column 'not_present' is not a defined column in the metadata for 'test_table'.",
-#         ),
-#     ],
-# )
-# def test_table_metadata_invalid(
-#     columns: list[m.Column], partitions: list[str], exception: Any, err: str
-# ) -> None:
-#     with pytest.raises(exception) as e:
-#         create_table_metadata(
-#             name="test_table",
-#             columns=columns,
-#             partitions=partitions,
-#             file_formats=[create_file_format()],
-#         )
-
-#     assert str(e.value) == err
+    assert table_metadata.name == "test_table"
+    assert table_metadata.file_formats[0].stage == "raw"
+    assert table_metadata.columns[0].name == "id"
+    assert table_metadata.description == "description"
 
 
-# def test_table_metadata_get_file_format_for_stage_valid() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [
-#             create_file_format(name="raw", file_format="csv"),
-#             create_file_format(name="curated"),
-#         ],
-#         [create_column()],
-#     )
-
-#     file_format = table_metadata.get_file_format_for_stage("curated")
-#     assert file_format.format == "parquet"
-
-
-# def test_table_metadata_get_file_format_for_stage_invalid() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [
-#             create_file_format(name="raw", file_format="csv"),
-#             create_file_format(name="curated"),
-#         ],
-#         [create_column()],
-#     )
-
-#     with pytest.raises(m.InvalidStageError) as e:
-#         table_metadata.get_file_format_for_stage("invalid")
-
-#     assert (
-#         str(e.value)
-#         == "No file format metadata is configured for stage 'invalid' for table 'test_table'"
-#     )
+def test_table_metadata_all_fields_unique_valid() -> None:
+    """Test that all fields in the table metadata are unique."""
+    create_table_metadata(
+        name="test_table",
+        file_formats=[
+            create_file_format(stage="raw"),
+            create_file_format(stage="curated"),
+        ],
+        columns=[
+            create_column(name="id"),
+            create_column(name="type"),
+            create_column(name="description"),
+            create_column(name="created_at"),
+        ],
+    )
+    assert True
 
 
-# def test_table_metadata_get_columns_for_stage_populated() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [create_file_format()],
-#         [
-#             create_column(
-#                 name="id",
-#                 stages=[create_stage(name="raw"), create_stage(name="curated")],
-#             ),
-#             create_column(
-#                 name="type",
-#                 stages=[create_stage(name="curated"), create_stage(name="curated")],
-#             ),
-#             create_column(
-#                 name="address",
-#                 stages=[create_stage(name="raw"), create_stage(name="curated")],
-#             ),
-#             create_column(
-#                 name="name",
-#                 stages=[create_stage(name="curated"), create_stage(name="curated")],
-#             ),
-#         ],
-#     )
+@pytest.mark.parametrize(
+    ("field_names", "duplicate_fields"),
+    [
+        (["type", "type"], ["type"]),
+        (["id", "id", "id", "id", "id"], ["id"]),
+        (["description", "id", "address", "type", "description"], ["description"]),
+        (
+            ["id", "type", "description", "address", "phone", "type", "id"],
+            ["id", "type"],
+        ),
+    ],
+)
+def test_table_metadata_all_fields_unique_invalid(
+    field_names: list[str],
+    duplicate_fields: list[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that having duplicate fields in the table metadata raises an error."""
+    with pytest.raises(exc.DuplicateFieldsError):
+        create_table_metadata(
+            "test_table",
+            [create_file_format()],
+            [create_column(name=field_name) for field_name in field_names],
+        )
 
-#     columns = table_metadata.get_columns_for_stage("curated")
-#     assert [column.name for column in columns] == ["id", "type", "name"]
-
-
-# def test_table_metadata_get_columns_for_stage_empty() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [create_file_format()],
-#         [
-#             create_column(
-#                 name="id",
-#                 stages=[create_stage(name="raw"), create_stage(name="curated")],
-#             ),
-#             create_column(
-#                 name="type",
-#                 stages=[create_stage(name="raw"), create_stage(name="curated")],
-#             ),
-#             create_column(
-#                 name="address",
-#                 stages=[create_stage(name="raw"), create_stage(name="curated")],
-#             ),
-#             create_column(
-#                 name="name",
-#                 stages=[create_stage(name="raw_hist"), create_stage(name="curated")],
-#             ),
-#         ],
-#     )
-
-#     assert not table_metadata.get_columns_for_stage("curated")
+    log_messages = [record.message for record in caplog.records]
+    for duplicate_field in duplicate_fields:
+        assert f"Duplicate field found: '{duplicate_field}'" in log_messages
 
 
-# def test_table_metadata_get_column_valid() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [create_file_format()],
-#         [create_column(name="id"), create_column(name="name")],
-#     )
+def test_table_metadata_all_file_format_stages_unique_valid() -> None:
+    """Test that all file format stages for a table are unique."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [
+            create_file_format(stage="raw", file_format="csv"),
+            create_file_format(stage="curated"),
+        ],
+        [create_column()],
+    )
 
-#     assert table_metadata.get_column("name") == create_column(name="name")
+    stages = [ff.stage for ff in table_metadata.file_formats]
+    assert len(stages) == len(set(stages))
 
 
-# def test_table_metadata_get_column_invalid() -> None:
-#     table_metadata = create_table_metadata(
-#         "test_table",
-#         ["id"],
-#         [create_file_format()],
-#         [create_column(name="id"), create_column(name="name")],
-#     )
+@pytest.mark.parametrize(
+    ("stages", "duplicate_stage"),
+    [
+        (["raw", "raw"], "raw"),
+        (["curated", "raw", "curated"], "curated"),
+    ],
+)
+def test_table_metadata_all_file_format_stages_unique_invalid(
+    stages: list[str], duplicate_stage: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that having duplicate file format stages in the table metadata raises an error."""
+    with pytest.raises(exc.DuplicateFileFormatStagesError):
+        create_table_metadata(
+            "test_table",
+            [create_file_format(stage=stage) for stage in stages],
+            [create_column()],
+        )
 
-#     with pytest.raises(m.InvalidColumnError) as e:
-#         table_metadata.get_column("invalid")
+    assert (
+        f"Duplicate file format stage found: {duplicate_stage}"
+        in caplog.records[0].message
+    )
 
-#     assert (
-#         str(e.value)
-#         == "Column 'invalid' was not found in the metadata for table 'test_table'."
-#     )
+
+@pytest.mark.parametrize(
+    ("format_stages", "column_stages"),
+    [
+        (["raw"], [["raw"]]),
+        (["raw", "curated"], [["raw", "curated"]]),
+        (["raw", "curated"], [["raw"], ["curated"]]),
+        (["raw", "curated"], [["raw"], ["raw"], ["curated"]]),
+        (["raw", "curated"], [["raw"], ["raw", "curated"]]),
+        (["curated"], [["curated"], ["curated"]]),
+    ],
+)
+def test_table_metadata_column_stages_match_file_format_stages_valid(
+    format_stages: list[str], column_stages: list[list[str]]
+) -> None:
+    """Test that column stages match the file format stages for a table."""
+
+    columns = []
+    for num, stages in enumerate(column_stages):
+        columns.append(create_column(name=f"id_{num}", etl_stages=stages))
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format(stage=stage) for stage in format_stages],
+        columns,
+    )
+
+    assert format_stages == table_metadata.etl_stages
+
+
+def test_table_metadata_etl_stages() -> None:
+    """Test that the etl_stages property returns all stages defined in the file formats."""
+    format_stages = ["raw", "curated"]
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format(stage=stage) for stage in format_stages],
+        [create_column()],
+    )
+
+    assert table_metadata.etl_stages == format_stages
+
+
+def test_table_metadata_contains_sensitive_data_exists() -> None:
+    """Test that the contains_sensitive_data property correctly identifies sensitive columns."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format(stage="raw")],
+        [
+            create_column(name="id", sensitive=False),
+            create_column(name="ssn", sensitive=True),
+            create_column(name="address", sensitive=True),
+            create_column(name="forename", sensitive=True),
+        ],
+    )
+
+    assert table_metadata.contains_sensitive_data is True
+
+
+def test_table_metadata_contains_sensitive_data_not_exists() -> None:
+    """Test that the contains_sensitive_data property correctly identifies sensitive columns."""
+    table_metadata_no_sensitive = create_table_metadata(
+        "test_table",
+        [create_file_format(stage="raw")],
+        [
+            create_column(name="id", sensitive=False),
+            create_column(name="name", sensitive=False),
+        ],
+    )
+
+    assert table_metadata_no_sensitive.contains_sensitive_data is False
+
+
+def test_table_metadata_composite_key() -> None:
+    """Test that the composite_key property returns all columns marked as part of the composite key."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format(stage="raw")],
+        [
+            create_column(name="id", is_composite_key=True),
+            create_column(name="type", is_composite_key=False),
+            create_column(name="address", is_composite_key=True),
+        ],
+    )
+
+    assert [column.name for column in table_metadata.composite_key] == ["id", "address"]
+
+
+def test_table_metadata_partition_key() -> None:
+    """Test that the partition_key property returns all columns marked as part of the partition key."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format(stage="raw")],
+        [
+            create_column(name="id", is_partition=True),
+            create_column(name="type", is_partition=False),
+            create_column(name="address", is_partition=True),
+        ],
+    )
+
+    assert [column.name for column in table_metadata.partition_key] == ["id", "address"]
+
+
+def test_table_metadata_get_file_format_for_stage_valid() -> None:
+    """Test that get_file_format_for_stage returns the correct file format for a valid stage."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [
+            create_file_format(stage="raw", file_format="csv"),
+            create_file_format(stage="curated", file_format="parquet"),
+        ],
+        [create_column()],
+    )
+
+    file_format = table_metadata.get_file_format_for_stage("curated")
+    assert file_format.format == "parquet"
+
+
+def test_table_metadata_get_file_format_for_stage_invalid(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that get_file_format_for_stage raises an error for an invalid stage."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [
+            create_file_format(stage="raw", file_format="csv"),
+            create_file_format(stage="curated", file_format="parquet"),
+        ],
+        [create_column()],
+    )
+
+    with pytest.raises(exc.InvalidStageError):
+        table_metadata.get_file_format_for_stage("invalid")
+
+    assert (
+        "No file format metadata is configured for stage 'invalid' for table 'test_table'"
+        in caplog.text
+    )
+
+
+def test_table_metadata_get_columns_for_stage_populated() -> None:
+    """Test that get_columns_for_stage returns the correct columns for a populated stage."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format()],
+        [
+            create_column(name="id", etl_stages=["raw", "curated"]),
+            create_column(name="type", etl_stages=["curated"]),
+            create_column(name="address", etl_stages=["raw"]),
+        ],
+    )
+
+    columns = table_metadata.get_columns_for_stage("curated")
+    assert [column.name for column in columns] == ["id", "type"]
+
+
+def test_table_metadata_get_columns_for_stage_empty() -> None:
+    """Test that get_columns_for_stage returns an empty list for a stage with no columns."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format()],
+        [
+            create_column(name="id", etl_stages=["raw"]),
+            create_column(name="type", etl_stages=["raw"]),
+            create_column(name="address", etl_stages=["raw"]),
+        ],
+    )
+
+    assert not table_metadata.get_columns_for_stage("curated")
+
+
+def test_table_metadata_get_column_populated() -> None:
+    """Test that get_column returns the correct column for a populated table."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format()],
+        [create_column(name="id"), create_column(name="name")],
+    )
+
+    column = table_metadata.get_column("name")
+    assert column.name == "name"
+    assert column.etl_stages == ["raw", "curated"]
+
+
+def test_table_metadata_get_column_empty(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that get_column raises an error for an invalid column."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format()],
+        [create_column(name="id"), create_column(name="name")],
+    )
+
+    with pytest.raises(exc.InvalidColumnError):
+        table_metadata.get_column("invalid")
+
+    assert (
+        "Column 'invalid' was not found in the metadata for table 'test_table'."
+        in caplog.text
+    )
+
+
+def test_table_metadata_get_sensitive_columns_populated() -> None:
+    """Test that get_sensitive_columns returns the correct sensitive columns for a populated table."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format()],
+        [
+            create_column(name="id", sensitive=False),
+            create_column(name="ssn", sensitive=True),
+            create_column(name="email", sensitive=True),
+        ],
+    )
+
+    sensitive_columns = table_metadata.get_sensitive_columns()
+    assert [column.name for column in sensitive_columns] == ["ssn", "email"]
+
+
+def test_table_metadata_get_sensitive_columns_empty() -> None:
+    """Test that get_sensitive_columns returns an empty list for a table with no sensitive columns."""
+    table_metadata = create_table_metadata(
+        "test_table",
+        [create_file_format()],
+        [
+            create_column(name="id", sensitive=False),
+            create_column(name="name", sensitive=False),
+        ],
+    )
+
+    sensitive_columns = table_metadata.get_sensitive_columns()
+    assert sensitive_columns == []
 
 
 # def test_metadata_valid() -> None:
@@ -842,14 +1005,13 @@ def test_file_format_validate_file_format_invalid(
 #                 [create_file_format()],
 #                 [
 #                     create_column(
-#                         stages=[create_stage(), create_stage(name="curated")]
+#                         stages=[["curated")]
 #                     ),
 #                     create_column(
 #                         name="name",
-#                         stages=[create_stage(name="curated", data_type="int64")],
+#                         stages=[["curated", data_type="int64")],
 #                     ),
-#                     create_column(name="address", stages=[create_stage()]),
-#                 ],
+#                     create_column(name="address", stages=[[#                 ],
 #             ),
 #             "test_table2": create_table_metadata(
 #                 "test_table2",
@@ -857,14 +1019,13 @@ def test_file_format_validate_file_format_invalid(
 #                 [create_file_format(name="curated")],
 #                 [
 #                     create_column(
-#                         stages=[create_stage(), create_stage(name="curated")]
+#                         stages=[["curated")]
 #                     ),
 #                     create_column(
 #                         name="name",
-#                         stages=[create_stage(name="curated", data_type="float64")],
+#                         stages=[["curated", data_type="float64")],
 #                     ),
-#                     create_column(name="address", stages=[create_stage()]),
-#                 ],
+#                     create_column(name="address", stages=[[#                 ],
 #             ),
 #         },
 #     )

@@ -43,7 +43,7 @@ class InvalidTableError(Exception):
         self.error = error
 
 
-class DuplicateColumnsError(Exception):
+class DuplicateFieldsError(Exception):
     def __init__(self, error: str):
         super().__init__(error)
         self.error = error

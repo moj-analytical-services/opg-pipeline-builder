@@ -1,8 +1,10 @@
 import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -22,8 +24,8 @@ def create_column(
     sensitive: bool = False,
     is_composite_key: bool = False,
     is_partition: bool = False,
-    input_data_type: type = str,
-    output_data_type: type = str,
+    input_data_type: Any = "str",
+    output_data_type: Any = "str",
     input_value_format: str = "",
     output_value_format: str = "",
     regex_pattern: str = "",
@@ -91,10 +93,10 @@ def test_column_valid() -> None:
         sensitive=True,
         is_composite_key=True,
         is_partition=True,
-        input_data_type=int,
-        output_data_type=str,
-        input_value_format="date-time",
-        output_value_format="date-time",
+        input_data_type="int",
+        output_data_type="str",
+        input_value_format="datetime",
+        output_value_format="datetime",
         regex_pattern=".*",
         nullable=False,
         allowed_values=[1, 2],
@@ -109,8 +111,8 @@ def test_column_valid() -> None:
     assert column.is_partition is True
     assert column.input_data_type == int
     assert column.output_data_type == str
-    assert column.input_value_format == "date-time"
-    assert column.output_value_format == "date-time"
+    assert column.input_value_format == "datetime"
+    assert column.output_value_format == "datetime"
     assert column.regex_pattern == ".*"
     assert not column.nullable
     assert column.allowed_values == [1, 2]
@@ -215,8 +217,8 @@ def test_column_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> No
             name="name",
             semantic_type="postcode",
             etl_stages=[],
-            input_data_type="string",
-            output_data_type="string",
+            input_data_type="str",
+            output_data_type="str",
         )
     assert any(
         "ETL stages list cannot be empty" in record.message for record in caplog.records
@@ -226,21 +228,20 @@ def test_column_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> No
 @pytest.mark.parametrize(
     ("data_type"),
     [
-        str,
-        list[str],
-        list[list[str]],
-        int,
-        list[int],
-        float,
-        list[float],
-        bool,
-        list[bool],
-        date,
-        list[date],
-        datetime,
-        type(None),
-        list[dict[str, dict[str, int]]],
-        list[dict[str, int]],
+        "str",
+        "list[str]",
+        "list[list[str]]",
+        "int",
+        "list[int]",
+        "float",
+        "list[float]",
+        "bool",
+        "list[bool]",
+        "date",
+        "list[date]",
+        "datetime",
+        "NoneType",
+        "list[dict[str, str]]",
     ],
 )
 def test_column_validate_data_type_valid(data_type: type) -> None:
@@ -253,16 +254,20 @@ def test_column_validate_data_type_valid(data_type: type) -> None:
 @pytest.mark.parametrize(
     ("input_data_type", "output_data_type", "err_attr"),
     [
-        (list[list[list[str]]], str, "input_data_type"),
-        (str, dict[str, list[str]], "output_data_type"),
-        (list[datetime], list[list[str]], "input_data_type"),
-        (list[dict[str, dict[str, int]]], list[list[list[str]]], "output_data_type"),
-        (type(None), list[list[list[str]]], "output_data_type"),
+        ("list[list[list[str]]]", "str", "input_data_type"),
+        ("str", "dict[str, list[str]]", "output_data_type"),
+        ("list[datetime]", "list[list[str]]", "input_data_type"),
+        (
+            "list[dict[str, str]]",
+            "list[list[list[str]]]",
+            "output_data_type",
+        ),
+        ("NoneType", "list[list[list[str]]]", "output_data_type"),
     ],
 )
 def test_column_validate_data_type_invalid(
-    input_data_type: type,
-    output_data_type: type,
+    input_data_type: str,
+    output_data_type: str,
     err_attr: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -285,14 +290,14 @@ def test_column_validate_data_type_invalid(
 
 def test_column_validate_value_format_valid() -> None:
     """Test that a valid value format is accepted."""
-    create_column(input_value_format="date-time", output_value_format="date-time")
+    create_column(input_value_format="datetime", output_value_format="datetime")
 
 
 @pytest.mark.parametrize(
     ("input_value_format", "output_value_format", "err_attr"),
     [
-        ("invalid", "date-time", "input_value_format"),
-        ("date-time", "invalid", "output_value_format"),
+        ("invalid", "datetime", "input_value_format"),
+        ("datetime", "invalid", "output_value_format"),
         ("invalid", "invalid", "input_value_format"),
     ],
 )
@@ -362,8 +367,8 @@ def test_column_partition_and_composite_keys_not_nullable_invalid(
 @pytest.mark.parametrize(
     ("data_type", "allowed_values"),
     [
-        (str, ["a", "bee"]),
-        (int, [1, 2]),
+        ("str", ["a", "bee"]),
+        ("int", [1, 2]),
     ],
 )
 def test_column_allowed_values_match_input_data_type_valid(
@@ -380,30 +385,30 @@ def test_column_allowed_values_match_input_data_type_valid(
 @pytest.mark.parametrize(
     ("data_type", "allowed_values"),
     [
-        (list[str], [["a"], ["a", "b"]]),
-        (list[list[str]], [[["a"]], [["a", "b"]]]),
-        (list[int], [[1], [1, 2, 3]]),
-        (float, [12.3334324, 22.4939332]),
-        (list[float], [[12.3334324], [12.3334324, 22.4939332]]),
-        (bool, [True, False]),
-        (list[bool], [[True], [True, False]]),
-        (date, [date(2024, 6, 1), date(2024, 6, 2)]),
-        (list[date], [[date(2024, 6, 1), date(2024, 6, 1), date(2024, 6, 2)]]),
+        ("list[str]", [["a"], ["a", "b"]]),
+        ("list[list[str]]", [[["a"]], [["a", "b"]]]),
+        ("list[int]", [[1], [1, 2, 3]]),
+        ("float", [12.3334324, 22.4939332]),
+        ("list[float]", [[12.3334324], [12.3334324, 22.4939332]]),
+        ("bool", [True, False]),
+        ("list[bool]", [[True], [True, False]]),
+        ("date", [date(2024, 6, 1), date(2024, 6, 2)]),
+        ("list[date]", [[date(2024, 6, 1), date(2024, 6, 1), date(2024, 6, 2)]]),
         (
-            datetime,
+            "datetime",
             [
                 datetime(2024, 6, 1, 12, tzinfo=UTC),
                 datetime(2024, 6, 2, 12, tzinfo=UTC),
             ],
         ),
         (
-            datetime,
+            "datetime",
             [
                 datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
                 datetime(2024, 6, 2, 12, 0, 0, tzinfo=UTC),
             ],
         ),
-        (type(None), [None]),
+        ("NoneType", [None]),
     ],
 )
 def test_column_allowed_values_match_input_data_type_skipped(
@@ -418,20 +423,21 @@ def test_column_allowed_values_match_input_data_type_skipped(
 
 
 @pytest.mark.parametrize(
-    ("data_type", "allowed_values"),
+    ("data_type_str", "data_type", "allowed_values"),
     [
-        (int, ["a", "b"]),
-        (str, [1, 2]),
+        ("int", int, ["a", "b"]),
+        ("str", str, [1, 2]),
     ],
 )
 def test_column_allowed_values_match_input_data_type_invalid(
+    data_type_str: str,
     data_type: type,
     allowed_values: list[Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test that allowed values check raises an error for mismatched input data types."""
     with pytest.raises(exc.InvalidTypeError):
-        create_column(input_data_type=data_type, allowed_values=allowed_values)
+        create_column(input_data_type=data_type_str, allowed_values=allowed_values)
 
     assert (
         f"Allowed value '{allowed_values[0]}' with type '{type(allowed_values[0])}' does not match the input data type '{data_type}'"
@@ -442,8 +448,8 @@ def test_column_allowed_values_match_input_data_type_invalid(
 @pytest.mark.parametrize(
     ("data_type", "default_value"),
     [
-        (str, "a"),
-        (int, 1),
+        ("str", "a"),
+        ("int", 1),
     ],
 )
 def test_column_default_value_match_input_data_type_valid(
@@ -456,15 +462,15 @@ def test_column_default_value_match_input_data_type_valid(
 @pytest.mark.parametrize(
     ("data_type", "default_value"),
     [
-        (list[str], ["a"]),
-        (list[int], [1]),
-        (float, 22.4939332),
-        (list[float], [12.3334324]),
-        (bool, True),
-        (list[bool], True),
-        (date, date(2024, 6, 1)),
-        (list[date], [date(2024, 6, 1)]),
-        (datetime, datetime(2024, 6, 1, 12, tzinfo=UTC)),
+        ("list[str]", ["a"]),
+        ("list[int]", [1]),
+        ("float", 22.4939332),
+        ("list[float]", [12.3334324]),
+        ("bool", True),
+        ("list[bool]", True),
+        ("date", date(2024, 6, 1)),
+        ("list[date]", [date(2024, 6, 1)]),
+        ("datetime", datetime(2024, 6, 1, 12, tzinfo=UTC)),
     ],
 )
 def test_column_default_value_match_input_data_type_skipped(
@@ -479,20 +485,21 @@ def test_column_default_value_match_input_data_type_skipped(
 
 
 @pytest.mark.parametrize(
-    ("data_type", "default_value"),
+    ("data_type_str", "data_type", "default_value"),
     [
-        (int, "a"),
-        (str, 1),
+        ("int", int, "a"),
+        ("str", str, 1),
     ],
 )
 def test_column_default_value_match_input_data_type_invalid(
+    data_type_str: str,
     data_type: type,
     default_value: Any,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test that default value check raises an error for mismatched input data types."""
     with pytest.raises(exc.InvalidTypeError):
-        create_column(input_data_type=data_type, default_value=default_value)
+        create_column(input_data_type=data_type_str, default_value=default_value)
 
     assert (
         f"Default value '{default_value}' with type '{type(default_value)}' does not match the input data type '{data_type}'"
@@ -1065,6 +1072,7 @@ def test_metadata_get_table_metadata_invalid(caplog: pytest.LogCaptureFixture) -
 
 
 def test_output_to_df() -> None:
+    """Test the output_to_df method of the MetaData class."""
     metadata = m.MetaData(
         database="test",
         tables={
@@ -1074,10 +1082,10 @@ def test_output_to_df() -> None:
                 [
                     create_column(name="id", etl_stages=["curated"]),
                     create_column(
-                        name="name", etl_stages=["curated"], output_data_type=int
+                        name="name", etl_stages=["curated"], output_data_type="int"
                     ),
                     create_column(
-                        name="address", etl_stages=["raw"], output_data_type=str
+                        name="address", etl_stages=["raw"], output_data_type="str"
                     ),
                 ],
             ),
@@ -1085,12 +1093,12 @@ def test_output_to_df() -> None:
                 "test_table2",
                 [create_file_format(stage="curated"), create_file_format(stage="raw")],
                 [
-                    create_column(etl_stages=["curated"], output_data_type=str),
+                    create_column(etl_stages=["curated"], output_data_type="str"),
                     create_column(
-                        name="name", etl_stages=["curated"], output_data_type=float
+                        name="name", etl_stages=["curated"], output_data_type="float"
                     ),
                     create_column(
-                        name="address", etl_stages=["raw"], output_data_type=str
+                        name="address", etl_stages=["raw"], output_data_type="str"
                     ),
                 ],
             ),
@@ -1115,49 +1123,105 @@ def test_output_to_df() -> None:
     pd.testing.assert_frame_equal(act_df, exp_df)
 
 
-# def test_load_metadata() -> None:
-#     metadata = m.load_metadata(Path("tests/data/meta_data"), "test_database")
+def test_load_metadata() -> None:
+    """Test that metadata is correctly loaded into the model.
 
-#     assert sorted(metadata.tables.keys()) == ["test_table", "test_table2"]
-#     assert metadata.tables["test_table"].columns[0].name == "id"
-#     assert metadata.tables["test_table2"].columns[0].name == "ids"
+    Also serves to validate a bespoke test metadata file which covers most/all use cases
+    for the actual metadata (thus testing the models handles them correctly).
+    """
+    metadata = m.load_metadata(Path("tests/data/meta_data"), "test_database")
+
+    assert sorted(metadata.tables.keys()) == ["test_table", "test_table_2"]
+    assert metadata.tables["test_table"].columns[0].name == "id"
+    assert metadata.tables["test_table_2"].columns[0].name == "id2"
 
 
-# def test_output_metadata_as_csv() -> None:
-#     m.output_metadata_as_csv(
-#         Path("tests/data/meta_data/new_metadata"),
-#         ["test_a", "test_b"],
-#         Path("tests/data"),
-#     )
+def test_output_metadata_as_csv() -> None:
+    output_path = Path("tests/data/outputs/metadata/")
+    output_path.mkdir(parents=True, exist_ok=True)
 
-#     act_df = pd.read_csv("tests/data/metadata.csv")
-#     act_df = act_df.sort_values(["System", "Data Table", "Data Field"])
-#     act_df = act_df.reset_index(drop=True)
+    m.output_metadata_as_csv(
+        Path("tests/data/meta_data"),
+        ["test_database"],
+        Path("tests/data/outputs/metadata"),
+    )
 
-#     exp_df = pd.DataFrame(
-#         data={
-#             "System": ["test_a"] * 6 + ["test_b"] * 3,
-#             "Dataset": ["test_a"] * 6 + ["test_b"] * 3,
-#             "Data Table": ["test_a"] * 3 + ["test_a2"] * 3 + ["test_b"] * 3,
-#             "Data Field": [
-#                 "name",
-#                 "email",
-#                 "phone",
-#                 "id",
-#                 "town",
-#                 "phone",
-#                 "name",
-#                 "email",
-#                 "phone",
-#             ],
-#             "Description": [np.NaN] * 9,
-#             "Data Type": ["string", "string", "date32"] * 3,
-#             "Nullable": [True] * 9,
-#         }
-#     )
-#     exp_df = exp_df.sort_values(["System", "Data Table", "Data Field"])
-#     exp_df = exp_df.reset_index(drop=True)
+    act_df = pd.read_csv(Path("tests/data/outputs/metadata/metadata.csv"))
+    act_df = act_df.sort_values(["System", "Data Table", "Data Field"])
+    act_df = act_df.reset_index(drop=True)
 
-#     pd.testing.assert_frame_equal(act_df, exp_df, check_dtype=False)
+    exp_df = pd.DataFrame(
+        data={
+            "System": ["test_database"] * 26,
+            "Dataset": ["test_database"] * 26,
+            "Data Table": ["test_table"] * 13 + ["test_table_2"] * 13,
+            "Data Field": [
+                "address",
+                "case_type",
+                "created_date",
+                "id",
+                "is_open",
+                "land_datetime",
+                "length_open_for",
+                "name",
+                "number_of_contacts",
+                "processed_datetime",
+                "record_created_datetime",
+                "record_updated_datetime",
+                "triage_level",
+                "address2",
+                "case_type2",
+                "created_date2",
+                "id2",
+                "is_open2",
+                "land_datetime",
+                "length_open_for2",
+                "name2",
+                "number_of_contacts2",
+                "processed_datetime",
+                "record_created_datetime",
+                "record_updated_datetime",
+                "triage_level2",
+            ],
+            "Description": [np.NaN] * 26,
+            "Data Type": [
+                "<class 'str'>",
+                "<class 'str'>",
+                "<class 'datetime.date'>",
+                "<class 'int'>",
+                "<class 'bool'>",
+                "<class 'datetime.datetime'>",
+                "<class 'int'>",
+                "<class 'str'>",
+                "<class 'int'>",
+                "<class 'datetime.datetime'>",
+                "<class 'datetime.datetime'>",
+                "<class 'datetime.datetime'>",
+                "<class 'int'>",
+            ]
+            * 2,
+            "Nullable": [
+                True,
+                True,
+                True,
+                False,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+            ]
+            * 2,
+        }
+    )
+    exp_df = exp_df.sort_values(["System", "Data Table", "Data Field"])
+    exp_df = exp_df.reset_index(drop=True)
 
-#     Path("tests/data/metadata.csv").unlink()
+    pd.testing.assert_frame_equal(act_df, exp_df, check_dtype=False)
+
+    (output_path / "metadata.csv").unlink()
+    output_path.rmdir()

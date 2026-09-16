@@ -12,7 +12,6 @@ from opg_pipeline_builder.constants import (
     ALLOWED_ETL_STAGES,
     ALLOWED_FILE_FORMATS,
     ALLOWED_SEMANTIC_TYPES,
-    ALLOWED_STRUCT_DATA_TYPES,
     ALLOWED_VALUE_FORMATS,
 )
 from opg_pipeline_builder.logging.log import CustomFields
@@ -92,20 +91,17 @@ class Column(BaseModel):
                 raise exc.InvalidStageError(err)
         return value
 
-    @field_validator("input_data_type", "output_data_type")
+    @field_validator("input_data_type", "output_data_type", mode="before")
     @classmethod
-    def _validate_data_type(cls, value: type, info: ValidationInfo) -> Any:
-        """Check the provided data type is valid."""
-        if value in ALLOWED_DATA_TYPES or str(value).startswith(
-            ALLOWED_STRUCT_DATA_TYPES
-        ):
-            return value
-
-        err = f"Data type '{value}' for field '{info.field_name}' is not in the ALLOWED_DATA_TYPES constant"
-        log_fields.update(table=_get_table_name(info), field=info.field_name)
-        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
-
-        raise exc.InvalidTypeError(err)
+    def _validate_data_type(cls, value: str, info: ValidationInfo) -> Any:
+        """Convert supported JSON type names to Python type objects."""
+        data_type = ALLOWED_DATA_TYPES.get(value, None)
+        if data_type is None:
+            err = f"Data type '{value}' for field '{info.field_name}' is not in the ALLOWED_DATA_TYPES constant"
+            log_fields.update(table=_get_table_name(info), field=info.field_name)
+            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            raise exc.InvalidTypeError(err)
+        return data_type
 
     @field_validator("input_value_format", "output_value_format")
     @classmethod

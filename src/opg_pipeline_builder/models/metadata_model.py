@@ -285,38 +285,43 @@ class TableMetaData(BaseModel):
     @model_validator(mode="after")
     def validate_column_stages_match_file_format_stages(self) -> "TableMetaData":
         """Check that all stages defined for columns have a corresponding file format."""
-        unreconciled_stages = [format_obj.stage for format_obj in self.file_formats]
-        reconciled_stages = []
-        file_format_stages = [format_obj.stage for format_obj in self.file_formats]
+        unreconciled_format_stages = [
+            format_obj.stage for format_obj in self.file_formats
+        ]
+        unreconciled_column_stages: list[str] = []
+        reconciled_stages: list[str] = []
 
         for column in self.columns:
             for stage in column.etl_stages:
-                if stage in unreconciled_stages:
-                    unreconciled_stages.remove(stage)
+                if stage in unreconciled_format_stages:
+                    unreconciled_format_stages.remove(stage)
                     reconciled_stages.append(stage)
                 else:
-                    if stage not in reconciled_stages:
-                        unreconciled_stages.append(stage)
+                    if (
+                        stage not in reconciled_stages
+                        and stage not in unreconciled_column_stages
+                    ):
+                        unreconciled_column_stages.append(stage)
 
-            if not unreconciled_stages:
-                break
+        log_fields.update(table=self.name, field="None")
+        if unreconciled_format_stages:
+            for stage in unreconciled_format_stages:
+                logger.error(
+                    "ETL stage '%s' is defined in the file formats, but not for any columns",
+                    stage,
+                    extra={"custom_fields": log_fields.model_dump()},
+                )
+        if unreconciled_column_stages:
+            for stage in unreconciled_column_stages:
+                logger.error(
+                    "ETL stage '%s' is defined for columns, but not in the file formats",
+                    stage,
+                    extra={"custom_fields": log_fields.model_dump()},
+                )
 
-        if unreconciled_stages:
-            log_fields.update(table=self.name, field="None")
-            for stage in unreconciled_stages:
-                if stage in file_format_stages:
-                    logger.error(
-                        "ETL stage '%s' is defined in the file formats but not for any columns",
-                        stage,
-                        extra={"custom_fields": log_fields.model_dump()},
-                    )
-                else:
-                    logger.error(
-                        "ETL stage '%s' is defined for columns but not in the file formats",
-                        stage,
-                        extra={"custom_fields": log_fields.model_dump()},
-                    )
-            err = f"ETL stages: '{', '.join(unreconciled_stages)}' are defined for columns, or file formats, but not both."
+        if unreconciled_format_stages or unreconciled_column_stages:
+            err = f"The following ETL stages are defined for columns, but not in the file formats: [{', '.join(unreconciled_column_stages)}]."
+            err += f" The following ETL stages are defined for file formats, but not for any columns: [{', '.join(unreconciled_format_stages)}]."
             raise exc.InvalidStageError(err)
 
         return self
@@ -415,13 +420,17 @@ class MetaData(BaseModel):
         table = self.tables.get(table_name, None)
 
         if not table:
+            log_fields.update(table=table_name, field="None")
             err = f"Table '{table_name}' is not configured in the metadata for '{self.database}'"
+            logger.error(err, extra={"log_fields": log_fields})
             raise exc.InvalidTableError(err)
 
         return table
 
     def output_to_df(self) -> pd.DataFrame:
-        """Combine the metadata for each table into a single dataframe
+        """Combine the metadata for each table into a single dataframe.
+
+        This is specifically to provide the metadata in a format required by OPG.
 
         Returns:
             pd.DataFrame: Combined metadata as adataframe
@@ -431,7 +440,7 @@ class MetaData(BaseModel):
         for table in self.tables.values():
             data: list[dict[str, Any]] = []
             for column in table.columns:
-                if column.has_stage("curated"):
+                if column.exists_in_stage("curated"):
                     data.append(
                         {
                             "System": self.database,
@@ -439,7 +448,7 @@ class MetaData(BaseModel):
                             "Data Table": table.name,
                             "Data Field": column.name,
                             "Description": "",
-                            "Data Type": column.get_stage_for_column("curated").type,
+                            "Data Type": column.output_data_type,
                             "Nullable": column.nullable,
                         }
                     )

@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from opg_pipeline_builder.models import metadata_model as m
@@ -724,6 +725,64 @@ def test_table_metadata_column_stages_match_file_format_stages_valid(
     assert format_stages == table_metadata.etl_stages
 
 
+@pytest.mark.parametrize(
+    ("format_stages", "column_stages", "unreconciled_formats", "unreconciled_columns"),
+    [
+        (["raw"], [["curated"]], ["raw"], ["curated"]),
+        (["curated"], [["raw"]], ["curated"], ["raw"]),
+        (["raw"], [["curated"], ["curated"], ["raw"]], [], ["curated"]),
+        (["raw"], [["curated"], ["raw"], ["curated"]], [], ["curated"]),
+        (["raw", "curated"], [["curated"]], ["raw"], []),
+        (["raw", "curated"], [["raw"]], ["curated"], []),
+        (["raw", "curated"], [["raw"], ["raw"], ["raw"]], ["curated"], []),
+        (["raw", "curated"], [["curated"], ["curated"], ["curated"]], ["raw"], []),
+        (
+            ["curated"],
+            [["curated"], ["curated"], ["curated"], ["curated"], ["raw"]],
+            [],
+            ["raw"],
+        ),
+    ],
+)
+def test_table_metadata_column_stages_match_file_format_stages_invalid(
+    format_stages: list[str],
+    column_stages: list[list[str]],
+    unreconciled_formats: list[str],
+    unreconciled_columns: list[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that column stages match the file format stages for a table."""
+
+    columns = []
+    for num, stages in enumerate(column_stages):
+        columns.append(create_column(name=f"id_{num}", etl_stages=stages))
+    with pytest.raises(exc.InvalidStageError) as exc_info:
+        create_table_metadata(
+            "test_table",
+            [create_file_format(stage=stage) for stage in format_stages],
+            columns,
+        )
+
+    for stage in unreconciled_formats:
+        assert (
+            f"ETL stage '{stage}' is defined in the file formats, but not for any columns"
+            in caplog.text
+        )
+        assert (
+            f"The following ETL stages are defined for file formats, but not for any columns: [{', '.join(unreconciled_formats)}]"
+            in str(exc_info.value)
+        )
+    for stage in unreconciled_columns:
+        assert (
+            f"ETL stage '{stage}' is defined for columns, but not in the file formats"
+            in caplog.text
+        )
+        assert (
+            f"The following ETL stages are defined for columns, but not in the file formats: [{', '.join(unreconciled_columns)}]"
+            in str(exc_info.value)
+        )
+
+
 def test_table_metadata_etl_stages() -> None:
     """Test that the etl_stages property returns all stages defined in the file formats."""
     format_stages = ["raw", "curated"]
@@ -740,7 +799,7 @@ def test_table_metadata_contains_sensitive_data_exists() -> None:
     """Test that the contains_sensitive_data property correctly identifies sensitive columns."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format(stage="raw")],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", sensitive=False),
             create_column(name="ssn", sensitive=True),
@@ -756,7 +815,7 @@ def test_table_metadata_contains_sensitive_data_not_exists() -> None:
     """Test that the contains_sensitive_data property correctly identifies sensitive columns."""
     table_metadata_no_sensitive = create_table_metadata(
         "test_table",
-        [create_file_format(stage="raw")],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", sensitive=False),
             create_column(name="name", sensitive=False),
@@ -770,7 +829,7 @@ def test_table_metadata_composite_key() -> None:
     """Test that the composite_key property returns all columns marked as part of the composite key."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format(stage="raw")],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", is_composite_key=True),
             create_column(name="type", is_composite_key=False),
@@ -785,7 +844,7 @@ def test_table_metadata_partition_key() -> None:
     """Test that the partition_key property returns all columns marked as part of the partition key."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format(stage="raw")],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", is_partition=True),
             create_column(name="type", is_partition=False),
@@ -837,7 +896,7 @@ def test_table_metadata_get_columns_for_stage_populated() -> None:
     """Test that get_columns_for_stage returns the correct columns for a populated stage."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format()],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", etl_stages=["raw", "curated"]),
             create_column(name="type", etl_stages=["curated"]),
@@ -853,7 +912,7 @@ def test_table_metadata_get_columns_for_stage_empty() -> None:
     """Test that get_columns_for_stage returns an empty list for a stage with no columns."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format()],
+        [create_file_format(stage="raw")],
         [
             create_column(name="id", etl_stages=["raw"]),
             create_column(name="type", etl_stages=["raw"]),
@@ -868,7 +927,7 @@ def test_table_metadata_get_column_populated() -> None:
     """Test that get_column returns the correct column for a populated table."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format()],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [create_column(name="id"), create_column(name="name")],
     )
 
@@ -881,7 +940,7 @@ def test_table_metadata_get_column_empty(caplog: pytest.LogCaptureFixture) -> No
     """Test that get_column raises an error for an invalid column."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format()],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [create_column(name="id"), create_column(name="name")],
     )
 
@@ -898,7 +957,7 @@ def test_table_metadata_get_sensitive_columns_populated() -> None:
     """Test that get_sensitive_columns returns the correct sensitive columns for a populated table."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format()],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", sensitive=False),
             create_column(name="ssn", sensitive=True),
@@ -914,7 +973,7 @@ def test_table_metadata_get_sensitive_columns_empty() -> None:
     """Test that get_sensitive_columns returns an empty list for a table with no sensitive columns."""
     table_metadata = create_table_metadata(
         "test_table",
-        [create_file_format()],
+        [create_file_format(stage="raw"), create_file_format(stage="curated")],
         [
             create_column(name="id", sensitive=False),
             create_column(name="name", sensitive=False),
@@ -925,127 +984,135 @@ def test_table_metadata_get_sensitive_columns_empty() -> None:
     assert sensitive_columns == []
 
 
-# def test_metadata_valid() -> None:
-#     metadata = m.MetaData(
-#         database="test",
-#         tables={
-#             "test_table": create_table_metadata(
-#                 "test_table", ["id"], [create_file_format()], [create_column()]
-#             ),
-#             "test_table2": create_table_metadata(
-#                 "test_table2",
-#                 ["name"],
-#                 [create_file_format(name="curated")],
-#                 [create_column(name="name")],
-#             ),
-#         },
-#     )
+def test_metadata_valid() -> None:
+    """Test that the MetaData model is correctly instantiated and contains the expected tables and columns."""
+    metadata = m.MetaData(
+        database="test",
+        tables={
+            "test_table": create_table_metadata(
+                "test_table",
+                [create_file_format(stage="raw")],
+                [create_column(etl_stages=["raw"])],
+            ),
+            "test_table2": create_table_metadata(
+                "test_table2",
+                [create_file_format(stage="curated")],
+                [create_column(name="name", etl_stages=["curated"])],
+            ),
+        },
+    )
 
-#     assert metadata.database == "test"
-#     assert metadata.tables["test_table"].file_formats[0].format == "parquet"
-#     assert metadata.tables["test_table"].partitions == ["id"]
-#     assert metadata.tables["test_table2"].columns[0].name == "name"
-#     assert metadata.tables["test_table2"].file_formats[0].name == "curated"
-
-
-# def test_metadata_get_table_metadata_valid() -> None:
-#     metadata = m.MetaData(
-#         database="test",
-#         tables={
-#             "test_table": create_table_metadata(
-#                 "test_table", ["id"], [create_file_format()], [create_column()]
-#             ),
-#             "test_table2": create_table_metadata(
-#                 "test_table2",
-#                 ["name"],
-#                 [create_file_format(name="curated")],
-#                 [create_column(name="name")],
-#             ),
-#         },
-#     )
-
-#     table_metadata = metadata.get_table_metadata("test_table2")
-
-#     assert table_metadata.partitions == ["name"]
-#     assert table_metadata.name == "test_table2"
-#     assert table_metadata.columns[0].name == "name"
+    assert metadata.database == "test"
+    assert metadata.tables["test_table"].file_formats[0].format == "parquet"
+    assert metadata.tables["test_table2"].columns[0].name == "name"
+    assert metadata.tables["test_table2"].file_formats[0].stage == "curated"
 
 
-# def test_metadata_get_table_metadata_invalid() -> None:
-#     metadata = m.MetaData(
-#         database="test",
-#         tables={
-#             "test_table": create_table_metadata(
-#                 "test_table", ["id"], [create_file_format()], [create_column()]
-#             ),
-#             "test_table2": create_table_metadata(
-#                 "test_table2",
-#                 ["name"],
-#                 [create_file_format(name="curated")],
-#                 [create_column(name="name")],
-#             ),
-#         },
-#     )
+def test_metadata_get_table_metadata_valid() -> None:
+    """Test that get_table_metadata returns the correct TableMetaData object for a valid table."""
+    metadata = m.MetaData(
+        database="test",
+        tables={
+            "test_table": create_table_metadata(
+                "test_table",
+                [create_file_format(stage="raw")],
+                [create_column(name="name", etl_stages=["raw"])],
+            ),
+            "test_table2": create_table_metadata(
+                "test_table2",
+                [create_file_format(stage="curated")],
+                [
+                    create_column(
+                        name="other_name", etl_stages=["curated"], is_partition=True
+                    )
+                ],
+            ),
+        },
+    )
 
-#     with pytest.raises(m.InvalidTableError) as e:
-#         metadata.get_table_metadata("invalid")
+    table_metadata = metadata.get_table_metadata("test_table2")
 
-#     assert (
-#         str(e.value) == "Table 'invalid' is not configured in the metadata for 'test'"
-#     )
+    assert [col.name for col in table_metadata.partition_key] == ["other_name"]
+    assert table_metadata.name == "test_table2"
+    assert table_metadata.columns[0].name == "other_name"
+    assert table_metadata.file_formats[0].stage == "curated"
 
 
-# def test_output_to_df() -> None:
-#     metadata = m.MetaData(
-#         database="test",
-#         tables={
-#             "test_table": create_table_metadata(
-#                 "test_table",
-#                 ["id"],
-#                 [create_file_format()],
-#                 [
-#                     create_column(
-#                         stages=[["curated")]
-#                     ),
-#                     create_column(
-#                         name="name",
-#                         stages=[["curated", data_type="int64")],
-#                     ),
-#                     create_column(name="address", stages=[[#                 ],
-#             ),
-#             "test_table2": create_table_metadata(
-#                 "test_table2",
-#                 ["name"],
-#                 [create_file_format(name="curated")],
-#                 [
-#                     create_column(
-#                         stages=[["curated")]
-#                     ),
-#                     create_column(
-#                         name="name",
-#                         stages=[["curated", data_type="float64")],
-#                     ),
-#                     create_column(name="address", stages=[[#                 ],
-#             ),
-#         },
-#     )
+def test_metadata_get_table_metadata_invalid(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that get_table_metadata raises an InvalidTableError for an invalid table."""
+    metadata = m.MetaData(
+        database="test",
+        tables={
+            "test_table": create_table_metadata(
+                "test_table",
+                [create_file_format(stage="raw")],
+                [create_column(etl_stages=["raw"])],
+            ),
+            "test_table2": create_table_metadata(
+                "test_table2",
+                [create_file_format(stage="curated")],
+                [
+                    create_column(name="name", etl_stages=["curated"]),
+                ],
+            ),
+        },
+    )
 
-#     act_df = metadata.output_to_df()
-#     act_df = act_df.reset_index(drop=True)
+    with pytest.raises(exc.InvalidTableError):
+        metadata.get_table_metadata("invalid")
 
-#     exp_df = pd.DataFrame(
-#         data={
-#             "System": ["test", "test", "test", "test"],
-#             "Dataset": ["test", "test", "test", "test"],
-#             "Data Table": ["test_table", "test_table", "test_table2", "test_table2"],
-#             "Data Field": ["id", "name", "id", "name"],
-#             "Description": ["", "", "", ""],
-#             "Data Type": ["string", "int64", "string", "float64"],
-#             "Nullable": [True, True, True, True],
-#         }
-#     )
+    assert "Table 'invalid' is not configured in the metadata for 'test'" in caplog.text
 
-#     pd.testing.assert_frame_equal(act_df, exp_df)
+
+def test_output_to_df() -> None:
+    metadata = m.MetaData(
+        database="test",
+        tables={
+            "test_table": create_table_metadata(
+                "test_table",
+                [create_file_format(stage="curated"), create_file_format(stage="raw")],
+                [
+                    create_column(name="id", etl_stages=["curated"]),
+                    create_column(
+                        name="name", etl_stages=["curated"], output_data_type=int
+                    ),
+                    create_column(
+                        name="address", etl_stages=["raw"], output_data_type=str
+                    ),
+                ],
+            ),
+            "test_table2": create_table_metadata(
+                "test_table2",
+                [create_file_format(stage="curated"), create_file_format(stage="raw")],
+                [
+                    create_column(etl_stages=["curated"], output_data_type=str),
+                    create_column(
+                        name="name", etl_stages=["curated"], output_data_type=float
+                    ),
+                    create_column(
+                        name="address", etl_stages=["raw"], output_data_type=str
+                    ),
+                ],
+            ),
+        },
+    )
+
+    act_df = metadata.output_to_df()
+    act_df = act_df.reset_index(drop=True)
+
+    exp_df = pd.DataFrame(
+        data={
+            "System": ["test", "test", "test", "test"],
+            "Dataset": ["test", "test", "test", "test"],
+            "Data Table": ["test_table", "test_table", "test_table2", "test_table2"],
+            "Data Field": ["id", "name", "id", "name"],
+            "Description": ["", "", "", ""],
+            "Data Type": [str, int, str, float],
+            "Nullable": [False, False, False, False],
+        }
+    )
+
+    pd.testing.assert_frame_equal(act_df, exp_df)
 
 
 # def test_load_metadata() -> None:

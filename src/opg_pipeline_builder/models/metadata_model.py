@@ -5,7 +5,13 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from opg_pipeline_builder.constants import (
     ALLOWED_DATA_TYPES,
@@ -14,24 +20,29 @@ from opg_pipeline_builder.constants import (
     ALLOWED_SEMANTIC_TYPES,
     ALLOWED_VALUE_FORMATS,
 )
-from opg_pipeline_builder.logging.log import CustomFields
+from opg_pipeline_builder.logging.log import ModuleLogger
 from opg_pipeline_builder.models import modelling_exceptions as exc
 from opg_pipeline_builder.validation.validators import is_valid_identifier
 
 logger = getLogger(__name__)
-log_fields: CustomFields = CustomFields.set_custom_fields(
-    "Validation", "Processing", "None", "None"
-)
+metadata_logger = ModuleLogger(logger=logger)
 
 
-def _get_table_name(info: ValidationInfo) -> str:
+def table_name(info: ValidationInfo) -> str:
     """Extract the table name from the validation context."""
-    table_name: str = (info.context or {}).get("table_name", "")
-    return table_name
+    table: str = (info.context or {}).get("table_name", "")
+    return table
+
+
+def field_name(info: ValidationInfo) -> str:
+    """Extract the field name from Pydantic validation information."""
+    return info.field_name or ""
 
 
 class Column(BaseModel):
     """Pydantic model representing a column that exists in the metadata for a specific table."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str
     description: str = ""
@@ -55,8 +66,7 @@ class Column(BaseModel):
         """Validate that the column name is a valid SQL/Athena identifier."""
         err = is_valid_identifier(value)
         if err:
-            log_fields.update(table=_get_table_name(info), field=info.field_name)
-            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            metadata_logger.error(err, table=table_name(info), field=field_name(info))
             raise exc.InvalidColumnNameError(err)
 
         return value
@@ -69,8 +79,7 @@ class Column(BaseModel):
             return value
 
         err = f"Semantic type '{value}' is not in the ALLOWED_SEMANTIC_TYPES constant"
-        log_fields.update(table=_get_table_name(info), field=info.field_name)
-        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        metadata_logger.error(err, table=table_name(info), field=field_name(info))
         raise exc.InvalidSemanticTypeError(err)
 
     @field_validator("etl_stages")
@@ -79,15 +88,15 @@ class Column(BaseModel):
         """Check the provided ETL stage is valid and not empty."""
         if not value:
             err = "ETL stages list cannot be empty"
-            log_fields.update(table=_get_table_name(info), field=info.field_name)
-            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            metadata_logger.error(err, table=table_name(info), field=field_name(info))
             raise exc.InvalidStageError(err)
 
         for stage in value:
             if stage not in ALLOWED_ETL_STAGES:
                 err = f"ETL stage '{stage}' is not in the ALLOWED_ETL_STAGES constant"
-                log_fields.update(table=_get_table_name(info), field=info.field_name)
-                logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+                metadata_logger.error(
+                    err, table=table_name(info), field=field_name(info)
+                )
                 raise exc.InvalidStageError(err)
         return value
 
@@ -98,8 +107,7 @@ class Column(BaseModel):
         data_type = ALLOWED_DATA_TYPES.get(value, None)
         if data_type is None:
             err = f"Data type '{value}' for field '{info.field_name}' is not in the ALLOWED_DATA_TYPES constant"
-            log_fields.update(table=_get_table_name(info), field=info.field_name)
-            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            metadata_logger.error(err, table=table_name(info), field=field_name(info))
             raise exc.InvalidTypeError(err)
         return data_type
 
@@ -111,8 +119,7 @@ class Column(BaseModel):
             return value
 
         err = f"Value format '{value}' for field '{info.field_name}' is not in the ALLOWED_VALUE_FORMATS constant"
-        log_fields.update(table=_get_table_name(info), field=info.field_name)
-        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        metadata_logger.error(err, table=table_name(info), field=field_name(info))
         raise exc.InvalidFormatError(err)
 
     @model_validator(mode="after")
@@ -123,47 +130,50 @@ class Column(BaseModel):
 
         if (self.is_composite_key or self.is_partition) and self.nullable:
             err = f"Column '{self.name}' is part of a composite key or partition and cannot be nullable"
-            log_fields.update(table=_get_table_name(info), field="nullable")
-            logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+            metadata_logger.error(err, table=table_name(info), field="nullable")
             raise exc.InvalidColumnError(err)
         return self
 
     @model_validator(mode="after")
     def _allowed_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
         """Ensure that allowed values match the input data type."""
-        log_fields.update(table=_get_table_name(info), field="allowed_values")
 
         if self.allowed_values:
             if self.input_data_type in (str, int):
                 for value in self.allowed_values:
                     if not isinstance(value, self.input_data_type):
                         err = f"Allowed value '{value}' with type '{type(value)}' does not match the input data type '{self.input_data_type}'"
-                        logger.error(
-                            err, extra={"custom_fields": log_fields.model_dump()}
+                        metadata_logger.error(
+                            err, table=table_name(info), field="allowed_values"
                         )
                         raise exc.InvalidTypeError(err)
             else:
-                logger.info(
-                    "Only check allowed values for 'str' and 'int' input data types. Skipping check for '%s'",
-                    _get_table_name(info),
+                metadata_logger.info(
+                    "Only check allowed values for 'str' and 'int' input data types. "
+                    f"Skipping check for '{table_name(info)}'",
+                    table=table_name(info),
+                    field="allowed_values",
                 )
         return self
 
     @model_validator(mode="after")
     def _default_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
         """Ensure that default values match the input data type."""
-        log_fields.update(table=_get_table_name(info), field="default_value")
 
-        if self.default_value:
+        if self.default_value is not None:
             if self.input_data_type in (str, int):
                 if not isinstance(self.default_value, self.input_data_type):
                     err = f"Default value '{self.default_value}' with type '{type(self.default_value)}' does not match the input data type '{self.input_data_type}'"
-                    logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+                    metadata_logger.error(
+                        err, table=table_name(info), field="default_value"
+                    )
                     raise exc.InvalidTypeError(err)
             else:
-                logger.info(
-                    "Only check default value for 'str' and 'int' input data types. Skipping check for '%s'",
-                    _get_table_name(info),
+                metadata_logger.info(
+                    "Only check default value for 'str' and 'int' input data types. "
+                    f"Skipping check for '{table_name(info)}'",
+                    table=table_name(info),
+                    field="default_value",
                 )
         return self
 
@@ -190,17 +200,18 @@ class Column(BaseModel):
         if self.allowed_values:
             return value in self.allowed_values
 
-        log_fields.update(field="allowed_values")
-        logger.info(
-            "There are no allowed values for column '%s'; skipping allowed values check.",
-            self.name,
-            extra={"custom_fields": log_fields.model_dump()},
+        metadata_logger.info(
+            f"There are no allowed values for column '{self.name}'; skipping allowed values check.",
+            table="None",
+            field="allowed_values",
         )
         return False
 
 
 class FileFormat(BaseModel):
     """Pydantic model representing the file format data is stored in for each ETL stage."""
+
+    model_config = ConfigDict(extra="forbid")
 
     stage: str
     format: str
@@ -213,8 +224,7 @@ class FileFormat(BaseModel):
             return value
 
         err = f"ETL stage '{value}' is not in the ALLOWED_ETL_STAGES constant"
-        log_fields.update(table=_get_table_name(info), field="stage")
-        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        metadata_logger.error(err, table=table_name(info), field="stage")
         raise exc.InvalidStageError(err)
 
     @field_validator("format")
@@ -225,13 +235,14 @@ class FileFormat(BaseModel):
             return value
 
         err = f"File format '{value}' is not in the ALLOWED_FILE_FORMATS constant"
-        log_fields.update(table=_get_table_name(info), field="format")
-        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        metadata_logger.error(err, table=table_name(info), field="format")
         raise exc.InvalidFormatError(err)
 
 
 class TableMetaData(BaseModel):
     """Pydantic model representing a metadata entry for a specific table."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str
     description: str
@@ -247,11 +258,10 @@ class TableMetaData(BaseModel):
         for column, count in column_counts.items():
             if count > 1:
                 duplicate = True
-                log_fields.update(table=self.name, field=column)
-                logger.error(
-                    "Duplicate field found: '%s'",
-                    column,
-                    extra={"custom_fields": log_fields.model_dump()},
+                metadata_logger.error(
+                    f"Duplicate field found: '{column}'",
+                    table=self.name,
+                    field=column,
                 )
         if duplicate:
             err = "One or more columns are defined twice for the same table"
@@ -267,11 +277,10 @@ class TableMetaData(BaseModel):
         for stage, count in stage_counts.items():
             if count > 1:
                 duplicate = True
-                log_fields.update(table=self.name, field=stage)
-                logger.error(
-                    "Duplicate file format stage found: %s",
-                    stage,
-                    extra={"custom_fields": log_fields.model_dump()},
+                metadata_logger.error(
+                    f"Duplicate file format stage found: {stage}",
+                    table=self.name,
+                    field=stage,
                 )
         if duplicate:
             err = "One or more file format stages are defined twice for the same table"
@@ -299,20 +308,19 @@ class TableMetaData(BaseModel):
                     ):
                         unreconciled_column_stages.append(stage)
 
-        log_fields.update(table=self.name, field="None")
         if unreconciled_format_stages:
             for stage in unreconciled_format_stages:
-                logger.error(
-                    "ETL stage '%s' is defined in the file formats, but not for any columns",
-                    stage,
-                    extra={"custom_fields": log_fields.model_dump()},
+                metadata_logger.error(
+                    f"ETL stage '{stage}' is defined in the file formats, but not for any columns",
+                    table=self.name,
+                    field="None",
                 )
         if unreconciled_column_stages:
             for stage in unreconciled_column_stages:
-                logger.error(
-                    "ETL stage '%s' is defined for columns, but not in the file formats",
-                    stage,
-                    extra={"custom_fields": log_fields.model_dump()},
+                metadata_logger.error(
+                    f"ETL stage '{stage}' is defined for columns, but not in the file formats",
+                    table=self.name,
+                    field="None",
                 )
 
         if unreconciled_format_stages or unreconciled_column_stages:
@@ -360,8 +368,7 @@ class TableMetaData(BaseModel):
                 return format_obj
 
         err = f"No file format metadata is configured for stage '{stage_name}' for table '{self.name}'"
-        log_fields.update(table=self.name, field="None")
-        logger.error(err, extra={"custom_fields": log_fields.model_dump()})
+        metadata_logger.error(err, table=self.name, field="None")
         raise exc.InvalidStageError(err)
 
     def get_columns_for_stage(self, stage_name: str) -> list[Column]:
@@ -389,9 +396,8 @@ class TableMetaData(BaseModel):
             if column.name == name:
                 return column
 
-        log_fields.update(table=self.name, field=name)
         err = f"Column '{name}' was not found in the metadata for table '{self.name}'."
-        logger.error(err, extra={"log_fields": log_fields})
+        metadata_logger.error(err, table=self.name, field=name)
         raise exc.InvalidColumnError(err)
 
     def get_sensitive_columns(self) -> list[Column]:
@@ -400,6 +406,8 @@ class TableMetaData(BaseModel):
 
 
 class MetaData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     database: str
     tables: dict[str, TableMetaData]
 
@@ -416,9 +424,8 @@ class MetaData(BaseModel):
         table = self.tables.get(table_name, None)
 
         if not table:
-            log_fields.update(table=table_name, field="None")
             err = f"Table '{table_name}' is not configured in the metadata for '{self.database}'"
-            logger.error(err, extra={"log_fields": log_fields})
+            metadata_logger.error(err, table=table_name, field="None")
             raise exc.InvalidTableError(err)
 
         return table
@@ -471,7 +478,10 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
     for file in db_metadata_files:
         with (file).open(encoding="utf-8", mode="r") as json_file:
             metadata_file = json.load(json_file)
-            database_metadata[file.stem] = TableMetaData(**metadata_file)
+            database_metadata[file.stem] = TableMetaData.model_validate(
+                metadata_file,
+                context={"table_name": metadata_file["name"]},
+            )
     return MetaData(database=database_name, tables=database_metadata)
 
 

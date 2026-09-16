@@ -7,6 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from opg_pipeline_builder.models import metadata_model as m
 from opg_pipeline_builder.models import modelling_exceptions as exc
@@ -32,6 +33,7 @@ def create_column(
     nullable: bool = False,
     allowed_values: list[str | int] | None = None,
     default_value: str | int | None = "default",
+    **extra_fields: Any,
 ) -> m.Column:
     """Create a Column instance with the given parameters."""
 
@@ -55,6 +57,7 @@ def create_column(
             "nullable": nullable,
             "allowed_values": allowed_values,
             "default_value": default_value,
+            **extra_fields,
         },
         context={"table_name": "test_table"},
     )
@@ -71,13 +74,30 @@ def create_table_metadata(
     file_formats: list[m.FileFormat],
     columns: list[m.Column],
     description: str = "description",
+    **extra_fields: Any,
 ) -> m.TableMetaData:
     return m.TableMetaData(
         name=name,
         description=description,
         file_formats=file_formats,
         columns=columns,
+        **extra_fields,
     )
+
+
+def assert_log_record(
+    caplog: pytest.LogCaptureFixture,
+    message: str,
+    table: str,
+    field: str,
+) -> None:
+    """Assert that a log message has the expected structured metadata."""
+    record = next(record for record in caplog.records if record.message == message)
+    assert record.__dict__["custom_fields"] == {
+        "process_stage": "Processing",
+        "table": table,
+        "field": field,
+    }
 
 
 ####################
@@ -138,7 +158,7 @@ def test_column_validate_name_invalid(caplog: pytest.LogCaptureFixture) -> None:
         with pytest.raises(exc.InvalidColumnNameError):
             create_column()
 
-    assert any("Validation error" in record.message for record in caplog.records)
+    assert_log_record(caplog, "Validation error", "test_table", "name")
 
 
 @pytest.mark.parametrize(
@@ -171,7 +191,12 @@ def test_column_validate_semantic_type_invalid(
         match=f"Semantic type '{semantic_type}' is not in the ALLOWED_SEMANTIC_TYPES constant",
     ):
         create_column(semantic_type=semantic_type)
-    assert any("Semantic type" in record.message for record in caplog.records)
+    assert_log_record(
+        caplog,
+        f"Semantic type '{semantic_type}' is not in the ALLOWED_SEMANTIC_TYPES constant",
+        "test_table",
+        "semantic_type",
+    )
 
 
 @pytest.mark.parametrize(
@@ -207,7 +232,7 @@ def test_column_validate_etl_stage_invalid(
     """Test that invalid ETL stages raise InvalidStageError."""
     with pytest.raises(exc.InvalidStageError, match=exp_err):
         create_column(etl_stages=etl_stage)
-    assert any(exp_err in record.message for record in caplog.records)
+    assert_log_record(caplog, exp_err, "test_table", "etl_stages")
 
 
 def test_column_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> None:
@@ -220,9 +245,7 @@ def test_column_validate_etl_stage_empty(caplog: pytest.LogCaptureFixture) -> No
             input_data_type="str",
             output_data_type="str",
         )
-    assert any(
-        "ETL stages list cannot be empty" in record.message for record in caplog.records
-    )
+    assert_log_record(caplog, "ETL stages list cannot be empty", "", "etl_stages")
 
 
 @pytest.mark.parametrize(
@@ -286,6 +309,42 @@ def test_column_validate_data_type_invalid(
         f"Data type '{err_attr_val}' for field '{err_attr}' is not" in record.message
         for record in caplog.records
     )
+    assert_log_record(
+        caplog,
+        f"Data type '{err_attr_val}' for field '{err_attr}' is not in the ALLOWED_DATA_TYPES constant",
+        "test_table",
+        err_attr,
+    )
+
+
+def test_metadata_models_forbid_extra_fields() -> None:
+    """Test that undeclared metadata attributes are rejected."""
+    with pytest.raises(ValidationError):
+        create_column(unexpected_attribute="value")
+
+    with pytest.raises(ValidationError):
+        file_format_data: dict[str, Any] = {
+            "stage": "raw",
+            "format": "parquet",
+            "unexpected_attribute": "value",
+        }
+        m.FileFormat.model_validate(file_format_data)
+
+    with pytest.raises(ValidationError):
+        create_table_metadata(
+            "test_table",
+            [create_file_format()],
+            [create_column()],
+            unexpected_attribute="value",
+        )
+
+    with pytest.raises(ValidationError):
+        metadata_data: dict[str, Any] = {
+            "tables": {},
+            "database": "test",
+            "unexpected_attribute": "value",
+        }
+        m.MetaData.model_validate(metadata_data)
 
 
 def test_column_validate_value_format_valid() -> None:
@@ -322,6 +381,12 @@ def test_column_validate_value_format_invalid(
     assert any(
         f"Value format '{err_attr_val}' for field '{err_attr}' is not" in record.message
         for record in caplog.records
+    )
+    assert_log_record(
+        caplog,
+        f"Value format '{err_attr_val}' for field '{err_attr}' is not in the ALLOWED_VALUE_FORMATS constant",
+        "test_table",
+        err_attr,
     )
 
 
@@ -361,6 +426,12 @@ def test_column_partition_and_composite_keys_not_nullable_invalid(
         "Column 'id' is part of a composite key or partition and cannot be nullable"
         in record.message
         for record in caplog.records
+    )
+    assert_log_record(
+        caplog,
+        "Column 'id' is part of a composite key or partition and cannot be nullable",
+        "test_table",
+        "nullable",
     )
 
 
@@ -443,13 +514,21 @@ def test_column_allowed_values_match_input_data_type_invalid(
         f"Allowed value '{allowed_values[0]}' with type '{type(allowed_values[0])}' does not match the input data type '{data_type}'"
         in caplog.records[0].message
     )
+    assert_log_record(
+        caplog,
+        f"Allowed value '{allowed_values[0]}' with type '{type(allowed_values[0])}' does not match the input data type '{data_type}'",
+        "test_table",
+        "allowed_values",
+    )
 
 
 @pytest.mark.parametrize(
     ("data_type", "default_value"),
     [
         ("str", "a"),
+        ("str", ""),
         ("int", 1),
+        ("int", 0),
     ],
 )
 def test_column_default_value_match_input_data_type_valid(
@@ -505,6 +584,12 @@ def test_column_default_value_match_input_data_type_invalid(
         f"Default value '{default_value}' with type '{type(default_value)}' does not match the input data type '{data_type}'"
         in caplog.records[0].message
     )
+    assert_log_record(
+        caplog,
+        f"Default value '{default_value}' with type '{type(default_value)}' does not match the input data type '{data_type}'",
+        "test_table",
+        "default_value",
+    )
 
 
 @pytest.mark.parametrize(
@@ -548,7 +633,7 @@ def test_column_value_is_allowed(
     column = create_column(allowed_values=allowed_values)
     assert column.value_is_allowed(value) is expected
     if log:
-        assert log in caplog.records[0].message
+        assert_log_record(caplog, log, "None", "allowed_values")
 
 
 #########################
@@ -568,9 +653,11 @@ def test_file_format_validate_stage_invalid(caplog: pytest.LogCaptureFixture) ->
     with pytest.raises(exc.InvalidStageError):
         create_file_format(stage="invalid")
 
-    assert (
-        "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant"
-        in caplog.records[0].message
+    assert_log_record(
+        caplog,
+        "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
+        "",
+        "stage",
     )
 
 
@@ -588,9 +675,11 @@ def test_file_format_validate_file_format_invalid(
     with pytest.raises(exc.InvalidFormatError):
         create_file_format(file_format="invalid")
 
-    assert (
-        "File format 'invalid' is not in the ALLOWED_FILE_FORMATS constant"
-        in caplog.records[0].message
+    assert_log_record(
+        caplog,
+        "File format 'invalid' is not in the ALLOWED_FILE_FORMATS constant",
+        "",
+        "format",
     )
 
 
@@ -660,9 +749,13 @@ def test_table_metadata_all_fields_unique_invalid(
             [create_column(name=field_name) for field_name in field_names],
         )
 
-    log_messages = [record.message for record in caplog.records]
     for duplicate_field in duplicate_fields:
-        assert f"Duplicate field found: '{duplicate_field}'" in log_messages
+        assert_log_record(
+            caplog,
+            f"Duplicate field found: '{duplicate_field}'",
+            "test_table",
+            duplicate_field,
+        )
 
 
 def test_table_metadata_all_file_format_stages_unique_valid() -> None:
@@ -698,9 +791,11 @@ def test_table_metadata_all_file_format_stages_unique_invalid(
             [create_column()],
         )
 
-    assert (
-        f"Duplicate file format stage found: {duplicate_stage}"
-        in caplog.records[0].message
+    assert_log_record(
+        caplog,
+        f"Duplicate file format stage found: {duplicate_stage}",
+        "test_table",
+        duplicate_stage,
     )
 
 
@@ -771,18 +866,22 @@ def test_table_metadata_column_stages_match_file_format_stages_invalid(
         )
 
     for stage in unreconciled_formats:
-        assert (
-            f"ETL stage '{stage}' is defined in the file formats, but not for any columns"
-            in caplog.text
+        assert_log_record(
+            caplog,
+            f"ETL stage '{stage}' is defined in the file formats, but not for any columns",
+            "test_table",
+            "None",
         )
         assert (
             f"The following ETL stages are defined for file formats, but not for any columns: [{', '.join(unreconciled_formats)}]"
             in str(exc_info.value)
         )
     for stage in unreconciled_columns:
-        assert (
-            f"ETL stage '{stage}' is defined for columns, but not in the file formats"
-            in caplog.text
+        assert_log_record(
+            caplog,
+            f"ETL stage '{stage}' is defined for columns, but not in the file formats",
+            "test_table",
+            "None",
         )
         assert (
             f"The following ETL stages are defined for columns, but not in the file formats: [{', '.join(unreconciled_columns)}]"
@@ -893,9 +992,11 @@ def test_table_metadata_get_file_format_for_stage_invalid(
     with pytest.raises(exc.InvalidStageError):
         table_metadata.get_file_format_for_stage("invalid")
 
-    assert (
-        "No file format metadata is configured for stage 'invalid' for table 'test_table'"
-        in caplog.text
+    assert_log_record(
+        caplog,
+        "No file format metadata is configured for stage 'invalid' for table 'test_table'",
+        "test_table",
+        "None",
     )
 
 
@@ -954,9 +1055,11 @@ def test_table_metadata_get_column_empty(caplog: pytest.LogCaptureFixture) -> No
     with pytest.raises(exc.InvalidColumnError):
         table_metadata.get_column("invalid")
 
-    assert (
-        "Column 'invalid' was not found in the metadata for table 'test_table'."
-        in caplog.text
+    assert_log_record(
+        caplog,
+        "Column 'invalid' was not found in the metadata for table 'test_table'.",
+        "test_table",
+        "invalid",
     )
 
 
@@ -1068,7 +1171,12 @@ def test_metadata_get_table_metadata_invalid(caplog: pytest.LogCaptureFixture) -
     with pytest.raises(exc.InvalidTableError):
         metadata.get_table_metadata("invalid")
 
-    assert "Table 'invalid' is not configured in the metadata for 'test'" in caplog.text
+    assert_log_record(
+        caplog,
+        "Table 'invalid' is not configured in the metadata for 'test'",
+        "invalid",
+        "None",
+    )
 
 
 def test_output_to_df() -> None:

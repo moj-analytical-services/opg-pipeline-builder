@@ -17,7 +17,7 @@ from opg_pipeline_builder.logging.log import (
     _CONSOLE_HANDLER_NAME,
     _PARQUET_HANDLER_NAME,
     PACKAGE_LOGGER_NAME,
-    CustomFields,
+    ModuleLogger,
     ParquetLogHandler,
     StructuredLogRecord,
     _validate_log_location,
@@ -26,7 +26,6 @@ from opg_pipeline_builder.logging.log import (
 )
 
 _CUSTOM_FIELDS = {
-    "pipeline_activity": "Validation",
     "process_stage": "Processing",
     "table": "table_a",
     "field": "field_a",
@@ -56,7 +55,6 @@ class LogRecordTypedDict(TypedDict):
     line_number: int
     log_level: str
     log_timestamp: datetime
-    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
     process_stage: Literal["Start", "Processing", "End"]
     table: str
     field: str
@@ -86,7 +84,6 @@ def create_log_record(
         "args": (),
         "created": log_timestamp.timestamp(),
         "custom_fields": {
-            "pipeline_activity": "Validation",
             "process_stage": "Processing",
             "table": "table_a",
             "field": "field_a",
@@ -101,7 +98,6 @@ def create_log_record(
         "line_number": line_number,
         "log_level": "INFO",
         "log_timestamp": log_timestamp,
-        "pipeline_activity": "Validation",
         "process_stage": "Processing",
         "table": "table_a",
         "field": "field_a",
@@ -129,30 +125,22 @@ def _reset_package_logger() -> Generator[None]:
     the moto mock_aws() context exits, otherwise credentials will fail.
     """
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
+    original_handlers = list(package_logger.handlers)
+    original_propagate = package_logger.propagate
+    original_level = package_logger.level
 
     package_logger.handlers.clear()
     package_logger.propagate = True
-    package_logger.setLevel(logging.NOTSET)
+    package_logger.setLevel(logging.INFO)
 
     yield
 
     for handler in list(package_logger.handlers):
         handler.close()
     package_logger.handlers.clear()
-
-
-def test_custom_fields_reject_extra() -> None:
-    """Test that StructuredLogRecord rejects extra fields."""
-    with pytest.raises(ValidationError) as exc_info:
-        CustomFields(  # type: ignore [call-arg]
-            pipeline_activity="Validation",
-            process_stage="Processing",
-            table="table_a",
-            field="field_a",
-            extra_field="not_allowed",
-        )
-
-    assert "Extra inputs are not permitted" in str(exc_info.value)
+    package_logger.handlers.extend(original_handlers)
+    package_logger.propagate = original_propagate
+    package_logger.setLevel(original_level)
 
 
 def test_structured_log_record_reject_extra() -> None:
@@ -545,7 +533,6 @@ def test_flush_locked_fail_then_success(
                     "line_number": 0,
                     "log_level": "ERROR",
                     "log_timestamp": datetime(2024, 1, 2, 12, 0, tzinfo=UTC),
-                    "pipeline_activity": "Logging",
                     "process_stage": "Processing",
                     "table": "Unknown",
                     "field": "Unknown",
@@ -576,7 +563,6 @@ def test_record_to_row_success() -> None:
         "line_number": 42,
         "log_level": "INFO",
         "log_timestamp": datetime(2024, 1, 4, 10, 16, 6, tzinfo=UTC),
-        "pipeline_activity": "Validation",
         "process_stage": "Processing",
         "table": "table_a",
         "field": "field_a",
@@ -602,12 +588,11 @@ def test_record_to_row_validation_error() -> None:
         "line_number": 0,
         "log_level": "ERROR",
         "log_timestamp": datetime(2024, 1, 2, 0, 0, tzinfo=UTC),
-        "pipeline_activity": "Logging",
         "process_stage": "Processing",
         "table": "table_a",
         "field": "field_a",
         "message": (
-            "Failed to parse custom log fields: {'pipeline_activity': 'Validation', 'process_stage': 'Processing', 'table': 'table_a', 'field': 'field_a'}"
+            "Failed to parse custom log fields: {'process_stage': 'Processing', 'table': 'table_a', 'field': 'field_a'}"
         ),
     }
 
@@ -725,7 +710,6 @@ def test_multiple_module_loggers_write_to_mocked_s3(
         "Log 3 from module 1",
     ]
     assert list(written_log["database"]) == ["test-database"] * 5
-    assert list(written_log["pipeline_activity"]) == ["Validation"] * 5
     assert len(written_log) == 5
 
 
@@ -793,9 +777,8 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
                     "logger_name": PACKAGE_LOGGER_NAME,
                     "module": "test_log",
                     "function": "_mp_worker",
-                    "line_number": 737,
+                    "line_number": 721,
                     "log_level": "INFO",
-                    "pipeline_activity": "Validation",
                     "process_stage": "Processing",
                     "table": "table_a",
                     "field": "field_a",
@@ -833,70 +816,44 @@ def test_multiprocessing_generates_pid_isolated_output_paths(s3: boto3.client) -
     )
 
 
-@pytest.mark.parametrize(
-    ("pipeline_activity", "process_stage"),
-    [
-        ("wrong", "Processing"),
-        ("BAU", "wrong"),
-        ("wrong", "wrong"),
-    ],
-)
-def test_custom_fields_rejects_invalid_values(
-    pipeline_activity: Literal["BAU", "wrong"],
-    process_stage: Literal["Processing", "wrong"],
-) -> None:
-    """Test that CustomFields raises a ValidationError for invalid pipeline_activity or process_stage values."""
-    with pytest.raises(ValidationError):
-        CustomFields(
-            pipeline_activity=pipeline_activity,  # type: ignore [arg-type]
-            process_stage=process_stage,  # type: ignore [arg-type]
-            table="table_a",
-            field="field_a",
+def test_module_logger_rejects_extra() -> None:
+    """Test that ModuleLogger rejects extra fields."""
+    with pytest.raises(ValidationError) as exc_info:
+        ModuleLogger.model_validate(
+            {
+                "logger": logging.getLogger("opg_pipeline_builder.test"),
+                "extra_field": "not_allowed",
+            }
         )
 
-
-def test_custom_fields_rejects_extra() -> None:
-    """Test that CustomFields raises a ValidationError when extra fields are provided."""
-    with pytest.raises(ValidationError):
-        CustomFields(  # type: ignore [call-arg]
-            pipeline_activity="BAU",
-            process_stage="Processing",
-            table="table_a",
-            field="field_a",
-            extra_field="extra",
-        )
+    assert "Extra inputs are not permitted" in str(exc_info.value)
 
 
-def test_set_custom_fields() -> None:
-    """Test that the set_custom_fields class method correctly creates a new instance of CustomFields."""
-    custom_fields_instance = CustomFields.set_custom_fields(
-        pipeline_activity="BAU",
-        process_stage="Processing",
-        table="table_a",
-        field="field_a",
+def test_module_logger_error(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that the error method of ModuleLogger correctly logs an error message."""
+    module_logger = ModuleLogger(
+        logger=logging.getLogger("opg_pipeline_builder.test"),
     )
-    assert isinstance(custom_fields_instance, CustomFields)
-    assert custom_fields_instance.pipeline_activity == "BAU"
-    assert custom_fields_instance.process_stage == "Processing"
-    assert custom_fields_instance.table == "table_a"
-    assert custom_fields_instance.field == "field_a"
+
+    module_logger.error("Test error message", table="table", field="field")
+    assert "Test error message" in caplog.records[0].message
+    assert caplog.records[0].__dict__["custom_fields"] == {
+        "process_stage": "Processing",
+        "table": "table",
+        "field": "field",
+    }
 
 
-def test_update_custom_fields() -> None:
-    """Test that the update method correctly updates the custom fields of an existing instance."""
-    custom_fields_instance = CustomFields.set_custom_fields(
-        pipeline_activity="BAU",
-        process_stage="Processing",
-        table="table_a",
-        field="field_a",
+def test_module_logger_info(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that the info method of ModuleLogger correctly logs an info message."""
+    module_logger = ModuleLogger(
+        logger=logging.getLogger("opg_pipeline_builder.test"),
     )
-    custom_fields_instance.update(
-        pipeline_activity="Deletion",
-        process_stage="Start",
-        table="table_b",
-        field="field_b",
-    )
-    assert custom_fields_instance.pipeline_activity == "Deletion"
-    assert custom_fields_instance.process_stage == "Start"
-    assert custom_fields_instance.table == "table_b"
-    assert custom_fields_instance.field == "field_b"
+
+    module_logger.info("Test info message", table="table", field="field", stage="Start")
+    assert "Test info message" in caplog.records[0].message
+    assert caplog.records[0].__dict__["custom_fields"] == {
+        "process_stage": "Start",
+        "table": "table",
+        "field": "field",
+    }

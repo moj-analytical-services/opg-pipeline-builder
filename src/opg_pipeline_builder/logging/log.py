@@ -25,7 +25,6 @@ class StructuredLogRecord(BaseModel):
     line_number: int
     log_level: str
     log_timestamp: datetime
-    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
     process_stage: Literal["Start", "Processing", "End"]
     table: str
     field: str
@@ -183,7 +182,6 @@ class ParquetLogHandler(logging.Handler):
                 line_number=0,
                 log_level="ERROR",
                 log_timestamp=datetime.now(tz=UTC),
-                pipeline_activity="Logging",
                 process_stage="Processing",
                 table="Unknown",
                 field="Unknown",
@@ -225,7 +223,6 @@ class ParquetLogHandler(logging.Handler):
             line_number=record.lineno if isinstance(record.lineno, int) else 0,
             log_level="ERROR",
             log_timestamp=datetime.now(tz=UTC),
-            pipeline_activity="Logging",
             process_stage="Processing",
             table=table if isinstance(table, str) else "Unknown",
             field=field if isinstance(field, str) else "Unknown",
@@ -343,62 +340,49 @@ def configure_logging(
     return package_logger
 
 
-class CustomFields(BaseModel):
+class ModuleLogger(BaseModel):
     """Model to validate that all required custom fields have been provided."""
 
-    pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"]
-    process_stage: Literal["Start", "Processing", "End"]
-    table: str
-    field: str
+    logger: logging.Logger
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
-    @classmethod
-    def set_custom_fields(
+    def error(
         self,
-        pipeline_activity: Literal["BAU", "Deletion", "Logging", "Validation"],
-        process_stage: Literal["Start", "Processing", "End"],
+        message: str,
+        *,
         table: str,
         field: str,
-    ) -> "CustomFields":
-        """Create a new instance of CustomFields with the provided values.
-
-        Args:
-            pipeline_activity (str): The pipeline activity.
-            process_stage (str): The process stage.
-            table (str): The name of the table.
-            field (str): The name of the field.
-
-        Returns:
-            CustomFields: A new instance of CustomFields with the provided values.
-        """
-        return CustomFields(
-            pipeline_activity=pipeline_activity,
-            process_stage=process_stage,
-            table=table,
-            field=field,
-        )
-
-    def update(
-        self,
-        pipeline_activity: (
-            Literal["BAU", "Deletion", "Logging", "Validation"] | None
-        ) = None,
-        process_stage: Literal["Start", "Processing", "End"] | None = None,
-        table: str | None = None,
-        field: str | None = None,
+        stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
-        """Updates the custom fields of the current instance.
-
-        Args:
-            pipeline_activity (str, optional): The new pipeline activity. Defaults to None.
-            process_stage (str, optional): The new process stage. Defaults to None.
-            table (str, optional): The new table name. Defaults to None.
-            field (str, optional): The new field name. Defaults to None.
-        """
-        self.pipeline_activity = (
-            pipeline_activity if pipeline_activity else self.pipeline_activity
+        """Log a metadata validation error with structured context."""
+        self.logger.error(
+            message,
+            extra={
+                "custom_fields": {
+                    "process_stage": stage,
+                    "table": table,
+                    "field": field,
+                }
+            },
         )
-        self.process_stage = process_stage if process_stage else self.process_stage
-        self.table = table if table else self.table
-        self.field = field if field else self.field
+
+    def info(
+        self,
+        message: str,
+        *,
+        table: str,
+        field: str,
+        stage: Literal["Start", "Processing", "End"] = "Processing",
+    ) -> None:
+        """Log a metadata validation event with structured context."""
+        self.logger.info(
+            message,
+            extra={
+                "custom_fields": {
+                    "process_stage": stage,
+                    "table": table,
+                    "field": field,
+                }
+            },
+        )

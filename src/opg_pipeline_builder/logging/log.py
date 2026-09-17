@@ -350,39 +350,42 @@ class ModuleLogger(BaseModel):
     def error(
         self,
         message: str,
-        *,
+        *args: object,
         table: str,
         field: str,
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation error with structured context."""
+        custom_fields = {
+            "process_stage": stage,
+            "table": table,
+            "field": field,
+        }
+
         self.logger.error(
             message,
-            extra={
-                "custom_fields": {
-                    "process_stage": stage,
-                    "table": table,
-                    "field": field,
-                }
-            },
+            *args,
+            stacklevel=2,
+            extra={"custom_fields": custom_fields},
         )
 
     def info(
         self,
         message: str,
-        *,
+        *args: object,
         table: str,
         field: str,
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation event with structured context."""
+        custom_fields = {
+            "process_stage": stage,
+            "table": table,
+            "field": field,
+        }
         self.logger.info(
             message,
-            extra={
-                "custom_fields": {
-                    "process_stage": stage,
-                    "table": table,
-                    "field": field,
-                }
-            },
+            *args,
+            stacklevel=2,
+            extra={"custom_fields": custom_fields},
         )

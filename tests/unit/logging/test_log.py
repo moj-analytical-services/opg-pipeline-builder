@@ -835,8 +835,8 @@ def test_module_logger_error(caplog: pytest.LogCaptureFixture) -> None:
         logger=logging.getLogger("opg_pipeline_builder.test"),
     )
 
-    module_logger.error("Test error message", table="table", field="field")
-    assert "Test error message" in caplog.records[0].message
+    module_logger.error("Test %s message: %d", "error", 1, table="table", field="field")
+    assert "Test error message: 1" in caplog.records[0].message
     assert caplog.records[0].__dict__["custom_fields"] == {
         "process_stage": "Processing",
         "table": "table",
@@ -850,8 +850,15 @@ def test_module_logger_info(caplog: pytest.LogCaptureFixture) -> None:
         logger=logging.getLogger("opg_pipeline_builder.test"),
     )
 
-    module_logger.info("Test info message", table="table", field="field", stage="Start")
-    assert "Test info message" in caplog.records[0].message
+    module_logger.info(
+        "Test %s message: %d",
+        "info",
+        1,
+        table="table",
+        field="field",
+        stage="Start",
+    )
+    assert "Test info message: 1" in caplog.records[0].message
     assert caplog.records[0].__dict__["custom_fields"] == {
         "process_stage": "Start",
         "table": "table",

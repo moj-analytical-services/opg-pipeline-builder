@@ -66,7 +66,7 @@ class Column(BaseModel):
         """Validate that the column name is a valid SQL/Athena identifier."""
         err = is_valid_identifier(value)
         if err:
-            metadata_logger.error(err, table=table_name(info), field=field_name(info))
+            metadata_logger.error(err, table=table_name(info), field=info.field_name)
             raise exc.InvalidColumnNameError(err)
 
         return value
@@ -79,7 +79,7 @@ class Column(BaseModel):
             return value
 
         err = f"Semantic type '{value}' is not in the ALLOWED_SEMANTIC_TYPES constant"
-        metadata_logger.error(err, table=table_name(info), field=field_name(info))
+        metadata_logger.error(err, table=table_name(info), field=info.field_name)
         raise exc.InvalidSemanticTypeError(err)
 
     @field_validator("etl_stages")
@@ -88,14 +88,14 @@ class Column(BaseModel):
         """Check the provided ETL stage is valid and not empty."""
         if not value:
             err = "ETL stages list cannot be empty"
-            metadata_logger.error(err, table=table_name(info), field=field_name(info))
+            metadata_logger.error(err, table=table_name(info), field=info.field_name)
             raise exc.InvalidStageError(err)
 
         for stage in value:
             if stage not in ALLOWED_ETL_STAGES:
                 err = f"ETL stage '{stage}' is not in the ALLOWED_ETL_STAGES constant"
                 metadata_logger.error(
-                    err, table=table_name(info), field=field_name(info)
+                    err, table=table_name(info), field=info.field_name
                 )
                 raise exc.InvalidStageError(err)
         return value
@@ -107,7 +107,7 @@ class Column(BaseModel):
         data_type = ALLOWED_DATA_TYPES.get(value, None)
         if data_type is None:
             err = f"Data type '{value}' for field '{info.field_name}' is not in the ALLOWED_DATA_TYPES constant"
-            metadata_logger.error(err, table=table_name(info), field=field_name(info))
+            metadata_logger.error(err, table=table_name(info), field=info.field_name)
             raise exc.InvalidTypeError(err)
         return data_type
 
@@ -119,7 +119,7 @@ class Column(BaseModel):
             return value
 
         err = f"Value format '{value}' for field '{info.field_name}' is not in the ALLOWED_VALUE_FORMATS constant"
-        metadata_logger.error(err, table=table_name(info), field=field_name(info))
+        metadata_logger.error(err, table=table_name(info), field=info.field_name)
         raise exc.InvalidFormatError(err)
 
     @model_validator(mode="after")
@@ -148,11 +148,9 @@ class Column(BaseModel):
                         )
                         raise exc.InvalidTypeError(err)
             else:
+                msg = f"Only check allowed values for 'str' and 'int' input data types. Skipping check for '{table_name(info)}'"
                 metadata_logger.info(
-                    "Only check allowed values for 'str' and 'int' input data types. "
-                    f"Skipping check for '{table_name(info)}'",
-                    table=table_name(info),
-                    field="allowed_values",
+                    msg, table=table_name(info), field="allowed_values"
                 )
         return self
 
@@ -169,12 +167,8 @@ class Column(BaseModel):
                     )
                     raise exc.InvalidTypeError(err)
             else:
-                metadata_logger.info(
-                    "Only check default value for 'str' and 'int' input data types. "
-                    f"Skipping check for '{table_name(info)}'",
-                    table=table_name(info),
-                    field="default_value",
-                )
+                meg = f"Only check default value for 'str' and 'int' input data types. Skipping check for '{table_name(info)}'"
+                metadata_logger.info(meg, table=table_name(info), field="default_value")
         return self
 
     def exists_in_stage(self, stage_name: str) -> bool:
@@ -200,11 +194,8 @@ class Column(BaseModel):
         if self.allowed_values:
             return value in self.allowed_values
 
-        metadata_logger.info(
-            f"There are no allowed values for column '{self.name}'; skipping allowed values check.",
-            table="None",
-            field="allowed_values",
-        )
+        msg = f"There are no allowed values for column '{self.name}'; skipping allowed values check."
+        metadata_logger.info(msg, table="None", field="allowed_values")
         return False
 
 
@@ -224,7 +215,7 @@ class FileFormat(BaseModel):
             return value
 
         err = f"ETL stage '{value}' is not in the ALLOWED_ETL_STAGES constant"
-        metadata_logger.error(err, table=table_name(info), field="stage")
+        metadata_logger.error(err, table=table_name(info), field=info.field_name)
         raise exc.InvalidStageError(err)
 
     @field_validator("format")
@@ -235,7 +226,7 @@ class FileFormat(BaseModel):
             return value
 
         err = f"File format '{value}' is not in the ALLOWED_FILE_FORMATS constant"
-        metadata_logger.error(err, table=table_name(info), field="format")
+        metadata_logger.error(err, table=table_name(info), field=info.field_name)
         raise exc.InvalidFormatError(err)
 
 
@@ -259,12 +250,11 @@ class TableMetaData(BaseModel):
             if count > 1:
                 duplicate = True
                 metadata_logger.error(
-                    f"Duplicate field found: '{column}'",
-                    table=self.name,
-                    field=column,
+                    "Duplicate field found: '%s'", column, table=self.name, field=column
                 )
         if duplicate:
             err = "One or more columns are defined twice for the same table"
+            metadata_logger.error(err, table=self.name, field="None")
             raise exc.DuplicateFieldsError(err)
         return self
 
@@ -278,12 +268,14 @@ class TableMetaData(BaseModel):
             if count > 1:
                 duplicate = True
                 metadata_logger.error(
-                    f"Duplicate file format stage found: {stage}",
+                    "Duplicate file format stage found: '%s'",
+                    stage,
                     table=self.name,
-                    field=stage,
+                    field="None",
                 )
         if duplicate:
             err = "One or more file format stages are defined twice for the same table"
+            metadata_logger.error(err, table=self.name, field="None")
             raise exc.DuplicateFileFormatStagesError(err)
         return self
 
@@ -311,14 +303,16 @@ class TableMetaData(BaseModel):
         if unreconciled_format_stages:
             for stage in unreconciled_format_stages:
                 metadata_logger.error(
-                    f"ETL stage '{stage}' is defined in the file formats, but not for any columns",
+                    "ETL stage '%s' is defined in the file formats, but not for any columns",
+                    stage,
                     table=self.name,
                     field="None",
                 )
         if unreconciled_column_stages:
             for stage in unreconciled_column_stages:
                 metadata_logger.error(
-                    f"ETL stage '{stage}' is defined for columns, but not in the file formats",
+                    "ETL stage '%s' is defined for columns, but not in the file formats",
+                    stage,
                     table=self.name,
                     field="None",
                 )
@@ -470,8 +464,22 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
     Returns:
         MetaData: The Metadata object
     """
+    metadata_logger.info(
+        "Loading metadata for database: '%s'.",
+        database_name,
+        table="None",
+        field="None",
+    )
 
     db_metadata_files = list((metadata_path / database_name).glob("*.json"))
+
+    if not db_metadata_files:
+        metadata_logger.info(
+            "No metadata was loaded for database: '%s'.",
+            database_name,
+            table="None",
+            field="None",
+        )
 
     database_metadata: dict[str, Any] = {}
 

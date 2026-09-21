@@ -1,20 +1,26 @@
+import json
 import logging
 import os
+import sys
 from datetime import UTC, datetime
-from typing import Any, Literal
+from pathlib import Path
+from typing import Literal
 
-import awswrangler as wr
-import pandas as pd
-from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
-_PARQUET_HANDLER_NAME = "opg_pipeline_builder_parquet"
+_JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
+
+
+def _json_default(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 class StructuredLogRecord(BaseModel):
-    """Pydantic model representing a structured log record that is written to parquet."""
+    """Pydantic model representing a structured log record written to JSONL."""
 
     database: str
     data_delivery_period: datetime
@@ -65,32 +71,8 @@ def _validate_logger_inputs(
         raise ValueError("batch_size must be >= 1")
 
 
-def _validate_log_location(
-    bucket: str,
-    prefix: str,
-    database: str,
-    data_delivery_period: datetime,
-    attempt_no: int,
-) -> None:
-    """Validate that the s3 bucket exists and the prefix is writable."""
-    test_log_path = f"s3://{bucket}/{prefix}/test_{database}_{data_delivery_period.strftime('%Y%m%dT%H%M%S')}_{attempt_no}.snappy.parquet"
-    test_log = pd.DataFrame({"test": ["test"]})
-    try:
-        wr.s3.to_parquet(
-            test_log,
-            path=test_log_path,
-            index=False,
-            compression="snappy",
-        )
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to write test log to s3://{bucket}/{prefix}/ for {database}: {data_delivery_period.strftime('%Y%m%dT%H%M%S')} (attempt no: {attempt_no}). Please check the bucket and prefix are correct."
-        ) from e
-    wr.s3.delete_objects(test_log_path)
-
-
-class ParquetLogHandler(logging.Handler):
-    """Buffered parquet log writer that emits chunked files."""
+class JsonlLogHandler(logging.Handler):
+    """Append each validated log record as one JSON line."""
 
     def __init__(
         self,
@@ -100,106 +82,35 @@ class ParquetLogHandler(logging.Handler):
         database: str,
         data_delivery_period: datetime,
         attempt_no: int,
+        log_path: str | Path,
         batch_size: int = 500,
     ) -> None:
         super().__init__(level=logging.INFO)
-        self._bucket = bucket
+        del bucket
         self._prefix = prefix
         self._database = database
         self._data_delivery_period = data_delivery_period
         self._attempt_no = attempt_no
-        self._base_batch_size = batch_size
-        self._batch_size = batch_size
-        self._part_number = 0
-        self._buffer: list[dict[str, Any]] = []
-        self._write_failures = 0
+        del batch_size
+        self._log_path = Path(log_path)
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Append records to buffer and flush to parquet in batches."""
+        """Append one record immediately to the JSONL file."""
         row = self._record_to_row(record)
         self.acquire()
         try:
-            self._buffer.append(row)
-            if len(self._buffer) >= self._batch_size:
-                self._flush_locked()
+            with self._log_path.open("a", encoding="utf-8") as log_file:
+                json.dump(row, log_file, default=_json_default, separators=(",", ":"))
+                log_file.write("\n")
+                log_file.flush()
+        except (OSError, TypeError, ValueError) as error:
+            print(
+                f"Failed to append log record to {self._log_path}: {type(error).__name__}: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
         finally:
             self.release()
-
-    def close(self) -> None:
-        """Flush any remaining logs to S3 and close the handler."""
-        try:
-            self.acquire()
-            try:
-                self._flush_locked()
-                if self._buffer:
-                    print(f"Failed to write {len(self._buffer)} log records to S3.")
-                    self._buffer.clear()
-                    raise RuntimeError("Failed to write all log records to S3.")
-            finally:
-                self.release()
-        finally:
-            super().close()
-
-    def _flush_locked(self) -> None:
-        """Flush the buffer to S3 as a parquet file. Assumes the lock is already acquired."""
-        if not self._buffer:
-            return
-
-        df = pd.DataFrame(self._buffer)
-        pid = os.getpid()  # Differentiate between parallel processes in the same run
-
-        output_path = (
-            f"s3://{self._bucket}/{self._prefix}/{self._database}/data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._attempt_no}/{pid}_{self._part_number}.snappy.parquet"
-        )
-
-        try:
-            wr.s3.to_parquet(df, path=output_path, index=False, compression="snappy")
-
-        except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as e:
-            self._write_failures += 1
-            print(
-                f"Failed to write a batch of logs to S3 (failure_count={self._write_failures}). Error: {e}"
-            )
-
-            self._batch_size += self._base_batch_size
-
-            if self._batch_size > self._base_batch_size * 4:
-                print(
-                    f"Failed to write {len(self._buffer)} logs to {output_path}: {e}."
-                )
-                raise RuntimeError(
-                    "Parquet log sink failure threshold exceeded."
-                ) from e
-
-            log_record = StructuredLogRecord(
-                database=self._database,
-                data_delivery_period=self._data_delivery_period,
-                attempt_no=self._attempt_no,
-                logger_name=PACKAGE_LOGGER_NAME,
-                module="opg_pipeline_builder.logging.log",
-                function="_flush_locked",
-                line_number=0,
-                log_level="ERROR",
-                log_timestamp=datetime.now(tz=UTC),
-                process_stage="Processing",
-                table="Unknown",
-                field="Unknown",
-                message=(
-                    f"Failed to write {len(self._buffer)} logs to {output_path}: {e} "
-                    f"(failure_count={self._write_failures})."
-                ),
-            )
-            self._buffer.append(log_record.model_dump())
-
-            return
-
-        self._part_number += 1
-        self._buffer.clear()
-        self._write_failures = 0
-
-        if self._batch_size != self._base_batch_size:
-            self._batch_size = self._base_batch_size
 
     def create_error_log_record(
         self,
@@ -232,7 +143,7 @@ class ParquetLogHandler(logging.Handler):
     def _record_to_row(
         self, record: logging.LogRecord
     ) -> dict[str, str | int | datetime]:
-        """Convert a logging.LogRecord to a dictionary suitable for writing to parquet."""
+        """Convert a logging.LogRecord to a dictionary suitable for JSONL."""
         custom_fields_dict = getattr(record, "custom_fields", {})
         table = "Unknown"
         field = "Unknown"
@@ -262,7 +173,7 @@ class ParquetLogHandler(logging.Handler):
                 message=f"Failed to parse custom log fields: {custom_fields_dict}",
             )
 
-        return log_record.model_dump()
+        return log_record.model_dump(mode="json")
 
 
 def configure_logging(
@@ -272,8 +183,10 @@ def configure_logging(
     data_delivery_period: datetime,
     attempt_no: int,
     batch_size: int = 500,
+    *,
+    log_path: str | Path | None = None,
 ) -> logging.Logger:
-    """Configure package logging once with a shared console handler.
+    """Configure package logging once with a shared console and JSONL handler.
 
     Args:
         bucket: str
@@ -287,7 +200,9 @@ def configure_logging(
         attempt_no: int
             The attempt number for this data delivery period.
         batch_size: int, optional
-            The number of log records to batch together before writing to S3, by default 500.
+            Retained for call compatibility; JSONL records are not batched.
+        log_path: str or pathlib.Path, optional
+            Local JSONL path. If omitted, a path is derived from ``prefix``.
     Returns:
         logging.Logger: The configured package logger.
     """
@@ -295,10 +210,7 @@ def configure_logging(
     package_logger.setLevel(logging.INFO)
     package_logger.propagate = False
 
-    if any(
-        handler.get_name() in {_CONSOLE_HANDLER_NAME, _PARQUET_HANDLER_NAME}
-        for handler in package_logger.handlers
-    ):
+    if package_logger.handlers:
         raise RuntimeError(
             "Logger has already been configured. This should only be done once per process."
         )
@@ -312,7 +224,18 @@ def configure_logging(
         batch_size=batch_size,
     )
 
-    _validate_log_location(bucket, prefix, database, data_delivery_period, attempt_no)
+    output_path = Path(
+        log_path
+        or Path(prefix)
+        / database
+        / f"data_delivery_period={data_delivery_period.strftime('%Y%m%d')}"
+        / f"attempt_no={attempt_no}_{os.getpid()}.jsonl"
+    )
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.touch(exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(f"Failed to prepare JSONL log file {output_path}") from e
 
     stream_handler = logging.StreamHandler()
     stream_handler.set_name(_CONSOLE_HANDLER_NAME)
@@ -325,17 +248,18 @@ def configure_logging(
     )
     package_logger.addHandler(stream_handler)
 
-    parquet_handler = ParquetLogHandler(
+    jsonl_handler = JsonlLogHandler(
         bucket=bucket,
         prefix=prefix,
         database=database,
         data_delivery_period=data_delivery_period,
         attempt_no=attempt_no,
+        log_path=output_path,
         batch_size=batch_size,
     )
 
-    parquet_handler.set_name(_PARQUET_HANDLER_NAME)
-    package_logger.addHandler(parquet_handler)
+    jsonl_handler.set_name(_JSONL_HANDLER_NAME)
+    package_logger.addHandler(jsonl_handler)
 
     return package_logger
 

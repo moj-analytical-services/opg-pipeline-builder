@@ -57,18 +57,21 @@ def _validate_logger_inputs(
     batch_size: int,
 ) -> None:
     """Check that logger configuration inputs are valid."""
+    err = ""
     if not bucket.strip():
-        raise ValueError("bucket name must be non-empty")
+        err += "Bucket name must be non-empty. "
     if not prefix.strip():
-        raise ValueError("prefix name must be non-empty")
+        err += "Prefix name must be non-empty. "
     if not database.strip():
-        raise ValueError("database must be non-empty")
+        err += "Database must be non-empty. "
     if data_delivery_period.tzinfo is None or data_delivery_period.utcoffset() is None:
-        raise ValueError("data_delivery_period must be timezone-aware")
+        err += "Data delivery period must be timezone-aware. "
     if attempt_no < 1:
-        raise ValueError("attempt_no must be >= 1")
+        err += "Attempt number must be >= 1. "
     if batch_size < 1:
-        raise ValueError("batch_size must be >= 1")
+        err += "Batch size must be >= 1. "
+    if err:
+        raise ValueError(err)
 
 
 class JsonlLogHandler(logging.Handler):

@@ -16,12 +16,6 @@ _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
 
 
-def _json_default(value: object) -> str:
-    if isinstance(value, datetime):
-        return value.astimezone(UTC).isoformat()
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
-
-
 class CustomLogFields(BaseModel):
     """Pydantic model representing custom log fields."""
 
@@ -194,8 +188,7 @@ class JsonlLogHandler(logging.Handler):
             return
 
         body = "".join(
-            json.dumps(row, default=_json_default, separators=(",", ":")) + "\n"
-            for row in self._buffer
+            json.dumps(row, separators=(",", ":")) + "\n" for row in self._buffer
         ).encode("utf-8")
         key = self._object_key(str(os.getpid()), self._part_number)
 

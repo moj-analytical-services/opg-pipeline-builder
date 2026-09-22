@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import quote
@@ -51,6 +52,22 @@ class StructuredLogRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("database", "run_id")
+    @classmethod
+    def ensure_non_empty(cls, value: str) -> str:
+        """Require non-empty run context identifiers."""
+        if not value.strip():
+            raise ValueError("Run context fields must be non-empty.")
+        return value
+
+    @field_validator("attempt_no")
+    @classmethod
+    def ensure_positive_attempt(cls, value: int) -> int:
+        """Require a positive run attempt number."""
+        if isinstance(value, bool) or value < 1:
+            raise ValueError("Attempt number must be an integer >= 1.")
+        return value
+
     @field_validator("data_delivery_period", "log_timestamp")
     @classmethod
     def ensure_utc_aware(cls, value: datetime) -> datetime:
@@ -90,41 +107,52 @@ class JsonlLogHandler(logging.Handler):
 
         self._validate_logger_inputs()
         self._validate_log_location()
+        self._buffer.append(
+            StructuredLogRecord(
+                database=self._database,
+                run_id=self._run_id,
+                data_delivery_period=self._data_delivery_period,
+                attempt_no=self._attempt_no,
+                logger_name=PACKAGE_LOGGER_NAME,
+                module="opg_pipeline_builder.logging.log",
+                function="configure_logging",
+                line_number=sys._getframe().f_lineno,
+                log_level="INFO",
+                log_timestamp=datetime.now(tz=UTC),
+                process_stage="Start",
+                table="N/A",
+                field="N/A",
+                message="Logging configured successfully.",
+            ).model_dump(mode="json")
+        )
+        if len(self._buffer) >= self._batch_size:
+            self._flush_locked()
 
     def _validate_logger_inputs(self) -> None:
         """Check that logger configuration inputs are valid."""
         err = ""
-        if not self._bucket.strip():
-            err += "Bucket name must be non-empty. "
-        if not self._prefix.strip():
-            err += "Prefix name must be non-empty. "
-        if not self._database.strip():
-            err += "Database must be non-empty. "
-        if not self._run_id.strip():
-            err += "Run ID must be non-empty. "
+        if not isinstance(self._bucket, str) or not self._bucket.strip():
+            err += "Bucket name must be a non-empty string. "
+        if not isinstance(self._prefix, str) or not self._prefix.strip():
+            err += "Prefix name must be a non-empty string. "
         if (
-            self._data_delivery_period.tzinfo is None
-            or self._data_delivery_period.utcoffset() is None
+            not isinstance(self._base_batch_size, int)
+            or isinstance(self._base_batch_size, bool)
+            or self._base_batch_size < 1
         ):
-            err += "Data delivery period must be timezone-aware. "
-        if self._attempt_no < 1:
-            err += "Attempt number must be >= 1. "
-        if self._base_batch_size < 1:
-            err += "Batch size must be >= 1. "
+            err += "Batch size must be an integer >= 1. "
         if err:
             raise ValueError(err)
 
     def _validate_log_location(self) -> None:
-        """Validate S3 write access with a unique temporary object."""
-        key = self._object_key(f"preflight-{os.getpid()}", 0)
+        """Validate S3 write access with one permanent marker object."""
+        key = f"{self._prefix.rstrip('/')}/logging-marker/"
         try:
             self._s3.put_object(
                 Bucket=self._bucket,
                 Key=key,
                 Body=b"",
-                ContentType="application/x-ndjson",
             )
-            self._s3.delete_object(Bucket=self._bucket, Key=key)
         except (BotoCoreError, ClientError, OSError) as error:
             raise RuntimeError(
                 f"Failed to prepare JSONL log location s3://{self._bucket}/{self._prefix}"
@@ -144,17 +172,21 @@ class JsonlLogHandler(logging.Handler):
     def close(self) -> None:
         """Upload remaining records and fail if shutdown cannot persist them."""
         try:
-            self.acquire()
-            try:
-                self._flush_locked()
-                if self._buffer:
-                    raise RuntimeError(
-                        f"Failed to write {len(self._buffer)} log records to S3."
-                    )
-            finally:
-                self.release()
+            self.flush()
         finally:
             super().close()
+
+    def flush(self) -> None:
+        """Upload buffered records without closing the handler."""
+        self.acquire()
+        try:
+            self._flush_locked()
+            if self._buffer:
+                raise RuntimeError(
+                    f"Failed to write {len(self._buffer)} log records to S3."
+                )
+        finally:
+            self.release()
 
     def _flush_locked(self) -> None:
         """Upload the current buffer as one JSONL object; caller holds the lock."""
@@ -168,12 +200,7 @@ class JsonlLogHandler(logging.Handler):
         key = self._object_key(str(os.getpid()), self._part_number)
 
         try:
-            self._s3.put_object(
-                Bucket=self._bucket,
-                Key=key,
-                Body=body,
-                ContentType="application/x-ndjson",
-            )
+            self._put_object_with_retry(key, body)
         except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as error:
             self._write_failures += 1
             print(
@@ -207,7 +234,7 @@ class JsonlLogHandler(logging.Handler):
                         f"Failed to write JSONL log batch "
                         f"(failure_count={self._write_failures})."
                     ),
-                ).model_dump()
+                ).model_dump(mode="json")
             )
             return
 
@@ -215,6 +242,23 @@ class JsonlLogHandler(logging.Handler):
         self._buffer.clear()
         self._write_failures = 0
         self._batch_size = self._base_batch_size
+
+    def _put_object_with_retry(self, key: str, body: bytes) -> None:
+        """Upload a batch, retrying once after 30 seconds on failure."""
+        try:
+            self._put_object(key, body)
+        except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError):
+            time.sleep(30)
+            self._put_object(key, body)
+
+    def _put_object(self, key: str, body: bytes) -> None:
+        """Upload one JSONL batch to S3."""
+        self._s3.put_object(
+            Bucket=self._bucket,
+            Key=key,
+            Body=body,
+            ContentType="application/x-ndjson",
+        )
 
     def _object_key(self, process_id: str, part_number: int) -> str:
         return (
@@ -255,6 +299,40 @@ class JsonlLogHandler(logging.Handler):
         return log_record.model_dump(mode="json")
 
 
+class LoggingController:
+    """Manage the lifecycle of the configured package logging system."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+        self._is_shutdown = False
+
+    def flush(self) -> None:
+        """Upload buffered records without closing package logging."""
+        if self._is_shutdown:
+            raise RuntimeError("Logging has already been shut down.")
+        for handler in self._logger.handlers:
+            if isinstance(handler, JsonlLogHandler):
+                handler.flush()
+
+    def shutdown(self) -> None:
+        """Flush, close, and remove package logging handlers."""
+        if self._is_shutdown:
+            return
+
+        close_error: Exception | None = None
+        for handler in list(self._logger.handlers):
+            try:
+                handler.close()
+            except (RuntimeError, TypeError, ValueError) as error:
+                close_error = close_error or error
+            finally:
+                self._logger.removeHandler(handler)
+
+        self._is_shutdown = True
+        if close_error is not None:
+            raise close_error
+
+
 def configure_logging(
     bucket: str,
     prefix: str,
@@ -263,7 +341,7 @@ def configure_logging(
     attempt_no: int,
     run_id: str,
     batch_size: int = 500,
-) -> logging.Logger:
+) -> LoggingController:
     """Configure package logging once with a shared console and JSONL handler.
 
     Args:
@@ -283,7 +361,7 @@ def configure_logging(
             Airflow run identifier used to isolate records and objects.
 
     Returns:
-        logging.Logger: The configured package logger.
+        LoggingController: Controller for flushing and shutting down logging.
     """
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
     package_logger.setLevel(logging.INFO)
@@ -317,7 +395,7 @@ def configure_logging(
     jsonl_handler.set_name(_JSONL_HANDLER_NAME)
     package_logger.addHandler(jsonl_handler)
 
-    return package_logger
+    return LoggingController(package_logger)
 
 
 class ModuleLogger(BaseModel):

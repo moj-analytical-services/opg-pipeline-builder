@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import quote
@@ -102,6 +103,7 @@ class JsonlLogHandler(logging.Handler):
         self._base_batch_size = batch_size
         self._batch_size = batch_size
         self._part_number = 0
+        self._writer_id = uuid.uuid4().hex
         self._buffer: list[dict[str, Any]] = []
         self._write_failures = 0
         self._s3 = boto3.client("s3")
@@ -190,8 +192,8 @@ class JsonlLogHandler(logging.Handler):
             f"{self._prefix}/database={quote(self._database, safe='')}/"
             f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
             f"attempt_no={self._attempt_no}/"
-            f"run_id={self._run_id}/"
-            f"{process_id}_{part_number}.jsonl"
+            f"run_id={quote(self._run_id, safe='')}/"
+            f"{process_id}_{self._writer_id}_{part_number}.jsonl"
         )
 
     def _put_object(self, key: str, body: bytes) -> None:
@@ -366,7 +368,7 @@ def configure_logging(
         ValueError: If the batch size is less than 1.
         RuntimeError: If the logger has already been configured.
     """
-    if batch_size < 1:
+    if batch_size < 1 or isinstance(batch_size, bool):
         raise ValueError("Batch size must be an integer >= 1.")
 
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)

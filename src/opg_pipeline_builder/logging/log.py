@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import sys
-import time
 from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import quote
@@ -107,8 +106,36 @@ class JsonlLogHandler(logging.Handler):
         self._write_failures = 0
         self._s3 = boto3.client("s3")
 
-        self._validate_logger_inputs()
         self._validate_log_location()
+        self._write_configuration_log()
+
+    def _validate_log_location(self) -> None:
+        """Validate S3 write access with one permanent marker object.
+
+        This always writes to the same location and is just a marker file to confirm that
+        the s3 location is reachable and the pipeline has permission to write to it. Otherwise
+        the retry logic could see the pipeline progress before ultimately failing when trying
+        to write the log the final time. Instead, fail fast here.
+        """
+        key = f"{self._prefix.rstrip('/')}/logging-marker/"
+        try:
+            self._s3.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=b"",
+            )
+        except (BotoCoreError, ClientError, OSError) as error:
+            raise RuntimeError(
+                f"Failed to prepare JSONL log location s3://{self._bucket}/{self._prefix}"
+            ) from error
+
+    def _write_configuration_log(self) -> None:
+        """Write a log record indicating that logging has been configured successfully.
+
+        By successfully creating a StructuredLogRecord, it confirms that the configuration values
+        are valid for the model. This is part of the fail fast strategy to prevent the pipelines
+        processing before failing when it attempts to create logs.
+        """
         self._buffer.append(
             StructuredLogRecord(
                 database=self._database,
@@ -127,38 +154,6 @@ class JsonlLogHandler(logging.Handler):
                 message="Logging configured successfully.",
             ).model_dump(mode="json")
         )
-        if len(self._buffer) >= self._batch_size:
-            self._flush_locked()
-
-    def _validate_logger_inputs(self) -> None:
-        """Check that logger configuration inputs are valid."""
-        err = ""
-        if not isinstance(self._bucket, str) or not self._bucket.strip():
-            err += "Bucket name must be a non-empty string. "
-        if not isinstance(self._prefix, str) or not self._prefix.strip():
-            err += "Prefix name must be a non-empty string. "
-        if (
-            not isinstance(self._base_batch_size, int)
-            or isinstance(self._base_batch_size, bool)
-            or self._base_batch_size < 1
-        ):
-            err += "Batch size must be an integer >= 1. "
-        if err:
-            raise ValueError(err)
-
-    def _validate_log_location(self) -> None:
-        """Validate S3 write access with one permanent marker object."""
-        key = f"{self._prefix.rstrip('/')}/logging-marker/"
-        try:
-            self._s3.put_object(
-                Bucket=self._bucket,
-                Key=key,
-                Body=b"",
-            )
-        except (BotoCoreError, ClientError, OSError) as error:
-            raise RuntimeError(
-                f"Failed to prepare JSONL log location s3://{self._bucket}/{self._prefix}"
-            ) from error
 
     def emit(self, record: logging.LogRecord) -> None:
         """Append one record immediately to the JSONL file."""
@@ -172,26 +167,49 @@ class JsonlLogHandler(logging.Handler):
             self.release()
 
     def close(self) -> None:
-        """Upload remaining records and fail if shutdown cannot persist them."""
+        """Upload all remaining log records and close the handlers.
+
+        Fails the pipeline if it was unable to upload all remaining log records to S3.
+        """
         try:
-            self.flush()
+            self.acquire()
+            try:
+                self._flush_locked()
+                if self._buffer:
+                    raise RuntimeError(
+                        f"Failed to write {len(self._buffer)} log records to S3."
+                    )
+            finally:
+                self.release()
         finally:
             super().close()
 
-    def flush(self) -> None:
-        """Upload buffered records without closing the handler."""
-        self.acquire()
-        try:
-            self._flush_locked()
-            if self._buffer:
-                raise RuntimeError(
-                    f"Failed to write {len(self._buffer)} log records to S3."
-                )
-        finally:
-            self.release()
+    def _object_key(self, process_id: str, part_number: int) -> str:
+        """Generate the S3 object key for a given process ID and part number."""
+        return (
+            f"{self._prefix}/database={quote(self._database, safe='')}/"
+            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
+            f"attempt_no={self._attempt_no}/"
+            f"run_id={self._run_id}/"
+            f"{process_id}_{part_number}.jsonl"
+        )
+
+    def _put_object(self, key: str, body: bytes) -> None:
+        """Upload one JSONL batch to S3."""
+        self._s3.put_object(
+            Bucket=self._bucket,
+            Key=key,
+            Body=body,
+            ContentType="application/x-ndjson",
+        )
 
     def _flush_locked(self) -> None:
-        """Upload the current buffer as one JSONL object; caller holds the lock."""
+        """Upload the current buffer as one JSONL object.
+
+        Contains retry logic to extend the batch size upon failure, so that the pipeline can continue, generating
+        more logs and then attempting to flush again later. Has an upper limit on retry attempts. Generates an error
+        log ever time it fails to upload.
+        """
         if not self._buffer:
             return
 
@@ -201,7 +219,7 @@ class JsonlLogHandler(logging.Handler):
         key = self._object_key(str(os.getpid()), self._part_number)
 
         try:
-            self._put_object_with_retry(key, body)
+            self._put_object(key, body)
         except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as error:
             self._write_failures += 1
             print(
@@ -212,9 +230,8 @@ class JsonlLogHandler(logging.Handler):
             )
             self._batch_size += self._base_batch_size
             if self._batch_size > self._base_batch_size * 4:
-                raise RuntimeError(
-                    "JSONL log sink failure threshold exceeded."
-                ) from error
+                err = f"Have attempted to write JSONL logs {self._write_failures} times. Retry threshold exceeded"
+                raise RuntimeError(err) from error
 
             self._buffer.append(
                 StructuredLogRecord(
@@ -243,32 +260,6 @@ class JsonlLogHandler(logging.Handler):
         self._buffer.clear()
         self._write_failures = 0
         self._batch_size = self._base_batch_size
-
-    def _put_object_with_retry(self, key: str, body: bytes) -> None:
-        """Upload a batch, retrying once after 30 seconds on failure."""
-        try:
-            self._put_object(key, body)
-        except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError):
-            time.sleep(30)
-            self._put_object(key, body)
-
-    def _put_object(self, key: str, body: bytes) -> None:
-        """Upload one JSONL batch to S3."""
-        self._s3.put_object(
-            Bucket=self._bucket,
-            Key=key,
-            Body=body,
-            ContentType="application/x-ndjson",
-        )
-
-    def _object_key(self, process_id: str, part_number: int) -> str:
-        return (
-            f"{self._prefix}/database={quote(self._database, safe='')}/"
-            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._attempt_no}/"
-            f"run_id={self._run_id}/"
-            f"{process_id}_{part_number}.jsonl"
-        )
 
     def _record_to_row(
         self, record: logging.LogRecord
@@ -301,7 +292,7 @@ class JsonlLogHandler(logging.Handler):
 
 
 class LoggingController:
-    """Manage the lifecycle of the configured package logging system."""
+    """Provides package level logging controls for manually flushing and shutting down the logging system."""
 
     def __init__(self, logger: logging.Logger) -> None:
         self._logger = logger
@@ -313,7 +304,11 @@ class LoggingController:
             raise RuntimeError("Logging has already been shut down.")
         for handler in self._logger.handlers:
             if isinstance(handler, JsonlLogHandler):
-                handler.flush()
+                handler.acquire()
+                try:
+                    handler._flush_locked()
+                finally:
+                    handler.release()
 
     def shutdown(self) -> None:
         """Flush, close, and remove package logging handlers."""
@@ -330,7 +325,7 @@ class LoggingController:
                 self._logger.removeHandler(handler)
 
         self._is_shutdown = True
-        if close_error is not None:
+        if close_error:
             raise close_error
 
 
@@ -345,6 +340,9 @@ def configure_logging(
 ) -> LoggingController:
     """Configure package logging once with a shared console and JSONL handler.
 
+    Ensures configuration can only be run once and generates a package-level logger and
+    controller configured for the specific pipeline run.
+
     Args:
         bucket: str
             The S3 bucket where logs will be stored.
@@ -356,14 +354,21 @@ def configure_logging(
             The data delivery period for the logs.
         attempt_no: int
             The attempt number for this data delivery period.
-        batch_size: int, optional
-            Number of records written in each JSONL S3 object.
         run_id: str
             Airflow run identifier used to isolate records and objects.
+        batch_size: int, optional
+            Number of records written in each JSONL S3 object.
 
     Returns:
         LoggingController: Controller for flushing and shutting down logging.
+
+    Raises:
+        ValueError: If the batch size is less than 1.
+        RuntimeError: If the logger has already been configured.
     """
+    if batch_size < 1:
+        raise ValueError("Batch size must be an integer >= 1.")
+
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
     package_logger.setLevel(logging.INFO)
     package_logger.propagate = False

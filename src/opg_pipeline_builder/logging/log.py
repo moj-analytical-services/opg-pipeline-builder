@@ -17,7 +17,11 @@ _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
 
 
 class CustomLogFields(BaseModel):
-    """Pydantic model representing custom log fields."""
+    """Pydantic model representing custom log fields.
+
+    These fields provide context for individual log entries. The model requires
+    all three fields and rejects additional values.
+    """
 
     table: str
     field: str
@@ -27,7 +31,11 @@ class CustomLogFields(BaseModel):
 
 
 class StructuredLogRecord(BaseModel):
-    """Pydantic model representing a structured log record written to JSONL."""
+    """Pydantic model representing a structured log record written to JSONL.
+
+    This is the definitive definition of a valid log record. It receives data from the logger.record object,
+    the CustomLogFields values and pipeline/run values stored in the JSONL handler via the configuration.
+    """
 
     database: str
     run_id: str
@@ -58,7 +66,7 @@ class StructuredLogRecord(BaseModel):
     @classmethod
     def ensure_positive_attempt(cls, value: int) -> int:
         """Require a positive run attempt number."""
-        if isinstance(value, bool) or value < 1:
+        if value < 1:
             raise ValueError("Attempt number must be an integer >= 1.")
         return value
 

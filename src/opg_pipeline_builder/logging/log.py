@@ -4,12 +4,11 @@ import os
 import sys
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Literal
-from urllib.parse import quote
+from typing import Any, Literal, Self
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
@@ -56,15 +55,16 @@ class StructuredLogRecord(BaseModel):
 
     @field_validator("database", "run_id")
     @classmethod
-    def ensure_non_empty(cls, value: str) -> str:
+    def validate_database_and_run_id(cls, value: str, info: ValidationInfo) -> str:
         """Require non-empty run context identifiers."""
         if not value.strip():
-            raise ValueError("Run context fields must be non-empty.")
+            err = f"Validation of StructuredLogRecord failed: field '{info.field_name}' must be non-empty."
+            raise ValueError(err)
         return value
 
     @field_validator("attempt_no")
     @classmethod
-    def ensure_positive_attempt(cls, value: int) -> int:
+    def validate_attempt_no(cls, value: int) -> int:
         """Require a positive run attempt number."""
         if value < 1:
             raise ValueError("Attempt number must be an integer >= 1.")
@@ -72,7 +72,7 @@ class StructuredLogRecord(BaseModel):
 
     @field_validator("data_delivery_period", "log_timestamp")
     @classmethod
-    def ensure_utc_aware(cls, value: datetime) -> datetime:
+    def validate_datetimes_are_timezone_aware(cls, value: datetime) -> datetime:
         """Require timezone-aware datetimes and normalize them to UTC."""
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Datetime fields must be timezone-aware.")
@@ -119,7 +119,7 @@ class JsonlLogHandler(logging.Handler):
         the retry logic could see the pipeline progress before ultimately failing when trying
         to write the log the final time. Instead, fail fast here.
         """
-        key = f"{self._prefix.rstrip('/')}/logging-marker/"
+        key = f"{self._prefix.rstrip('/')}/logging-marker/marker.txt"
         try:
             self._s3.put_object(
                 Bucket=self._bucket,
@@ -128,7 +128,7 @@ class JsonlLogHandler(logging.Handler):
             )
         except (BotoCoreError, ClientError, OSError) as error:
             raise RuntimeError(
-                f"Failed to prepare JSONL log location s3://{self._bucket}/{self._prefix}"
+                f"Failed to prepare JSONL log location s3://{self._bucket}/{key}"
             ) from error
 
     def _write_configuration_log(self) -> None:
@@ -189,10 +189,10 @@ class JsonlLogHandler(logging.Handler):
     def _object_key(self, process_id: str, part_number: int) -> str:
         """Generate the S3 object key for a given process ID and part number."""
         return (
-            f"{self._prefix}/database={quote(self._database, safe='')}/"
+            f"{self._prefix.rstrip('/')}/"
             f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
             f"attempt_no={self._attempt_no}/"
-            f"run_id={quote(self._run_id, safe='')}/"
+            f"run_id={self._run_id}/"
             f"{process_id}_{self._writer_id}_{part_number}.jsonl"
         )
 
@@ -227,7 +227,6 @@ class JsonlLogHandler(logging.Handler):
             print(
                 f"Failed to write a batch of logs to s3://{self._bucket}/{key} "
                 f"(failure_count={self._write_failures}). Error: {error}",
-                file=sys.stderr,
                 flush=True,
             )
             self._batch_size += self._base_batch_size
@@ -294,11 +293,28 @@ class JsonlLogHandler(logging.Handler):
 
 
 class LoggingController:
-    """Provides package level logging controls for manually flushing and shutting down the logging system."""
+    """Provides package level logging controls for manually flushing and shutting down the logging system.
+
+    Prefer using this as a context manager (`with configure_logging(...) as controller:`) around the
+    pipeline body. That way shutdown() runs deterministically inside the task itself and a failed final
+    flush raises normally, failing the task. Relying solely on the interpreter's own atexit-triggered
+    logging.shutdown() is not sufficient: it only swallows OSError/ValueError raised by close(), and even
+    when other errors do propagate out of it, Python reports them as "Exception ignored in atexit
+    callback" without failing the process - so a pipeline can appear to succeed while silently losing its
+    trailing logs.
+    """
 
     def __init__(self, logger: logging.Logger) -> None:
         self._logger = logger
         self._is_shutdown = False
+
+    def __enter__(self) -> Self:
+        """Support use as a context manager."""
+        return self
+
+    def __exit__(self, *_exc_info: object) -> None:
+        """Shut down deterministically so a failed final flush raises inside the task."""
+        self.shutdown()
 
     def flush(self) -> None:
         """Upload buffered records without closing package logging."""
@@ -326,9 +342,10 @@ class LoggingController:
             finally:
                 self._logger.removeHandler(handler)
 
-        self._is_shutdown = True
         if close_error:
             raise close_error
+
+        self._is_shutdown = True
 
 
 def configure_logging(
@@ -392,7 +409,6 @@ def configure_logging(
 
     stream_handler = logging.StreamHandler()
     stream_handler.set_name(_CONSOLE_HANDLER_NAME)
-    stream_handler.setLevel(logging.INFO)
     stream_handler.setFormatter(
         logging.Formatter(
             fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",

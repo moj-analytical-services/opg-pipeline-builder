@@ -67,6 +67,7 @@ def setup_logging(s3: boto3.client) -> Generator[None]:
         database="database_name",
         data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
         attempt_no=1,
+        run_id="test-run-id",
     )
 
     yield

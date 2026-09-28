@@ -1,13 +1,12 @@
 import logging
 from collections.abc import Generator
-from datetime import UTC, datetime
 
 import boto3
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
 from moto import mock_aws
 
-from opg_pipeline_builder.logging.log import PACKAGE_LOGGER_NAME, configure_logging
+from opg_pipeline_builder.logging.log import PACKAGE_LOGGER_NAME
 
 
 @pytest.fixture(scope="function")
@@ -47,41 +46,6 @@ def mock_glue() -> Generator[boto3.client]:
     "Return a mocked glue client."
     with mock_aws():
         yield boto3.client("glue", region_name="eu-west-2")
-
-
-@pytest.fixture(autouse=True, scope="session")
-def setup_logging(s3: boto3.client) -> Generator[None]:
-    """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
-    logging.getLogger("botocore").setLevel(logging.CRITICAL)
-    logging.getLogger("awswrangler").setLevel(logging.CRITICAL)
-    logging.getLogger("boto3").setLevel(logging.CRITICAL)
-
-    s3.create_bucket(
-        Bucket="log-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
-
-    configure_logging(
-        bucket="log-bucket",
-        prefix="prefix",
-        database="database_name",
-        data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
-        attempt_no=1,
-        run_id="test-run-id",
-    )
-
-    yield
-
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
-    for handler in list(package_logger.handlers):
-        handler.close()
-        package_logger.removeHandler(handler)
-    package_logger.propagate = True
-    package_logger.setLevel(logging.NOTSET)
-
-    logging.getLogger("botocore").setLevel(logging.DEBUG)
-    logging.getLogger("awswrangler").setLevel(logging.DEBUG)
-    logging.getLogger("boto3").setLevel(logging.DEBUG)
 
 
 @pytest.fixture(autouse=True, scope="function")

@@ -9,7 +9,7 @@
       "input_data_type": "int",
       "is_composite_key": true,
       "is_partition": false,
-      "name": "id",
+      "name": "id2",
       "nullable": false,
       "output_data_type": "int",
       "semantic_type": "numeric_identifier",
@@ -24,7 +24,7 @@
       "input_data_type": "str",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "name",
+      "name": "name2",
       "nullable": true,
       "output_data_type": "str",
       "semantic_type": "generic_string",
@@ -39,7 +39,7 @@
       "input_data_type": "str",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "address",
+      "name": "address2",
       "nullable": true,
       "output_data_type": "str",
       "regex_pattern": "^\\[(\\s*(\".*\"|null)\\s*,\\s*)*(\\s*(\".*\"|null)\\s*){1}\\]$|^{(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*,\\s*)*(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*){1}}$|^\\[\\]$",
@@ -61,7 +61,7 @@
       "input_data_type": "str",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "case_type",
+      "name": "case_type2",
       "nullable": true,
       "output_data_type": "str",
       "semantic_type": "string_classification"
@@ -76,7 +76,7 @@
       "input_data_type": "int",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "length_open_for",
+      "name": "length_open_for2",
       "nullable": true,
       "output_data_type": "int",
       "semantic_type": "period_of_time"
@@ -91,7 +91,7 @@
       "input_data_type": "int",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "number_of_contacts",
+      "name": "number_of_contacts2",
       "nullable": true,
       "output_data_type": "int",
       "semantic_type": "quantity"
@@ -110,7 +110,7 @@
       "input_data_type": "int",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "triage_level",
+      "name": "triage_level2",
       "nullable": true,
       "output_data_type": "int",
       "semantic_type": "string_classification"
@@ -124,7 +124,7 @@
       "input_data_type": "bool",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "is_open",
+      "name": "is_open2",
       "nullable": true,
       "output_data_type": "bool",
       "semantic_type": "boolean_flag"
@@ -139,7 +139,7 @@
       "input_value_format": "date",
       "is_composite_key": false,
       "is_partition": false,
-      "name": "created_date",
+      "name": "created_date2",
       "nullable": true,
       "output_data_type": "date",
       "semantic_type": "date"
@@ -213,5 +213,5 @@
       "stage": "curated"
     }
   ],
-  "name": "test_table"
+  "name": "test_table_2"
 }

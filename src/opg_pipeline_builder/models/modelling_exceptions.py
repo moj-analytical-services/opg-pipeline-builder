@@ -7,6 +7,18 @@ class InvalidColumnNameError(Exception):
         self.error = error
 
 
+class InvalidDatabaseNameError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidPathError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
 class InvalidFormatError(Exception):
     def __init__(self, error: str):
         super().__init__(error)

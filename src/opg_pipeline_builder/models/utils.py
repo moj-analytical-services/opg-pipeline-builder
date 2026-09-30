@@ -1,7 +1,12 @@
+from logging import getLogger
+
 from jinja2 import StrictUndefined, Template
 from pydantic import ValidationInfo
 
+from opg_pipeline_builder.logging.log import ModuleLogger
 from opg_pipeline_builder.validation.validators import is_valid_s3_path
+
+log = ModuleLogger(logger=getLogger(__name__))
 
 
 def table_name(info: ValidationInfo) -> str:
@@ -22,6 +27,9 @@ def render_s3_path(s3_path: str, env: str, db: str) -> str:
 
     err = is_valid_s3_path(rendered_path, db)
     if err:
+        log.error(
+            f"Invalid S3 path: {err}",
+        )
         raise ValueError(f"Invalid S3 path: {err}")
 
     return rendered_path

@@ -20,10 +20,8 @@ def create_column(
     enum: list[str | int] | None = None,
     stages: list[m.Stage] | None = None,
 ) -> m.Column:
-    if stages is None:
-        stages = [create_stage()]
-    if enum is None:
-        enum = ["A", "B"]
+    enum = enum or ["A", "B"]
+    stages = stages or [create_stage()]
     return m.Column(name=name, nullable=nullable, enum=enum, stages=stages)
 
 

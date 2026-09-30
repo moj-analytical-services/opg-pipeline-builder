@@ -243,12 +243,9 @@ class TransformEngineUtils(BaseModel):
             Dictionary containing list of unprocessed partitions for
             the tables passed, given the ETL stages specified.
         """
-        if tf_types is None:
-            tf_types = ["default", "custom"]
-        if stages is None:
-            stages = {"input": "raw_hist", "output": "curated"}
-        if tables is None:
-            tables = get_source_tbls()
+        tables = tables or get_source_tbls()
+        stages = stages or {"input": "raw_hist", "output": "curated"}
+        tf_types = tf_types or ["default", "custom"]
         stages_list = [v for _, v in stages.items()]
         tables_to_use = self.db.tables_to_use(
             tables, stages=stages_list, tf_types=tf_types
@@ -287,8 +284,7 @@ class TransformEngineUtils(BaseModel):
             transform type, input S3 path and output S3 path
             for the given table and stages.
         """
-        if stages is None:
-            stages = {"input": "raw_hist", "output": "curated"}
+        stages = stages or {"input": "raw_hist", "output": "curated"}
         transform_stage_args = {table_name: stages}
 
         tf_args = self.db.transform_args([table_name], **transform_stage_args)

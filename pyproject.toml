@@ -7,19 +7,13 @@ name = "opg_pipeline_builder"
 version = "0.4.0"
 description = "Provides common re-usable components for building OPG data pipelines"
 readme = "README.md"
-requires-python = ">=3.12, <3.13"
+requires-python = "==3.13.14"
 dependencies = [
-    "aiobotocore>=3.7.0",
-    "awswrangler>=3.11.0",
+    "aiobotocore==3.7.0",
+    "awswrangler==3.17.0",
     "boto3==1.43.0",
-    "croniter>=6.0.0",
-    "data-linter>=6.3.6",
-    "dataengineeringutils3>=1.4.3",
-    "pyarrow>=18.1.0",
-    "pydantic>=2.11.4",
-    "pydbtools>=5.8.1",
-    "s3fs==2026.4.0",
-    "ssm-parameter-store>=19.11.0",
+    "pyarrow==24.0.0",
+    "pydantic==2.13.4",
 ]
 
 [tool.uv]
@@ -27,26 +21,14 @@ package = true
 
 [project.optional-dependencies]
 dev = [
-    "bandit>=1.8.6",
-    "detect-secrets>=1.5.0",
-    "duckdb>=1.2.2",
-    "mkdocs-material>=9.6.12",
-    "mkdocstrings>=1.0.4",
-    "mkdocstrings-python>=2.0.3",
-    "mypy>=1.19.1",
-    "pre-commit>=4.2.0",
-    "ruff>=0.14.8",
-    "safety>=3.2.9",
-    "sqlglot>=30.6.0",
-    "types-python-dateutil>=2.9.0.20260408",
-    "types-pyyaml>=6.0.12.20260408",
+    "duckdb==1.5.4",
+    "mypy==2.3.0",
+    "pre-commit>=4.6.0",
 ]
 test = [
-    "duckdb>=1.2.2",
-    "moto>=5.1.4",
-    "pytest>=9.0.3",
-    "pytest-cov>=7.1.0",
-    "pytest-mock>=3.14.0",
+    "moto==5.2.2",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
 ]
 
 [tool.pytest.ini_options]

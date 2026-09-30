@@ -26,26 +26,26 @@ DEFAULT_METADATA_FILE = "tests/data/meta_data/test/testdb/raw_hist/table1.json"
 
 
 @pytest.fixture
-def pandas_engine_class() -> Generator[type[PandasTransformEngine], None, None]:
+def pandas_engine_class() -> Generator[type[PandasTransformEngine]]:
     yield PandasTransformEngine
 
 
 @pytest.fixture
 def pandas_engine(
-    pandas_engine_class: PandasTransformEngine,
+    pandas_engine_class: type[PandasTransformEngine],
     config: PipelineConfig,
     database: Database,
-) -> Generator[type[PandasTransformEngine], None, None]:
-    yield pandas_engine_class(config=config, db=database)  # type: ignore[operator]
+) -> Generator[PandasTransformEngine]:
+    yield pandas_engine_class(config=config, db=database)
 
 
 @pytest.fixture
-def default_metadata() -> Generator[Metadata, None, None]:
+def default_metadata() -> Generator[Metadata]:
     yield Metadata.from_json(DEFAULT_METADATA_FILE)
 
 
 @pytest.fixture
-def default_df() -> Generator[pd.DataFrame, None, None]:
+def default_df() -> Generator[pd.DataFrame]:
     yield pd.read_csv(DEFAULT_DATA_FILE)
 
 
@@ -416,7 +416,7 @@ def test_transform(
     )
 
     ts = int(datetime.now(tz=UTC).timestamp())
-    partition = f"mojap_file_land_timestamp={ts}"
+    partition = f"mojap_file_land_timestamp={ts!s}"
 
     input_partition_path = (
         f"s3://my-dummy-bucket/dev/testdb/raw_hist/table1/{partition}/"

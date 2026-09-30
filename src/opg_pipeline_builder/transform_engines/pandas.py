@@ -6,7 +6,6 @@ from typing import Any
 import awswrangler as wr
 from arrow_pd_parser import reader, writer
 from mojap_metadata import Metadata
-from pydantic import Field
 
 from opg_pipeline_builder.models.metadata_model import MetaData
 
@@ -21,8 +20,8 @@ class PandasTransformEngine(EnrichMetaTransformEngine):
     chunk_rest_threshold: int = 500_000_000
     add_partition_column: bool = False
     attributes_file: str = ""
-    attributes: dict[Any, Any] = Field(default_factory=dict)
-    extract_header_values: dict[str, str] = Field(default_factory=dict)
+    attributes: dict[Any, Any] | None = None
+    extract_header_values: dict[str, str] | None = None
     enrich_meta: bool = True
     raw_stage: str = "raw_hist"
     final_partition_stage: str = "curated"

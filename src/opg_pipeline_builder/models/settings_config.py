@@ -15,7 +15,7 @@ log = ModuleLogger(logger=getLogger(__name__))
 class SettingsConfig(BaseSettings):
     """Extract setting from the DAG via environment variables."""
 
-    ENVIRONMENT: str
+    ENV: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -23,11 +23,12 @@ class SettingsConfig(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("ENVIRONMENT")
-    def validate_environment(self, value: str, info: ValidationInfo) -> str:
+    @field_validator("ENV")
+    @classmethod
+    def validate_environment(cls, value: str, info: ValidationInfo) -> str:
         """Validate that the environment is one of the allowed environments."""
         if value not in ALLOWED_ENVS:
-            err = f"ENVIRONMENT must be one of {', '.join(ALLOWED_ENVS)}"
-            log.error(err, field=field_name(info))
+            err = f"ENV must be one of {', '.join(ALLOWED_ENVS)}"
+            log.error(err, table="settings_config", field=field_name(info))
             raise ValueError(err)
         return value

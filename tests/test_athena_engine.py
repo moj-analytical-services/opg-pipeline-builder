@@ -131,7 +131,7 @@ class TestAthenaTransformEngine:
             final_table = con.arrow()
 
             tmp = TemporaryDirectory()
-            pq.write_to_dataset(  # type: ignore[no-untyped-call]
+            pq.write_to_dataset(
                 final_table,
                 root_path=tmp.name,
                 partition_cols=partitioned_by,

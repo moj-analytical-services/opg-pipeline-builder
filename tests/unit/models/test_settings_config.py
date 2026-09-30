@@ -10,7 +10,7 @@ from opg_pipeline_builder.models.settings_config import SettingsConfig
 def test_settings_config_env_valid(env: str) -> None:
     """Test that the environment setting in the settings config is valid."""
     os.environ["ENV"] = env
-    config = SettingsConfig()  # type: ignore[call-arg]
+    config = SettingsConfig()
     assert config.ENV == env
 
 
@@ -21,4 +21,4 @@ def test_settings_config_env_invalid(env: str) -> None:
     with pytest.raises(
         ValueError, match=f"ENV must be one of {', '.join(ALLOWED_ENVS)}"
     ):
-        SettingsConfig()  # type: ignore[call-arg]
+        SettingsConfig()

@@ -28,25 +28,29 @@ class TestPipelineConfig:
         with patch(
             "opg_pipeline_builder.models.pipeline_config.is_valid_identifier",
             return_value="",
-        ):
+        ) as mock_valid:
             config = create_pipeline_config()
-            assert config.name == "name"
+
+        assert config.name == "name"
+        assert mock_valid.assert_called_once()
 
     def test_validate_name_invalid(self) -> None:
         with (
             patch(
                 "opg_pipeline_builder.models.pipeline_config.is_valid_identifier",
                 return_value="Error found",
-            ),
+            ) as mock_valid,
             pytest.raises(exc.InvalidPipelineNameError, match="Error found"),
         ):
             create_pipeline_config(name="invalid_name")
+
+        assert mock_valid.assert_called_once()
 
     def test_validate_s3_paths_valid(self) -> None:
         with patch(
             "opg_pipeline_builder.models.pipeline_config.is_valid_s3_path_template",
             return_value="",
-        ):
+        ) as mock_valid:
             config = create_pipeline_config()
             assert (
                 config.land_path
@@ -60,13 +64,15 @@ class TestPipelineConfig:
                 config.curated_path
                 == "s3://bucket-name/{{ env }}/{{ db }}/curated/table-name"
             )
+        assert mock_valid.assert_called_once()
 
     def test_validate_s3_paths_invalid(self) -> None:
         with (
             patch(
                 "opg_pipeline_builder.models.pipeline_config.is_valid_s3_path_template",
                 return_value="Error found",
-            ),
+            ) as mock_valid,
             pytest.raises(exc.InvalidPathError, match="Error found"),
         ):
             create_pipeline_config(land_path="invalid_land_path")
+        assert mock_valid.assert_called_once()

@@ -23,4 +23,7 @@ def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
     assert run_config.land_path == "s3://bucket-name/test/db_name/land/table-name"
     assert run_config.archive_path == "s3://bucket-name/test/db_name/archive/table-name"
     assert run_config.curated_path == "s3://bucket-name/test/db_name/curated/table-name"
-    assert caplog.records == []
+    assert all(
+        exp_msg in caplog.text
+        for exp_msg in ["Creating run config", "Run config created"]
+    )

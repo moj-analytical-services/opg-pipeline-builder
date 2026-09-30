@@ -64,7 +64,7 @@ class TestPipelineConfig:
                 config.curated_path
                 == "s3://bucket-name/{{ env }}/{{ db }}/curated/table-name"
             )
-        assert mock_valid.call_count == 1
+        assert mock_valid.call_count == 3
 
     def test_validate_s3_paths_invalid(self) -> None:
         with (

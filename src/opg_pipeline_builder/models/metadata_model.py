@@ -22,20 +22,10 @@ from opg_pipeline_builder.constants import (
 )
 from opg_pipeline_builder.logging.log import ModuleLogger
 from opg_pipeline_builder.models import modelling_exceptions as exc
+from opg_pipeline_builder.models.utils import field_name, table_name
 from opg_pipeline_builder.validation.validators import is_valid_identifier
 
 log = ModuleLogger(logger=getLogger(__name__))
-
-
-def table_name(info: ValidationInfo) -> str:
-    """Extract the table name from the validation context."""
-    table: str = (info.context or {}).get("table_name", "")
-    return table
-
-
-def field_name(info: ValidationInfo) -> str:
-    """Extract the field name from Pydantic validation information."""
-    return info.field_name or ""
 
 
 class Column(BaseModel):
@@ -227,6 +217,14 @@ class FileFormat(BaseModel):
         err = f"File format '{value}' is not in the ALLOWED_FILE_FORMATS constant"
         log.error(err, table=table_name(info), field=field_name(info))
         raise exc.InvalidFormatError(err)
+
+
+class ValidationConfig(BaseModel):
+    """Pydantic model representing the validation configuration for the pipeline."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expect_headers: bool
 
 
 class TableMetaData(BaseModel):

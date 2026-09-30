@@ -189,7 +189,7 @@ class TestCustomLogFields:
             CustomLogFields(
                 table="table_a",
                 field="field_a",
-                process_stage="Invalid",  # type: ignore[arg-type]
+                process_stage="Invalid",
             )
 
 

@@ -24,8 +24,11 @@ def create_run_config(pipeline: PipelineConfig, settings: SettingsConfig) -> Run
     """Create a run config from the pipeline and settings config"""
     log.info("Creating run config", table="run_config", stage="Start")
 
+    log.info("Rendering S3 land path", table="run_config", field="land_path")
     land_path = render_s3_path(pipeline.land_path, settings.ENV, pipeline.name)
+    log.info("Rendering S3 archive path", table="run_config", field="archive_path")
     archive_path = render_s3_path(pipeline.archive_path, settings.ENV, pipeline.name)
+    log.info("Rendering S3 curated path", table="run_config", field="curated_path")
     curated_path = render_s3_path(pipeline.curated_path, settings.ENV, pipeline.name)
 
     config = RunConfig(

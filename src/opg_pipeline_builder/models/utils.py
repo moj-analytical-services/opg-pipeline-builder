@@ -27,9 +27,7 @@ def render_s3_path(s3_path: str, env: str, db: str) -> str:
 
     err = is_valid_s3_path(rendered_path, db)
     if err:
-        log.error(
-            f"Invalid S3 path: {err}",
-        )
+        log.error(f"Invalid S3 path: {err}")
         raise ValueError(f"Invalid S3 path: {err}")
 
     return rendered_path

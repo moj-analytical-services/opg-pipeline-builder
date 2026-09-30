@@ -7,7 +7,7 @@ class InvalidColumnNameError(Exception):
         self.error = error
 
 
-class InvalidDatabaseNameError(Exception):
+class InvalidPipelineNameError(Exception):
     def __init__(self, error: str):
         super().__init__(error)
         self.error = error

@@ -5,15 +5,14 @@ from pydantic import (
     ConfigDict,
     ValidationInfo,
     field_validator,
-    model_validator,
 )
 
 from opg_pipeline_builder.logging import ModuleLogger
 from opg_pipeline_builder.models import modelling_exceptions as exc
-from opg_pipeline_builder.models.utils import field_name, table_name
+from opg_pipeline_builder.models.utils import field_name
 from opg_pipeline_builder.validation.validators import (
     is_valid_identifier,
-    is_valid_s3_path,
+    is_valid_s3_path_template,
 )
 
 log = ModuleLogger(logger=getLogger(__name__))
@@ -24,39 +23,30 @@ class PipelineConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    db_name: str
+    name: str
     description: str = ""
-    source_path: str | None = None
-    raw_path: str
+    land_path: str
+    archive_path: str
     curated_path: str
 
-    @field_validator("db_name")
-    def validate_db_name(self, value: str, info: ValidationInfo) -> str:
-        """Validate the database name is a valid SQL/Athena identifier."""
-
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str, info: ValidationInfo) -> str:
+        """Validate the pipeline name is a valid SQL/Athena identifier."""
         err = is_valid_identifier(value)
         if err:
-            log.error(err, table=table_name(info), field=field_name(info))
-            raise exc.InvalidDatabaseNameError(err)
+            log.error(err, table="pipeline_config", field=field_name(info))
+            raise exc.InvalidPipelineNameError(err)
 
         return value
 
-    @model_validator(mode="after")
-    def validate_and_set_raw_path(self, info: ValidationInfo) -> "PipelineConfig":
-        """Validate and set the raw and curated paths."""
-        err = is_valid_s3_path(self.raw_path, self.db_name)
+    @field_validator("land_path", "archive_path", "curated_path")
+    @classmethod
+    def validate_s3_paths(cls, value: str, info: ValidationInfo) -> str:
+        """Validate the land, archive, and curated paths."""
+        err = is_valid_s3_path_template(value, field_name(info))
         if err:
-            log.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table="pipeline_config", field=field_name(info))
             raise exc.InvalidPathError(err)
 
-        return self
-
-    @model_validator(mode="after")
-    def validate_and_set_curated_path(self, info: ValidationInfo) -> "PipelineConfig":
-        """Validate and set the curated path."""
-        err = is_valid_s3_path(self.curated_path, self.db_name)
-        if err:
-            log.error(err, table=table_name(info), field=field_name(info))
-            raise exc.InvalidPathError(err)
-
-        return self
+        return value

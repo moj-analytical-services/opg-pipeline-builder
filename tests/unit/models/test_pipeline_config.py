@@ -32,7 +32,7 @@ class TestPipelineConfig:
             config = create_pipeline_config()
 
         assert config.name == "name"
-        assert mock_valid.assert_called_once()
+        assert mock_valid.call_count == 1
 
     def test_validate_name_invalid(self) -> None:
         with (
@@ -44,7 +44,7 @@ class TestPipelineConfig:
         ):
             create_pipeline_config(name="invalid_name")
 
-        assert mock_valid.assert_called_once()
+        assert mock_valid.call_count == 1
 
     def test_validate_s3_paths_valid(self) -> None:
         with patch(
@@ -64,7 +64,7 @@ class TestPipelineConfig:
                 config.curated_path
                 == "s3://bucket-name/{{ env }}/{{ db }}/curated/table-name"
             )
-        assert mock_valid.assert_called_once()
+        assert mock_valid.call_count == 1
 
     def test_validate_s3_paths_invalid(self) -> None:
         with (
@@ -75,4 +75,4 @@ class TestPipelineConfig:
             pytest.raises(exc.InvalidPathError, match="Error found"),
         ):
             create_pipeline_config(land_path="invalid_land_path")
-        assert mock_valid.assert_called_once()
+        assert mock_valid.call_count == 1

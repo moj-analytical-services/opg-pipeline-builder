@@ -1,5 +1,5 @@
+from jinja2 import StrictUndefined, Template
 from pydantic import ValidationInfo
-from jinja2 import Template, StrictUndefined
 
 from opg_pipeline_builder.validation.validators import is_valid_s3_path
 

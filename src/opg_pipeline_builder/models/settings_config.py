@@ -16,6 +16,7 @@ class SettingsConfig(BaseSettings):
     """Extract setting from the DAG via environment variables."""
 
     ENV: str
+    PIPELINE_NAME: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -13,19 +13,19 @@ class ParentValidationErrors(BaseModel):
 
 
 class DatabaseValidationErrors(BaseModel):
-    database_name: str
-    database_error_code: str
+    pipeline_name: str
+    pipeline_error_code: str
     parent_error_code: str
     context: str
 
 
 class ValidationIssue(BaseModel):
-    database_name: str
+    pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
     table_name: str
     identifier_column: str
     identifier_value: str
     invalid_column: str
-    database_error_code: str
+    pipeline_error_code: str
     invalid_value: str

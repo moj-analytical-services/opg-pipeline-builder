@@ -33,14 +33,14 @@ RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
 DELIVERY_PERIOD = datetime(2024, 1, 2, tzinfo=UTC)
 DEFAULT_BUCKET = "log-bucket"
 DEFAULT_PREFIX = "prefix/to/log"
-DEFAULT_DATABASE = "test-database"
+DEFAULT_PIPELINE = "test-pipeline"
 
 
 def create_handler(
     apply_patches: bool = True,
     bucket: str = DEFAULT_BUCKET,
     prefix: str = DEFAULT_PREFIX,
-    database: str = DEFAULT_DATABASE,
+    pipeline: str = DEFAULT_PIPELINE,
     data_delivery_period: datetime = DELIVERY_PERIOD,
     attempt_no: int = 1,
     run_id: str = RUN_ID,
@@ -55,7 +55,7 @@ def create_handler(
             return JsonlLogHandler(
                 bucket=bucket,
                 prefix=prefix,
-                database=database,
+                pipeline=pipeline,
                 data_delivery_period=data_delivery_period,
                 attempt_no=attempt_no,
                 run_id=run_id,
@@ -65,7 +65,7 @@ def create_handler(
         return JsonlLogHandler(
             bucket=bucket,
             prefix=prefix,
-            database=database,
+            pipeline=pipeline,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
             run_id=run_id,
@@ -200,7 +200,7 @@ class TestStructuredLogRecord:
     def valid_values(self) -> dict[str, Any]:
         """Create a dictionary of valid structured log record values."""
         return {
-            "database": DEFAULT_DATABASE,
+            "pipeline": DEFAULT_PIPELINE,
             "run_id": RUN_ID,
             "data_delivery_period": DELIVERY_PERIOD,
             "attempt_no": 1,
@@ -229,8 +229,8 @@ class TestStructuredLogRecord:
                 {**self.valid_values, "extra_field": "not allowed"}
             )
 
-    @pytest.mark.parametrize("field", [("database"), ("run_id")])
-    def test_validate_database_and_run_id_invalid(self, field: str) -> None:
+    @pytest.mark.parametrize("field", [("pipeline"), ("run_id")])
+    def test_validate_pipeline_and_run_id_invalid(self, field: str) -> None:
         """Test that empty run context fields are rejected."""
         with pytest.raises(
             ValidationError,
@@ -298,7 +298,7 @@ class TestJsonlLogHandler:
             handler = create_handler(apply_patches=False)
             assert handler._bucket == DEFAULT_BUCKET
             assert handler._prefix == DEFAULT_PREFIX
-            assert handler._database == DEFAULT_DATABASE
+            assert handler._pipeline == DEFAULT_PIPELINE
             assert handler._run_id == RUN_ID
             assert handler._data_delivery_period == DELIVERY_PERIOD
             assert handler._attempt_no == 1
@@ -317,13 +317,13 @@ class TestJsonlLogHandler:
 
         create_handler(apply_patches=False)
         create_handler(
-            database="other-database",
+            pipeline="other-pipeline",
             attempt_no=2,
             run_id="other-run",
             apply_patches=False,
         )
         create_handler(
-            database="another-database",
+            pipeline="another-pipeline",
             attempt_no=3,
             run_id="another-run",
             apply_patches=False,
@@ -373,7 +373,7 @@ class TestJsonlLogHandler:
 
         assert handler._buffer == [
             {
-                "database": DEFAULT_DATABASE,
+                "pipeline": DEFAULT_PIPELINE,
                 "run_id": RUN_ID,
                 "data_delivery_period": DELIVERY_PERIOD.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "attempt_no": 1,
@@ -632,7 +632,7 @@ class TestJsonlLogHandler:
             )
             row = handler._record_to_row(record)
             assert row == {
-                "database": DEFAULT_DATABASE,
+                "pipeline": DEFAULT_PIPELINE,
                 "run_id": RUN_ID,
                 "data_delivery_period": DELIVERY_PERIOD.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "attempt_no": 1,
@@ -770,7 +770,7 @@ class TestConfigureLogging:
         self,
         bucket: str = DEFAULT_BUCKET,
         prefix: str = DEFAULT_PREFIX,
-        database: str = DEFAULT_DATABASE,
+        pipeline: str = DEFAULT_PIPELINE,
         data_delivery_period: datetime = DELIVERY_PERIOD,
         attempt_no: int = 1,
         run_id: str = RUN_ID,
@@ -780,7 +780,7 @@ class TestConfigureLogging:
         return configure_logging(
             bucket=bucket,
             prefix=prefix,
-            database=database,
+            pipeline=pipeline,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
             run_id=run_id,
@@ -916,7 +916,7 @@ class TestModuleLogger:
         _ = configure_logging(
             bucket=DEFAULT_BUCKET,
             prefix=DEFAULT_PREFIX,
-            database=DEFAULT_DATABASE,
+            pipeline=DEFAULT_PIPELINE,
             data_delivery_period=DELIVERY_PERIOD,
             attempt_no=1,
             run_id=RUN_ID,
@@ -973,7 +973,7 @@ class TestLoggingEndToEnd:
         self,
         *,
         batch_size: int = 3,
-        database: str = DEFAULT_DATABASE,
+        pipeline: str = DEFAULT_PIPELINE,
         attempt_no: int = 1,
         run_id: str = RUN_ID,
     ) -> tuple[LoggingController, JsonlLogHandler]:
@@ -981,7 +981,7 @@ class TestLoggingEndToEnd:
         controller = configure_logging(
             bucket=DEFAULT_BUCKET,
             prefix=DEFAULT_PREFIX,
-            database=database,
+            pipeline=pipeline,
             data_delivery_period=DELIVERY_PERIOD,
             attempt_no=attempt_no,
             run_id=run_id,
@@ -1020,14 +1020,14 @@ class TestLoggingEndToEnd:
         table: str = "N/A",
         field: str = "N/A",
         message: str,
-        database: str = DEFAULT_DATABASE,
+        pipeline: str = DEFAULT_PIPELINE,
         attempt_no: int = 1,
         run_id: str = RUN_ID,
         log_timestamp: str = "2024-01-02T00:00:00Z",
     ) -> dict[str, Any]:
         """Build the expected structured row for a real logged record."""
         return {
-            "database": database,
+            "pipeline": pipeline,
             "run_id": run_id,
             "data_delivery_period": "2024-01-02T00:00:00Z",
             "attempt_no": attempt_no,
@@ -1447,7 +1447,7 @@ class TestLoggingEndToEnd:
     def test_two_pipeline_runs_with_different_attempt_numbers_do_not_collide(
         self, s3: boto3.client
     ) -> None:
-        """Test that two runs for the same database/data_delivery_period but different attempt_no
+        """Test that two runs for the same pipeline/data_delivery_period but different attempt_no
         write to distinct S3 partitions without colliding or mixing records.
         """
 

@@ -36,7 +36,7 @@ class StructuredLogRecord(BaseModel):
     the CustomLogFields values and pipeline/run values stored in the JSONL handler via the configuration.
     """
 
-    database: str
+    pipeline: str
     run_id: str
     data_delivery_period: datetime
     attempt_no: int
@@ -53,9 +53,9 @@ class StructuredLogRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("database", "run_id")
+    @field_validator("pipeline", "run_id")
     @classmethod
-    def validate_database_and_run_id(cls, value: str, info: ValidationInfo) -> str:
+    def validate_pipeline_and_run_id(cls, value: str, info: ValidationInfo) -> str:
         """Require non-empty run context identifiers."""
         if not value.strip():
             err = f"Validation of StructuredLogRecord failed: field '{info.field_name}' must be non-empty."
@@ -87,7 +87,7 @@ class JsonlLogHandler(logging.Handler):
         *,
         bucket: str,
         prefix: str,
-        database: str,
+        pipeline: str,
         data_delivery_period: datetime,
         attempt_no: int,
         run_id: str,
@@ -96,7 +96,7 @@ class JsonlLogHandler(logging.Handler):
         super().__init__(level=logging.INFO)
         self._bucket = bucket
         self._prefix = prefix
-        self._database = database
+        self._pipeline = pipeline
         self._run_id = run_id
         self._data_delivery_period = data_delivery_period
         self._attempt_no = attempt_no
@@ -140,7 +140,7 @@ class JsonlLogHandler(logging.Handler):
         """
         self._buffer.append(
             StructuredLogRecord(
-                database=self._database,
+                pipeline=self._pipeline,
                 run_id=self._run_id,
                 data_delivery_period=self._data_delivery_period,
                 attempt_no=self._attempt_no,
@@ -236,7 +236,7 @@ class JsonlLogHandler(logging.Handler):
 
             self._buffer.append(
                 StructuredLogRecord(
-                    database=self._database,
+                    pipeline=self._pipeline,
                     run_id=self._run_id,
                     data_delivery_period=self._data_delivery_period,
                     attempt_no=self._attempt_no,
@@ -275,7 +275,7 @@ class JsonlLogHandler(logging.Handler):
             raise ValueError(err)
 
         log_record = StructuredLogRecord(
-            database=self._database,
+            pipeline=self._pipeline,
             run_id=self._run_id,
             data_delivery_period=self._data_delivery_period,
             attempt_no=self._attempt_no,
@@ -351,7 +351,7 @@ class LoggingController:
 def configure_logging(
     bucket: str,
     prefix: str,
-    database: str,
+    pipeline: str,
     data_delivery_period: datetime,
     attempt_no: int,
     run_id: str,
@@ -367,8 +367,8 @@ def configure_logging(
             The S3 bucket where logs will be stored.
         prefix: str
             The S3 prefix (folder path) under which logs will be stored.
-        database: str
-            The name of the database associated with the logs.
+        pipeline: str
+            The name of the pipeline associated with the logs.
         data_delivery_period: datetime
             The data delivery period for the logs.
         attempt_no: int
@@ -403,7 +403,7 @@ def configure_logging(
     jsonl_handler = JsonlLogHandler(
         bucket=bucket,
         prefix=prefix,
-        database=database,
+        pipeline=pipeline,
         run_id=run_id,
         data_delivery_period=data_delivery_period,
         attempt_no=attempt_no,

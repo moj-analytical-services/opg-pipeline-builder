@@ -28,7 +28,7 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
         "AWS_SESSION_TOKEN": "test_session_token",  # nosec
         "AWS_DEFAULT_REGION": "eu-west-1",
         "DEFAULT_BUCKET": "test-bucket",
-        "DATABASE": "test-database",
+        "DATABASE": "test-pipeline",
         "ENV": "test",
     }
 
@@ -77,7 +77,7 @@ def setup_logging(s3: boto3.client) -> Generator[None]:
     configure_logging(
         bucket="log-bucket",
         prefix="prefix",
-        database="database_name",
+        pipeline="pipeline_name",
         data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
         attempt_no=1,
         run_id="test-run-id",

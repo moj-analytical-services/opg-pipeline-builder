@@ -1155,7 +1155,7 @@ class TestMetaData:
             },
         )
 
-        act_df = metadata.output_to_df()
+        act_df = metadata.output_opg_metadata_format()
         act_df = act_df.reset_index(drop=True)
 
         exp_df = pd.DataFrame(

@@ -39,7 +39,7 @@ def is_valid_s3_path_template(filepath: str, field: str = "") -> str:
     - Must not be empty
     - Must start with 's3://'
     - Must contain an environment variable placeholder
-    - Must contain a database name variable placeholder
+    - Must contain a pipeline name variable placeholder
     - Must contain the etl stage as a subdirectory
 
     Returns an error message if invalid, or an empty string if valid.
@@ -51,7 +51,7 @@ def is_valid_s3_path_template(filepath: str, field: str = "") -> str:
     if "/{{ env }}/" not in filepath:
         return "S3 path must contain an environment variable placeholder '{{ env }}' as a subdirectory"
     if "/{{ db }}/" not in filepath:
-        return "S3 path must contain a database name variable placeholder '{{ db }}' as a subdirectory"
+        return "S3 path must contain a pipeline name variable placeholder '{{ db }}' as a subdirectory"
     if f"/{field.split('_')[0]}/" not in filepath:
         return f"S3 path must contain the corresponding etl stage '{field.split('_')[0]}' as a subdirectory"
     return ""
@@ -62,12 +62,12 @@ def is_valid_s3_path(filepath: str, db_name: str) -> str:
 
     Checks:
     - Must contain one of the allowed environments as a subdirectory
-    - Must contain the database name as a subdirectory
+    - Must contain the pipeline name as a subdirectory
 
     Returns an error message if invalid, or an empty string if valid.
     """
     if not any(f"/{env}/" in filepath for env in ALLOWED_ENVS):
         return f"S3 path must contain one of the allowed environments: {', '.join(ALLOWED_ENVS)} as a subdirectory"
     if f"/{db_name}/" not in filepath:
-        return f"S3 path must contain the database name '{db_name}' as a subdirectory"
+        return f"S3 path must contain the pipeline name '{db_name}' as a subdirectory"
     return ""

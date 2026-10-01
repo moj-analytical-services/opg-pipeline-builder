@@ -33,7 +33,7 @@ RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
 DELIVERY_PERIOD = datetime(2024, 1, 2, tzinfo=UTC)
 DEFAULT_BUCKET = "log-bucket"
 DEFAULT_PREFIX = "prefix/to/log"
-DEFAULT_PIPELINE = "test-pipeline"
+DEFAULT_PIPELINE = "test_pipeline"
 
 
 def create_handler(

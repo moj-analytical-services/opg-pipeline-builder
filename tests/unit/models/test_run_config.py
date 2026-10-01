@@ -9,7 +9,7 @@ def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
     """Test the creation of a RunConfig instance."""
 
     pipeline = PipelineConfig(
-        name="db_name",
+        name="test_pipeline",
         description="description",
         land_path="s3://bucket-name/{{ env }}/{{ db }}/land/table-name",
         archive_path="s3://bucket-name/{{ env }}/{{ db }}/archive/table-name",
@@ -17,15 +17,40 @@ def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
         github_repo="https://github.com/user/repo",
         data_cadence="daily",
     )
-    settings = SettingsConfig(ENV="test")
+    settings = SettingsConfig(ENV="test", PIPELINE_NAME="test_pipeline")
     run_config = create_run_config(pipeline=pipeline, settings=settings)
 
     assert run_config.env == "test"
-    assert run_config.name == "db_name"
-    assert run_config.land_path == "s3://bucket-name/test/db_name/land/table-name"
-    assert run_config.archive_path == "s3://bucket-name/test/db_name/archive/table-name"
-    assert run_config.curated_path == "s3://bucket-name/test/db_name/curated/table-name"
+    assert run_config.name == "test_pipeline"
+    assert run_config.land_path == "s3://bucket-name/test/test_pipeline/land/table-name"
+    assert (
+        run_config.archive_path
+        == "s3://bucket-name/test/test_pipeline/archive/table-name"
+    )
+    assert (
+        run_config.curated_path
+        == "s3://bucket-name/test/test_pipeline/curated/table-name"
+    )
     assert all(
         exp_msg in caplog.text
         for exp_msg in ["Creating run config", "Run config created"]
     )
+
+
+def test_create_run_config_mismatched_pipeline_name() -> None:
+    """Test that creating a RunConfig with mismatched pipeline name raises an error."""
+    pipeline = PipelineConfig(
+        name="wrong_pipeline",
+        description="description",
+        land_path="s3://bucket-name/{{ env }}/{{ db }}/land/table-name",
+        archive_path="s3://bucket-name/{{ env }}/{{ db }}/archive/table-name",
+        curated_path="s3://bucket-name/{{ env }}/{{ db }}/curated/table-name",
+        github_repo="https://github.com/user/repo",
+        data_cadence="daily",
+    )
+    settings = SettingsConfig(ENV="test", PIPELINE_NAME="test_pipeline")
+    with pytest.raises(
+        ValueError,
+        match="Pipeline name 'wrong_pipeline' does not match settings PIPELINE_NAME 'test_pipeline'",
+    ):
+        create_run_config(pipeline=pipeline, settings=settings)

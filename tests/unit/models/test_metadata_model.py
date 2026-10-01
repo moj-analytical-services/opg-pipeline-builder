@@ -1113,7 +1113,7 @@ def test_load_metadata_success(caplog: pytest.LogCaptureFixture) -> None:
     Also serves to validate a bespoke test metadata file which covers most/all use cases
     for the actual metadata (thus testing the models handles them correctly).
     """
-    metadata = m.load_metadata(Path("tests/data/meta_data"), "test_pipeline")
+    metadata = m.load_metadata(Path("tests/data/metadata"), "test_pipeline")
 
     assert sorted(metadata.tables.keys()) == ["test_table", "test_table_2"]
     assert metadata.tables["test_table"].columns[0].name == "id"
@@ -1155,7 +1155,7 @@ def test_output_metadata_as_csv() -> None:
     output_path.mkdir(parents=True, exist_ok=True)
 
     m.output_metadata_as_csv(
-        Path("tests/data/meta_data"),
+        Path("tests/data/metadata"),
         ["test_pipeline"],
         Path("tests/data/outputs/metadata"),
     )

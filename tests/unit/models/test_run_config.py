@@ -14,6 +14,8 @@ def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
         land_path="s3://bucket-name/{{ env }}/{{ db }}/land/table-name",
         archive_path="s3://bucket-name/{{ env }}/{{ db }}/archive/table-name",
         curated_path="s3://bucket-name/{{ env }}/{{ db }}/curated/table-name",
+        github_repo="https://github.com/user/repo",
+        data_cadence="daily",
     )
     settings = SettingsConfig(ENV="test")
     run_config = create_run_config(pipeline=pipeline, settings=settings)

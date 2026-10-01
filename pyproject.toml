@@ -13,6 +13,7 @@ dependencies = [
     "awswrangler==3.17.0",
     "boto3==1.43.0",
     "jinja2>=3.1.6",
+    "polars>=1.44.2",
     "pyarrow==24.0.0",
     "pydantic==2.13.4",
     "pydantic-settings>=2.15.0",

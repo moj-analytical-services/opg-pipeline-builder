@@ -36,15 +36,29 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
         monkeypatch_session.setenv(key, value)
 
 
+@pytest.fixture(name="_suppress_aws_logs", autouse=True, scope="session")
+def suppress_aws_logs() -> Generator[None]:
+    """Suppress AWS library logs for the lifetime of the mocked clients."""
+    loggers = [logging.getLogger(name) for name in ("botocore", "awswrangler", "boto3")]
+    original_levels = [logger.level for logger in loggers]
+    for logger in loggers:
+        logger.setLevel(logging.CRITICAL)
+
+    yield
+
+    for logger, level in zip(loggers, original_levels, strict=True):
+        logger.setLevel(level)
+
+
 @pytest.fixture(name="s3", scope="session")
-def mock_s3() -> Generator[boto3.client]:
+def mock_s3(_suppress_aws_logs: None) -> Generator[boto3.client]:
     "Return a mocked S3 client."
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
 
 
 @pytest.fixture(name="glue", scope="session")
-def mock_glue() -> Generator[boto3.client]:
+def mock_glue(_suppress_aws_logs: None) -> Generator[boto3.client]:
     "Return a mocked glue client."
     with mock_aws():
         yield boto3.client("glue", region_name="eu-west-2")
@@ -69,11 +83,7 @@ def setup_log_bucket(s3: boto3.client) -> Generator[None]:
 
 @pytest.fixture(autouse=True, scope="session")
 def setup_logging(s3: boto3.client) -> Generator[None]:
-    """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
-    logging.getLogger("botocore").setLevel(logging.CRITICAL)
-    logging.getLogger("awswrangler").setLevel(logging.CRITICAL)
-    logging.getLogger("boto3").setLevel(logging.CRITICAL)
-
+    """Configure package logging for the test session."""
     configure_logging(
         bucket="log-bucket",
         prefix="prefix",
@@ -91,10 +101,6 @@ def setup_logging(s3: boto3.client) -> Generator[None]:
         package_logger.removeHandler(handler)
     package_logger.propagate = True
     package_logger.setLevel(logging.NOTSET)
-
-    logging.getLogger("botocore").setLevel(logging.DEBUG)
-    logging.getLogger("awswrangler").setLevel(logging.DEBUG)
-    logging.getLogger("boto3").setLevel(logging.DEBUG)
 
 
 @pytest.fixture(autouse=True, scope="function")

@@ -1,4 +1,5 @@
 ## Specific files and folders to ignore for project
+tests/data/
 
 test_scripts/*
 .vscode/*

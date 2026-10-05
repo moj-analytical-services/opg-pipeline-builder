@@ -1,13 +1,14 @@
 from pathlib import Path
-import yaml
-import pytest
 from unittest.mock import patch
+
+import pytest
+import yaml
 
 from opg_pipeline_builder.setup.load_configs import (
     load_pipeline_config,
     setup_run_config,
 )
-from tests.test_utils import create_pipeline_config, output_yaml_data, assert_log_record
+from tests.test_utils import assert_log_record, create_pipeline_config, output_yaml_data
 
 
 def test_load_pipeline_config_success(

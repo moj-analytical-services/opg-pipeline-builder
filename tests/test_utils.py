@@ -1,5 +1,10 @@
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
+import pytest
+import yaml
+
+from opg_pipeline_builder.logging.log import CustomLogFields
 from opg_pipeline_builder.models import metadata_model as m
 from opg_pipeline_builder.models.pipeline_config import PipelineConfig
 
@@ -85,7 +90,7 @@ def create_table_metadata(
 
 
 def create_pipeline_config(
-    name: str = "name",
+    name: str = "test_pipeline",
     description: str = "description",
     land_path: str = "s3://bucket-name/{{ env }}/{{ db }}/land/table-name",
     archive_path: str = "s3://bucket-name/{{ env }}/{{ db }}/archive/table-name",
@@ -102,4 +107,36 @@ def create_pipeline_config(
         curated_path=curated_path,
         github_repo=github_repo,
         data_cadence=data_cadence,
+    )
+
+
+##############################
+# TEST DATA OUTPUT FUNCTIONS #
+##############################
+
+
+def output_yaml_data(filepath: Path, data: dict[Any, Any]) -> None:
+    """Output test yaml data to the specified location."""
+    with filepath.open("w", encoding="utf-8") as config_file:
+        yaml.safe_dump(data, config_file, sort_keys=False)
+
+
+#################################
+# ASSERT LOG CONTENTS FUNCTIONS #
+#################################
+def assert_log_record(
+    caplog: pytest.LogCaptureFixture,
+    message: str,
+    table: str = "N/A",
+    field: str = "N/A",
+    stage: Literal["Start", "Processing", "End"] = "Processing",
+) -> None:
+    """Assert that a log message has the expected structured metadata."""
+    record = next(record for record in caplog.records if record.getMessage() == message)
+    if not record:
+        raise AssertionError(f"Log message '{message}' not found")
+    assert record.__dict__["custom_fields"] == CustomLogFields(
+        process_stage=stage,
+        table=table,
+        field=field,
     )

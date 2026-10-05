@@ -1,11 +1,12 @@
-from pathlib import Path
-import yaml
 from logging import getLogger
+from pathlib import Path
+
+import yaml
 
 from opg_pipeline_builder.logging import ModuleLogger
-from opg_pipeline_builder.models.run_config import create_run_config, RunConfig
-from opg_pipeline_builder.models.settings_config import SettingsConfig
 from opg_pipeline_builder.models.pipeline_config import PipelineConfig
+from opg_pipeline_builder.models.run_config import RunConfig, create_run_config
+from opg_pipeline_builder.models.settings_config import SettingsConfig
 
 log = ModuleLogger(logger=getLogger(__name__))
 

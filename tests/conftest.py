@@ -28,7 +28,7 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
         "AWS_SESSION_TOKEN": "test_session_token",  # nosec
         "AWS_DEFAULT_REGION": "eu-west-1",
         "DEFAULT_BUCKET": "test-bucket",
-        "DATABASE": "test_pipeline",
+        "PIPELINE_NAME": "test_pipeline",
         "ENV": "test",
     }
 

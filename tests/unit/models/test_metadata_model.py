@@ -1,7 +1,7 @@
 import re
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -9,28 +9,14 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from opg_pipeline_builder.logging.log import CustomLogFields
 from opg_pipeline_builder.models import metadata_model as m
 from opg_pipeline_builder.models import modelling_exceptions as exc
-from tests.test_utils import create_column, create_file_format, create_table_metadata
-
-
-def assert_log_record(
-    caplog: pytest.LogCaptureFixture,
-    message: str,
-    table: str = "test_table",
-    field: str = "N/A",
-    stage: Literal["Start", "Processing", "End"] = "Processing",
-) -> None:
-    """Assert that a log message has the expected structured metadata."""
-    record = next(record for record in caplog.records if record.getMessage() == message)
-    if not record:
-        raise AssertionError(f"Log message '{message}' not found")
-    assert record.__dict__["custom_fields"] == CustomLogFields(
-        process_stage=stage,
-        table=table,
-        field=field,
-    )
+from tests.test_utils import (
+    assert_log_record,
+    create_column,
+    create_file_format,
+    create_table_metadata,
+)
 
 
 class TestColumn:

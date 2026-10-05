@@ -14,7 +14,7 @@ class TestPipelineConfig:
         ) as mock_valid:
             config = create_pipeline_config()
 
-        assert config.name == "name"
+        assert config.name == "test_pipeline"
         assert mock_valid.call_count == 1
 
     def test_validate_name_invalid(self) -> None:

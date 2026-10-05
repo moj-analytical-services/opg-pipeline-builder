@@ -4,6 +4,7 @@ import pytest
 
 from opg_pipeline_builder.constants import ALLOWED_ENVS
 from opg_pipeline_builder.models.settings_config import SettingsConfig
+from tests.test_utils import assert_log_record
 
 
 @pytest.mark.parametrize("env", ["test", "preprod", "prod"])
@@ -16,7 +17,9 @@ def test_settings_config_env_valid(env: str) -> None:
 
 
 @pytest.mark.parametrize(("env"), [("invalid_env"), ("staging")])
-def test_settings_config_env_invalid(env: str) -> None:
+def test_settings_config_env_invalid(
+    env: str, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test that an invalid environment setting raises an error."""
     os.environ["ENV"] = env
     os.environ["PIPELINE_NAME"] = "test_pipeline"
@@ -24,3 +27,10 @@ def test_settings_config_env_invalid(env: str) -> None:
         ValueError, match=f"ENV must be one of {', '.join(ALLOWED_ENVS)}"
     ):
         SettingsConfig()
+
+    assert_log_record(
+        caplog,
+        f"ENV must be one of {', '.join(ALLOWED_ENVS)}",
+        table="settings_config",
+        field="ENV",
+    )

@@ -3,6 +3,7 @@ import pytest
 from opg_pipeline_builder.models.pipeline_config import PipelineConfig
 from opg_pipeline_builder.models.run_config import create_run_config
 from opg_pipeline_builder.models.settings_config import SettingsConfig
+from tests.test_utils import assert_log_record
 
 
 def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
@@ -31,13 +32,13 @@ def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
         run_config.curated_path
         == "s3://bucket-name/test/test_pipeline/curated/table-name"
     )
-    assert all(
-        exp_msg in caplog.text
-        for exp_msg in ["Creating run config", "Run config created"]
-    )
+    assert_log_record(caplog, "Creating run config", table="run_config", stage="Start")
+    assert_log_record(caplog, "Run config created", table="run_config", stage="End")
 
 
-def test_create_run_config_mismatched_pipeline_name() -> None:
+def test_create_run_config_mismatched_pipeline_name(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test that creating a RunConfig with mismatched pipeline name raises an error."""
     pipeline = PipelineConfig(
         name="wrong_pipeline",
@@ -54,3 +55,10 @@ def test_create_run_config_mismatched_pipeline_name() -> None:
         match="Pipeline name 'wrong_pipeline' does not match settings PIPELINE_NAME 'test_pipeline'",
     ):
         create_run_config(pipeline=pipeline, settings=settings)
+
+    assert_log_record(caplog, "Creating run config", table="run_config", stage="Start")
+    assert_log_record(
+        caplog,
+        "Pipeline name 'wrong_pipeline' does not match settings PIPELINE_NAME 'test_pipeline'",
+        table="run_config",
+    )

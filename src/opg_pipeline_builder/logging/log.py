@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal, Self
 
+import awswrangler as wr
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
@@ -13,6 +14,9 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
+_CURATED_LOG_PATH = "s3://alpha-opg-etl/dev/test-logging-curated/"
+_CURATED_LOG_DATABASE = "opg_test_logging"
+_CURATED_LOG_TABLE = "test_logging_curated"
 
 
 class CustomLogFields(BaseModel):
@@ -171,8 +175,11 @@ class JsonlLogHandler(logging.Handler):
     def close(self) -> None:
         """Upload all remaining log records and close the handlers.
 
-        Fails the pipeline if it was unable to upload all remaining log records to S3.
+        Fails the pipeline if it was unable to upload or register all run logs.
         """
+        if self._closed:
+            return
+
         try:
             self.acquire()
             try:
@@ -181,10 +188,32 @@ class JsonlLogHandler(logging.Handler):
                     raise RuntimeError(
                         f"Failed to write {len(self._buffer)} log records to S3."
                     )
+                self._register_logs_in_athena()
             finally:
                 self.release()
         finally:
             super().close()
+
+    def _register_logs_in_athena(self) -> None:
+        """Append this run's JSONL records to the curated Athena dataset."""
+        source_path = (
+            f"s3://{self._bucket}/{self._prefix.rstrip('/')}/"
+            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
+            f"attempt_no={self._attempt_no}/run_id={self._run_id}/"
+        )
+        logs = wr.s3.read_json(path=source_path, lines=True)
+        databases = wr.catalog.databases().Database.to_list()
+        if _CURATED_LOG_DATABASE not in databases:
+            wr.catalog.create_database(_CURATED_LOG_DATABASE)
+        wr.s3.to_parquet(
+            df=logs,
+            path=_CURATED_LOG_PATH,
+            dataset=True,
+            mode="append",
+            database=_CURATED_LOG_DATABASE,
+            table=_CURATED_LOG_TABLE,
+            partition_cols=["data_delivery_period", "attempt_no", "run_id"],
+        )
 
     def _object_key(self, process_id: str, part_number: int) -> str:
         """Generate the S3 object key for a given process ID and part number."""

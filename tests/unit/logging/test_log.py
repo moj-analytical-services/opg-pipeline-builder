@@ -145,6 +145,21 @@ def reset_package_logger() -> Generator[None]:
     package_logger.propagate = original_propagate
 
 
+@pytest.fixture(autouse=True, scope="function")
+def mock_athena_registration() -> Generator[None]:
+    """Keep handler lifecycle tests independent of AWS Wrangler and Glue."""
+    with (
+        patch(
+            "opg_pipeline_builder.logging.log.wr.catalog.databases"
+        ) as mock_databases,
+        patch("opg_pipeline_builder.logging.log.wr.catalog.create_database"),
+        patch("opg_pipeline_builder.logging.log.wr.s3.read_json"),
+        patch("opg_pipeline_builder.logging.log.wr.s3.to_parquet"),
+    ):
+        mock_databases.return_value.Database.to_list.return_value = ["dev"]
+        yield
+
+
 class TestCustomLogFields:
     """Tests for the CustomLogFields model."""
 
@@ -462,6 +477,38 @@ class TestJsonlLogHandler:
 
         assert mock_flush.called
         assert handler._buffer == []
+
+    def test_close_registers_scoped_run_once(self) -> None:
+        """Test that close appends only this run's logs to the curated dataset."""
+        handler = create_handler()
+        source_path = (
+            f"s3://{DEFAULT_BUCKET}/{DEFAULT_PREFIX}/"
+            f"data_delivery_period=20240102/attempt_no=1/run_id={RUN_ID}/"
+        )
+
+        with (
+            patch("opg_pipeline_builder.logging.log.wr.s3.read_json") as mock_read_json,
+            patch(
+                "opg_pipeline_builder.logging.log.wr.s3.to_parquet"
+            ) as mock_to_parquet,
+            patch(
+                "opg_pipeline_builder.logging.log.wr.catalog.databases"
+            ) as mock_databases,
+        ):
+            mock_databases.return_value.Database.to_list.return_value = ["dev"]
+            handler.close()
+            handler.close()
+
+        mock_read_json.assert_called_once_with(path=source_path, lines=True)
+        mock_to_parquet.assert_called_once_with(
+            df=mock_read_json.return_value,
+            path="s3://alpha-opg-etl/dev/test-logging-curated/",
+            dataset=True,
+            mode="append",
+            database="dev",
+            table="test_logging_curated",
+            partition_cols=["data_delivery_period", "attempt_no", "run_id"],
+        )
 
     def test_close_fail(self) -> None:
         """Test that the handler raises an exception if it failed to flush the buffer."""

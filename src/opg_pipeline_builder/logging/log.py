@@ -209,10 +209,7 @@ class JsonlLogHandler(logging.Handler):
         """Append this run's JSONL records to the curated Athena dataset."""
         source_path = f"s3://{self._bucket}/{self._create_key_directory()}"
         logs = wr.s3.read_json(path=source_path, lines=True)
-        databases = wr.catalog.databases().Database.to_list()
-
-        if _CURATED_LOG_DATABASE not in databases:
-            wr.catalog.create_database(_CURATED_LOG_DATABASE)
+        wr.catalog.create_database(_CURATED_LOG_DATABASE, exist_ok=True)
 
         wr.s3.to_parquet(
             df=logs,

@@ -561,19 +561,13 @@ class TestJsonlLogHandler:
                 "opg_pipeline_builder.logging.log.wr.s3.to_parquet"
             ) as mock_to_parquet,
             patch(
-                "opg_pipeline_builder.logging.log.wr.catalog.databases"
-            ) as mock_databases,
-            patch(
                 "opg_pipeline_builder.logging.log.wr.catalog.create_database"
             ) as mock_create_database,
         ):
-            mock_databases.return_value.Database.to_list.return_value = [
-                "opg_test_logging"
-            ]
             handler._register_logs_in_athena()
 
         mock_read_json.assert_called_once_with(path=source_path, lines=True)
-        mock_create_database.assert_not_called()
+        mock_create_database.assert_called_once_with("opg_test_logging", exist_ok=True)
         mock_to_parquet.assert_called_once_with(
             df=mock_read_json.return_value,
             path=os.environ.get("CURATED_LOG_PATH"),
@@ -583,24 +577,6 @@ class TestJsonlLogHandler:
             table="test_logging_curated",
             partition_cols=["data_delivery_period", "attempt_no", "run_id"],
         )
-
-    def test_creates_database_when_missing(self) -> None:
-        handler = create_handler()
-
-        with (
-            patch("opg_pipeline_builder.logging.log.wr.s3.read_json"),
-            patch("opg_pipeline_builder.logging.log.wr.s3.to_parquet"),
-            patch(
-                "opg_pipeline_builder.logging.log.wr.catalog.databases"
-            ) as mock_databases,
-            patch(
-                "opg_pipeline_builder.logging.log.wr.catalog.create_database"
-            ) as mock_create_database,
-        ):
-            mock_databases.return_value.Database.to_list.return_value = []
-            handler._register_logs_in_athena()
-
-        mock_create_database.assert_called_once_with("opg_test_logging")
 
     def test_create_key_directory(self) -> None:
         """Test that the object key is generated correctly."""

@@ -12,7 +12,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
-_CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
 _CURATED_LOG_PATH = os.environ.get("CURATED_LOG_PATH")
 _CURATED_LOG_DATABASE = "opg_test_logging"
@@ -26,6 +25,7 @@ class CustomLogFields(BaseModel):
     all three fields and rejects additional values.
     """
 
+    process: str
     table: str
     field: str
     process_stage: Literal["Start", "Processing", "End"]
@@ -50,9 +50,10 @@ class StructuredLogRecord(BaseModel):
     line_number: int
     log_level: str
     log_timestamp: datetime
-    process_stage: Literal["Start", "Processing", "End"]
+    process: str
     table: str
     field: str
+    process_stage: Literal["Start", "Processing", "End"]
     message: str
 
     model_config = ConfigDict(extra="forbid")
@@ -154,9 +155,10 @@ class JsonlLogHandler(logging.Handler):
                 line_number=sys._getframe().f_lineno,
                 log_level="INFO",
                 log_timestamp=datetime.now(tz=UTC),
-                process_stage="Start",
+                process="Configuration",
                 table="N/A",
                 field="N/A",
+                process_stage="End",
                 message="Logging configured successfully.",
             ).model_dump(mode="json")
         )
@@ -194,17 +196,24 @@ class JsonlLogHandler(logging.Handler):
         finally:
             super().close()
 
+    def _create_key_directory(self) -> str:
+        """Generate the S3 key directory, excluding the filename."""
+        return (
+            f"{self._prefix.rstrip('/')}/"
+            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
+            f"attempt_no={self._attempt_no}/"
+            f"run_id={self._run_id}/"
+        )
+
     def _register_logs_in_athena(self) -> None:
         """Append this run's JSONL records to the curated Athena dataset."""
-        source_path = (
-            f"s3://{self._bucket}/{self._prefix.rstrip('/')}/"
-            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._attempt_no}/run_id={self._run_id}/"
-        )
+        source_path = f"s3://{self._bucket}/{self._create_key_directory()}"
         logs = wr.s3.read_json(path=source_path, lines=True)
         databases = wr.catalog.databases().Database.to_list()
+
         if _CURATED_LOG_DATABASE not in databases:
             wr.catalog.create_database(_CURATED_LOG_DATABASE)
+
         wr.s3.to_parquet(
             df=logs,
             path=_CURATED_LOG_PATH,
@@ -213,16 +222,6 @@ class JsonlLogHandler(logging.Handler):
             database=_CURATED_LOG_DATABASE,
             table=_CURATED_LOG_TABLE,
             partition_cols=["data_delivery_period", "attempt_no", "run_id"],
-        )
-
-    def _object_key(self, process_id: str, part_number: int) -> str:
-        """Generate the S3 object key for a given process ID and part number."""
-        return (
-            f"{self._prefix.rstrip('/')}/"
-            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._attempt_no}/"
-            f"run_id={self._run_id}/"
-            f"{process_id}_{self._writer_id}_{part_number}.jsonl"
         )
 
     def _put_object(self, key: str, body: bytes) -> None:
@@ -247,7 +246,7 @@ class JsonlLogHandler(logging.Handler):
         body = "".join(
             json.dumps(row, separators=(",", ":")) + "\n" for row in self._buffer
         ).encode("utf-8")
-        key = self._object_key(str(os.getpid()), self._part_number)
+        key = f"{self._create_key_directory()}{os.getpid()!s}_{self._writer_id}_{self._part_number}.jsonl"
 
         try:
             self._put_object(key, body)
@@ -275,9 +274,10 @@ class JsonlLogHandler(logging.Handler):
                     line_number=sys._getframe().f_lineno,
                     log_level="ERROR",
                     log_timestamp=datetime.now(tz=UTC),
-                    process_stage="Processing",
+                    process="Logging",
                     table="Unknown",
                     field="Unknown",
+                    process_stage="Processing",
                     message=(
                         f"Failed to write JSONL log batch "
                         f"(failure_count={self._write_failures})."
@@ -363,13 +363,15 @@ class LoggingController:
             return
 
         close_error: Exception | None = None
-        for handler in list(self._logger.handlers):
-            try:
-                handler.close()
-            except (RuntimeError, TypeError, ValueError) as error:
-                close_error = close_error or error
-            finally:
-                self._logger.removeHandler(handler)
+
+        for handler in self._logger.handlers:
+            if isinstance(handler, JsonlLogHandler):
+                try:
+                    handler.close()
+                except (RuntimeError, TypeError, ValueError) as error:
+                    close_error = close_error or error
+                finally:
+                    self._logger.removeHandler(handler)
 
         if close_error:
             raise close_error
@@ -417,13 +419,11 @@ def configure_logging(
     if batch_size < 1 or isinstance(batch_size, bool):
         raise ValueError("Batch size must be an integer >= 1.")
 
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
+    package_logger = logging.getLogger()
     package_logger.setLevel(logging.INFO)
-    package_logger.propagate = False
 
     if any(
-        handler.get_name() in [_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME]
-        for handler in package_logger.handlers
+        handler.get_name() == _JSONL_HANDLER_NAME for handler in package_logger.handlers
     ):
         raise RuntimeError(
             "Logger has already been configured. This should only be done once per process."
@@ -439,15 +439,6 @@ def configure_logging(
         batch_size=batch_size,
     )
 
-    stream_handler = logging.StreamHandler()
-    stream_handler.set_name(_CONSOLE_HANDLER_NAME)
-    stream_handler.setFormatter(
-        logging.Formatter(
-            fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
-    package_logger.addHandler(stream_handler)
     jsonl_handler.set_name(_JSONL_HANDLER_NAME)
     package_logger.addHandler(jsonl_handler)
 
@@ -465,12 +456,15 @@ class ModuleLogger(BaseModel):
         self,
         message: str,
         *args: object,
+        process: str = "N/A",
         table: str = "N/A",
         field: str = "N/A",
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation error with structured context."""
-        custom_fields = CustomLogFields(table=table, field=field, process_stage=stage)
+        custom_fields = CustomLogFields(
+            process=process, table=table, field=field, process_stage=stage
+        )
 
         self.logger.error(
             message,
@@ -483,12 +477,15 @@ class ModuleLogger(BaseModel):
         self,
         message: str,
         *args: object,
+        process: str = "N/A",
         table: str = "N/A",
         field: str = "N/A",
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation event with structured context."""
-        custom_fields = CustomLogFields(table=table, field=field, process_stage=stage)
+        custom_fields = CustomLogFields(
+            process=process, table=table, field=field, process_stage=stage
+        )
         self.logger.info(
             message,
             *args,

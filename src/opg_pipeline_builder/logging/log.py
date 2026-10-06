@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
-_CURATED_LOG_PATH = "s3://alpha-opg-etl/dev/test-logging-curated/"
+_CURATED_LOG_PATH = os.environ.get("CURATED_LOG_PATH")
 _CURATED_LOG_DATABASE = "opg_test_logging"
 _CURATED_LOG_TABLE = "test_logging_curated"
 

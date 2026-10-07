@@ -20,7 +20,6 @@ from pydantic import ValidationError
 from opg_pipeline_builder.logging.log import (
     _CONSOLE_HANDLER_NAME,
     _JSONL_HANDLER_NAME,
-    PACKAGE_LOGGER_NAME,
     CustomLogFields,
     JsonlLogHandler,
     LoggingController,
@@ -434,8 +433,8 @@ class TestJsonlLogHandler:
                 "run_id": RUN_ID,
                 "data_delivery_period": DELIVERY_PERIOD.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "attempt_no": 1,
-                "logger_name": PACKAGE_LOGGER_NAME,
-                "module": "opg_pipeline_builder.logging.log",
+                "logger_name": logging.getLogger().name,
+                "module": "logging.log",
                 "function": "configure_logging",
                 "line_number": configuration_log_line_number(),
                 "log_level": "INFO",
@@ -1184,8 +1183,8 @@ class TestLoggingEndToEnd:
     def base_row(
         self,
         *,
-        logger_name: str = PACKAGE_LOGGER_NAME,
-        module: str = "opg_pipeline_builder.logging.log",
+        logger_name: str = logging.getLogger().name,
+        module: str = "logging.log",
         function: str,
         line_number: int,
         log_level: str,
@@ -1228,10 +1227,10 @@ class TestLoggingEndToEnd:
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=4)
             extract_logger = ModuleLogger(
-                logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.extract")
+                logger=logging.getLogger(f"{logging.getLogger().name}.extract")
             )
             load_logger = ModuleLogger(
-                logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.load")
+                logger=logging.getLogger(f"{logging.getLogger().name}.load")
             )
 
             # These three records bring the buffer (which already holds the config log) to the
@@ -1285,7 +1284,7 @@ class TestLoggingEndToEnd:
                 attempt_no=1,
             ),
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.extract",
+                logger_name=f"{logging.getLogger().name}.extract",
                 module="test_log",
                 function=function_name,
                 line_number=line_1,
@@ -1296,7 +1295,7 @@ class TestLoggingEndToEnd:
                 message="Extract started",
             ),
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.extract",
+                logger_name=f"{logging.getLogger().name}.extract",
                 module="test_log",
                 function=function_name,
                 line_number=line_2,
@@ -1307,7 +1306,7 @@ class TestLoggingEndToEnd:
                 message="Extract row",
             ),
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.load",
+                logger_name=f"{logging.getLogger().name}.load",
                 module="test_log",
                 function=function_name,
                 line_number=line_3,
@@ -1320,7 +1319,7 @@ class TestLoggingEndToEnd:
         ]
         assert logs[part_1_key] == [
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.load",
+                logger_name=f"{logging.getLogger().name}.load",
                 module="test_log",
                 function=function_name,
                 line_number=line_4,
@@ -1331,7 +1330,7 @@ class TestLoggingEndToEnd:
                 message="Loading field",
             ),
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.load",
+                logger_name=f"{logging.getLogger().name}.load",
                 module="test_log",
                 function=function_name,
                 line_number=line_5,
@@ -1344,7 +1343,7 @@ class TestLoggingEndToEnd:
         ]
         assert logs[part_2_key] == [
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.load",
+                logger_name=f"{logging.getLogger().name}.load",
                 module="test_log",
                 function=function_name,
                 line_number=line_6,
@@ -1390,7 +1389,7 @@ class TestLoggingEndToEnd:
                 if handler.get_name() == _CONSOLE_HANDLER_NAME
             )
             pipeline_logger = ModuleLogger(
-                logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.pipeline")
+                logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
             )
 
             if trigger == "context_manager":
@@ -1427,7 +1426,7 @@ class TestLoggingEndToEnd:
                 attempt_no=1,
             ),
             self.base_row(
-                logger_name=f"{PACKAGE_LOGGER_NAME}.pipeline",
+                logger_name=f"{logging.getLogger().name}.pipeline",
                 module="test_log",
                 function=function_name,
                 line_number=line_1,
@@ -1456,7 +1455,7 @@ class TestLoggingEndToEnd:
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
             pipeline_logger = ModuleLogger(
-                logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.pipeline")
+                logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
             )
             pipeline_logger.info("Pipeline started", table="table_a", stage="Start")
 
@@ -1490,7 +1489,7 @@ class TestLoggingEndToEnd:
 
         controller, jsonl_handler = self.configure(batch_size=100)
         pipeline_logger = ModuleLogger(
-            logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.pipeline")
+            logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
         )
         pipeline_logger.info("Started processing", table="table_a", stage="Start")
 
@@ -1541,7 +1540,7 @@ class TestLoggingEndToEnd:
             def worker(worker_number: int) -> None:
                 worker_logger = ModuleLogger(
                     logger=logging.getLogger(
-                        f"{PACKAGE_LOGGER_NAME}.worker_{worker_number}"
+                        f"{logging.getLogger().name}.worker_{worker_number}"
                     )
                 )
                 for message_number in range(messages_per_worker):
@@ -1578,7 +1577,7 @@ class TestLoggingEndToEnd:
         assert len(all_records) - len(worker_records) == 1
         expected_pairs = {
             (
-                f"opg_pipeline_builder.worker_{worker_number}",
+                f"root.worker_{worker_number}",
                 f"worker-{worker_number}-{message_number}",
             )
             for worker_number in range(worker_count)
@@ -1593,7 +1592,7 @@ class TestLoggingEndToEnd:
         # covered by test_record_to_row_success, so this just confirms it holds under threads too.
         assert (
             self.base_row(
-                logger_name="opg_pipeline_builder.worker_0",
+                logger_name="root.worker_0",
                 module="test_log",
                 function="worker",
                 line_number=next(
@@ -1657,7 +1656,7 @@ class TestLoggingEndToEnd:
             )
             with first_controller:
                 ModuleLogger(
-                    logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.attempt")
+                    logger=logging.getLogger(f"{logging.getLogger().name}.attempt")
                 ).info("First attempt processing", table="table_a", stage="Start")
 
             second_controller, second_handler = self.configure(
@@ -1665,7 +1664,7 @@ class TestLoggingEndToEnd:
             )
             with second_controller:
                 ModuleLogger(
-                    logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.attempt")
+                    logger=logging.getLogger(f"{logging.getLogger().name}.attempt")
                 ).info("Second attempt processing", table="table_a", stage="Start")
 
         logs = read_jsonl_logs(

@@ -10,7 +10,6 @@ from moto import mock_aws
 from opg_pipeline_builder.logging.log import (
     _CONSOLE_HANDLER_NAME,
     _JSONL_HANDLER_NAME,
-    PACKAGE_LOGGER_NAME,
     configure_logging,
 )
 
@@ -124,7 +123,7 @@ def configure_caplog(
     caplog: pytest.LogCaptureFixture,
 ) -> Generator[pytest.LogCaptureFixture]:
     """Configure the caplog handler for the package logger."""
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
+    package_logger = logging.getLogger()
     package_logger.addHandler(caplog.handler)
 
     yield caplog

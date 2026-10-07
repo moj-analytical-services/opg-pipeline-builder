@@ -11,9 +11,8 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
-PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
-_JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
-_CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
+_JSONL_HANDLER_NAME = "json_handler"
+_CONSOLE_HANDLER_NAME = "console_handler"
 
 
 class CustomLogFields(BaseModel):
@@ -153,8 +152,8 @@ class JsonlLogHandler(logging.Handler):
                 run_id=self._run_id,
                 data_delivery_period=self._data_delivery_period,
                 attempt_no=self._attempt_no,
-                logger_name=PACKAGE_LOGGER_NAME,
-                module="opg_pipeline_builder.logging.log",
+                logger_name=logging.getLogger().name,
+                module="logging.log",
                 function="configure_logging",
                 line_number=sys._getframe().f_lineno,
                 log_level="INFO",
@@ -271,8 +270,8 @@ class JsonlLogHandler(logging.Handler):
                     run_id=self._run_id,
                     data_delivery_period=self._data_delivery_period,
                     attempt_no=self._attempt_no,
-                    logger_name=PACKAGE_LOGGER_NAME,
-                    module="opg_pipeline_builder.logging.log",
+                    logger_name=logging.getLogger().name,
+                    module="logging.log",
                     function="_flush_locked",
                     line_number=sys._getframe().f_lineno,
                     log_level="ERROR",

@@ -7,7 +7,12 @@ import pytest
 from _pytest.monkeypatch import MonkeyPatch
 from moto import mock_aws
 
-from opg_pipeline_builder.logging.log import PACKAGE_LOGGER_NAME, configure_logging
+from opg_pipeline_builder.logging.log import (
+    _CONSOLE_HANDLER_NAME,
+    _JSONL_HANDLER_NAME,
+    PACKAGE_LOGGER_NAME,
+    configure_logging,
+)
 
 
 @pytest.fixture(scope="function")
@@ -85,22 +90,25 @@ def setup_log_bucket(s3: boto3.client) -> Generator[None]:
 def setup_logging(s3: boto3.client) -> Generator[None]:
     """Configure package logging for the test session."""
     configure_logging(
-        bucket="log-bucket",
-        prefix="prefix",
         pipeline="pipeline_name",
         data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
         attempt_no=1,
         run_id="test-run-id",
+        bucket="log-bucket",
+        log_store_prefix="prefix",
+        athena_prefix="s3://log-bucket/prefix/curated/",
+        athena_database_name="test_logging",
+        athena_table_name="pipeline_logs",
     )
 
     yield
 
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
-    for handler in list(package_logger.handlers):
-        handler.close()
-        package_logger.removeHandler(handler)
-    package_logger.propagate = True
-    package_logger.setLevel(logging.NOTSET)
+    root_logger = logging.getLogger()
+    for handler in list(root_logger.handlers):
+        if handler.get_name() in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}:
+            root_logger.removeHandler(handler)
+            logging.Handler.close(handler)
+    root_logger.setLevel(logging.NOTSET)
 
 
 @pytest.fixture(autouse=True, scope="function")

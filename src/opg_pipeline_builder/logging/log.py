@@ -13,9 +13,7 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
-_CURATED_LOG_PATH = os.environ.get("CURATED_LOG_PATH")
-_CURATED_LOG_DATABASE = "opg_test_logging"
-_CURATED_LOG_TABLE = "test_logging_curated"
+_CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 
 
 class CustomLogFields(BaseModel):
@@ -90,23 +88,29 @@ class JsonlLogHandler(logging.Handler):
     def __init__(
         self,
         *,
-        bucket: str,
-        prefix: str,
         pipeline: str,
         data_delivery_period: datetime,
         attempt_no: int,
         run_id: str,
+        bucket: str,
+        log_store_prefix: str,
+        athena_prefix: str,
+        athena_database_name: str,
+        athena_table_name: str,
         batch_size: int = 500,
     ) -> None:
         super().__init__(level=logging.INFO)
-        self._bucket = bucket
-        self._prefix = prefix
         self._pipeline = pipeline
         self._run_id = run_id
         self._data_delivery_period = data_delivery_period
         self._attempt_no = attempt_no
-        self._base_batch_size = batch_size
+        self._bucket = bucket
+        self._log_prefix = log_store_prefix
+        self._athena_prefix = athena_prefix
+        self._db_name = athena_database_name
+        self._table_name = athena_table_name
         self._batch_size = batch_size
+        self._base_batch_size = batch_size
         self._part_number = 0
         self._writer_id = uuid.uuid4().hex
         self._buffer: list[dict[str, Any]] = []
@@ -124,7 +128,7 @@ class JsonlLogHandler(logging.Handler):
         the retry logic could see the pipeline progress before ultimately failing when trying
         to write the log the final time. Instead, fail fast here.
         """
-        key = f"{self._prefix.rstrip('/')}/logging-marker/marker.txt"
+        key = f"{self._log_prefix.rstrip('/')}/logging-marker/marker.txt"
         try:
             self._s3.put_object(
                 Bucket=self._bucket,
@@ -196,10 +200,10 @@ class JsonlLogHandler(logging.Handler):
         finally:
             super().close()
 
-    def _create_key_directory(self) -> str:
+    def _create_key_directory(self, prefix: str) -> str:
         """Generate the S3 key directory, excluding the filename."""
         return (
-            f"{self._prefix.rstrip('/')}/"
+            f"{prefix.rstrip('/')}/"
             f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
             f"attempt_no={self._attempt_no}/"
             f"run_id={self._run_id}/"
@@ -207,17 +211,19 @@ class JsonlLogHandler(logging.Handler):
 
     def _register_logs_in_athena(self) -> None:
         """Append this run's JSONL records to the curated Athena dataset."""
-        source_path = f"s3://{self._bucket}/{self._create_key_directory()}"
+        source_path = (
+            f"s3://{self._bucket}/{self._create_key_directory(self._log_prefix)}"
+        )
         logs = wr.s3.read_json(path=source_path, lines=True)
-        wr.catalog.create_database(_CURATED_LOG_DATABASE, exist_ok=True)
+        wr.catalog.create_database(self._db_name, exist_ok=True)
 
         wr.s3.to_parquet(
             df=logs,
-            path=_CURATED_LOG_PATH,
+            path=self._athena_prefix,
             dataset=True,
             mode="append",
-            database=_CURATED_LOG_DATABASE,
-            table=_CURATED_LOG_TABLE,
+            database=self._db_name,
+            table=self._table_name,
             partition_cols=["data_delivery_period", "attempt_no", "run_id"],
         )
 
@@ -243,7 +249,7 @@ class JsonlLogHandler(logging.Handler):
         body = "".join(
             json.dumps(row, separators=(",", ":")) + "\n" for row in self._buffer
         ).encode("utf-8")
-        key = f"{self._create_key_directory()}{os.getpid()!s}_{self._writer_id}_{self._part_number}.jsonl"
+        key = f"{self._create_key_directory(self._log_prefix)}{os.getpid()!s}_{self._writer_id}_{self._part_number}.jsonl"
 
         try:
             self._put_object(key, body)
@@ -360,15 +366,13 @@ class LoggingController:
             return
 
         close_error: Exception | None = None
-
-        for handler in self._logger.handlers:
-            if isinstance(handler, JsonlLogHandler):
-                try:
-                    handler.close()
-                except (RuntimeError, TypeError, ValueError) as error:
-                    close_error = close_error or error
-                finally:
-                    self._logger.removeHandler(handler)
+        for handler in list(self._logger.handlers):
+            try:
+                handler.close()
+            except (RuntimeError, TypeError, ValueError) as error:
+                close_error = close_error or error
+            finally:
+                self._logger.removeHandler(handler)
 
         if close_error:
             raise close_error
@@ -378,7 +382,10 @@ class LoggingController:
 
 def configure_logging(
     bucket: str,
-    prefix: str,
+    log_store_prefix: str,
+    athena_prefix: str,
+    athena_database_name: str,
+    athena_table_name: str,
     pipeline: str,
     data_delivery_period: datetime,
     attempt_no: int,
@@ -391,10 +398,6 @@ def configure_logging(
     controller configured for the specific pipeline run.
 
     Args:
-        bucket: str
-            The S3 bucket where logs will be stored.
-        prefix: str
-            The S3 prefix (folder path) under which logs will be stored.
         pipeline: str
             The name of the pipeline associated with the logs.
         data_delivery_period: datetime
@@ -403,6 +406,16 @@ def configure_logging(
             The attempt number for this data delivery period.
         run_id: str
             Airflow run identifier used to isolate records and objects.
+        bucket: str
+            The S3 bucket where logs will be stored.
+        log_store_prefix: str
+            The S3 prefix (folder path) under which raw logs will be stored.
+        athena_prefix: str
+            The S3 prefix (folder path) under which curated logs will be stored.
+        athena_database_name: str
+            The name of the Athena database where curated logs will be stored.
+        athena_table_name: str
+            The name of the Athena table where curated logs will be stored.
         batch_size: int, optional
             Number of records written in each JSONL S3 object.
 
@@ -426,13 +439,26 @@ def configure_logging(
             "Logger has already been configured. This should only be done once per process."
         )
 
+    stream_handler = logging.StreamHandler()
+    stream_handler.set_name(_CONSOLE_HANDLER_NAME)
+    stream_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    package_logger.addHandler(stream_handler)
+
     jsonl_handler = JsonlLogHandler(
-        bucket=bucket,
-        prefix=prefix,
         pipeline=pipeline,
         run_id=run_id,
         data_delivery_period=data_delivery_period,
         attempt_no=attempt_no,
+        bucket=bucket,
+        log_store_prefix=log_store_prefix,
+        athena_prefix=athena_prefix,
+        athena_database_name=athena_database_name,
+        athena_table_name=athena_table_name,
         batch_size=batch_size,
     )
 

@@ -18,6 +18,7 @@ from freezegun import freeze_time
 from pydantic import ValidationError
 
 from opg_pipeline_builder.logging.log import (
+    _CONSOLE_HANDLER_NAME,
     _JSONL_HANDLER_NAME,
     PACKAGE_LOGGER_NAME,
     CustomLogFields,
@@ -31,7 +32,10 @@ from opg_pipeline_builder.logging.log import (
 RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
 DELIVERY_PERIOD = datetime(2024, 1, 2, tzinfo=UTC)
 DEFAULT_BUCKET = "log-bucket"
-DEFAULT_PREFIX = "prefix/to/log"
+DEFAULT_LOG_STORE_PREFIX = "prefix/to/log"
+DEFAULT_ATHENA_PREFIX = "s3://log-bucket/prefix/to/log/curated/"
+DEFAULT_ATHENA_DATABASE = "opg_test_logging"
+DEFAULT_ATHENA_TABLE = "test_logging_curated"
 DEFAULT_PIPELINE = "test_pipeline"
 
 
@@ -49,12 +53,15 @@ def configuration_log_line_number() -> int:
 
 def create_handler(
     apply_patches: bool = True,
-    bucket: str = DEFAULT_BUCKET,
-    prefix: str = DEFAULT_PREFIX,
     pipeline: str = DEFAULT_PIPELINE,
     data_delivery_period: datetime = DELIVERY_PERIOD,
     attempt_no: int = 1,
     run_id: str = RUN_ID,
+    bucket: str = DEFAULT_BUCKET,
+    log_store_prefix: str = DEFAULT_LOG_STORE_PREFIX,
+    athena_prefix: str = DEFAULT_ATHENA_PREFIX,
+    athena_database_name: str = DEFAULT_ATHENA_DATABASE,
+    athena_table_name: str = DEFAULT_ATHENA_TABLE,
     batch_size: int = 2,
 ) -> JsonlLogHandler:
     """Create a JSONL handler backed by mocked S3."""
@@ -64,22 +71,28 @@ def create_handler(
             patch.object(JsonlLogHandler, "_write_configuration_log"),
         ):
             return JsonlLogHandler(
-                bucket=bucket,
-                prefix=prefix,
                 pipeline=pipeline,
                 data_delivery_period=data_delivery_period,
                 attempt_no=attempt_no,
                 run_id=run_id,
+                bucket=bucket,
+                log_store_prefix=log_store_prefix,
+                athena_prefix=athena_prefix,
+                athena_database_name=athena_database_name,
+                athena_table_name=athena_table_name,
                 batch_size=batch_size,
             )
     else:
         return JsonlLogHandler(
-            bucket=bucket,
-            prefix=prefix,
             pipeline=pipeline,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
             run_id=run_id,
+            bucket=bucket,
+            log_store_prefix=log_store_prefix,
+            athena_prefix=athena_prefix,
+            athena_database_name=athena_database_name,
+            athena_table_name=athena_table_name,
             batch_size=batch_size,
         )
 
@@ -124,7 +137,7 @@ def read_jsonl_logs(
     s3: boto3.client,
     *,
     bucket: str = DEFAULT_BUCKET,
-    prefix: str = f"{DEFAULT_PREFIX}",
+    prefix: str = DEFAULT_LOG_STORE_PREFIX,
 ) -> dict[str, list[dict[str, Any]]]:
     """Read all non-marker JSONL logs under a prefix."""
     logs = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents", [])
@@ -144,12 +157,12 @@ def reset_root_logger() -> Generator[None]:
     root_logger = logging.getLogger()
     original_handlers = list(root_logger.handlers)
     original_level = root_logger.level
-    session_jsonl_handlers = [
+    session_handlers = [
         handler
         for handler in original_handlers
-        if handler.get_name() == _JSONL_HANDLER_NAME
+        if handler.get_name() in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}
     ]
-    for handler in session_jsonl_handlers:
+    for handler in session_handlers:
         root_logger.removeHandler(handler)
 
     yield
@@ -158,7 +171,7 @@ def reset_root_logger() -> Generator[None]:
         if handler not in original_handlers:
             root_logger.removeHandler(handler)
             logging.Handler.close(handler)
-    for handler in session_jsonl_handlers:
+    for handler in session_handlers:
         if handler not in root_logger.handlers:
             root_logger.addHandler(handler)
     root_logger.setLevel(original_level)
@@ -337,14 +350,17 @@ class TestJsonlLogHandler:
             patch.object(JsonlLogHandler, "_write_configuration_log") as mock_write,
         ):
             handler = create_handler(apply_patches=False)
-            assert handler._bucket == DEFAULT_BUCKET
-            assert handler._prefix == DEFAULT_PREFIX
             assert handler._pipeline == DEFAULT_PIPELINE
             assert handler._run_id == RUN_ID
             assert handler._data_delivery_period == DELIVERY_PERIOD
             assert handler._attempt_no == 1
-            assert handler._base_batch_size == 2
+            assert handler._bucket == DEFAULT_BUCKET
+            assert handler._log_prefix == DEFAULT_LOG_STORE_PREFIX
+            assert handler._athena_prefix == DEFAULT_ATHENA_PREFIX
+            assert handler._db_name == DEFAULT_ATHENA_DATABASE
+            assert handler._table_name == DEFAULT_ATHENA_TABLE
             assert handler._batch_size == 2
+            assert handler._base_batch_size == 2
             assert handler._part_number == 0
             assert handler._writer_id
             assert handler._buffer == []
@@ -373,10 +389,10 @@ class TestJsonlLogHandler:
         keys = [
             item["Key"]
             for item in s3.list_objects_v2(
-                Bucket=DEFAULT_BUCKET, Prefix=DEFAULT_PREFIX
+                Bucket=DEFAULT_BUCKET, Prefix=DEFAULT_LOG_STORE_PREFIX
             ).get("Contents", [])
         ]
-        assert keys == [f"{DEFAULT_PREFIX}/logging-marker/marker.txt"]
+        assert keys == [f"{DEFAULT_LOG_STORE_PREFIX}/logging-marker/marker.txt"]
 
     @pytest.mark.parametrize(
         ("exception"),
@@ -549,9 +565,18 @@ class TestJsonlLogHandler:
         mock_register.assert_called_once_with()
 
     def test_registers_scoped_run_as_partitioned_dataset(self) -> None:
-        handler = create_handler()
+        log_store_prefix = "custom/log-store"
+        athena_prefix = "s3://curated-bucket/custom/logs/"
+        database_name = "custom_log_database"
+        table_name = "pipeline_events"
+        handler = create_handler(
+            log_store_prefix=log_store_prefix,
+            athena_prefix=athena_prefix,
+            athena_database_name=database_name,
+            athena_table_name=table_name,
+        )
         source_path = (
-            f"s3://{DEFAULT_BUCKET}/{DEFAULT_PREFIX}/"
+            f"s3://{DEFAULT_BUCKET}/{log_store_prefix}/"
             f"data_delivery_period=20240102/attempt_no=1/run_id={RUN_ID}/"
         )
 
@@ -567,21 +592,21 @@ class TestJsonlLogHandler:
             handler._register_logs_in_athena()
 
         mock_read_json.assert_called_once_with(path=source_path, lines=True)
-        mock_create_database.assert_called_once_with("opg_test_logging", exist_ok=True)
+        mock_create_database.assert_called_once_with(database_name, exist_ok=True)
         mock_to_parquet.assert_called_once_with(
             df=mock_read_json.return_value,
-            path=os.environ.get("CURATED_LOG_PATH"),
+            path=athena_prefix,
             dataset=True,
             mode="append",
-            database="opg_test_logging",
-            table="test_logging_curated",
+            database=database_name,
+            table=table_name,
             partition_cols=["data_delivery_period", "attempt_no", "run_id"],
         )
 
     def test_create_key_directory(self) -> None:
         """Test that the object key is generated correctly."""
         handler = create_handler()
-        key_directory = handler._create_key_directory()
+        key_directory = handler._create_key_directory(DEFAULT_LOG_STORE_PREFIX)
         assert (
             key_directory
             == f"prefix/to/log/data_delivery_period=20240102/attempt_no=1/run_id={RUN_ID}/"
@@ -592,7 +617,7 @@ class TestJsonlLogHandler:
 
         handler = create_handler()
 
-        key = f"{handler._create_key_directory()}{os.getpid()!s}_{handler._writer_id}_{handler._part_number}.jsonl"
+        key = f"{handler._create_key_directory(handler._log_prefix)}{os.getpid()!s}_{handler._writer_id}_{handler._part_number}.jsonl"
         bytes_data = b"some random data"
 
         handler._put_object(key, bytes_data)
@@ -767,6 +792,9 @@ class TestLoggingController:
         logger = logging.getLogger()
         handler = create_handler(batch_size=5)
         logger.addHandler(handler)
+        console_handler = logging.StreamHandler()
+        console_handler.set_name(_CONSOLE_HANDLER_NAME)
+        logger.addHandler(console_handler)
         return LoggingController(logger)
 
     def test_flush_success(self) -> None:
@@ -798,7 +826,7 @@ class TestLoggingController:
         assert mock_close.call_count == 1  # Only checking the json handler
         assert controller._is_shutdown
         assert all(
-            not isinstance(handler, JsonlLogHandler)
+            handler.get_name() not in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}
             for handler in controller._logger.handlers
         )
 
@@ -825,7 +853,7 @@ class TestLoggingController:
         assert mock_close.call_count == 1
         assert not controller._is_shutdown
         assert all(
-            not isinstance(handler, JsonlLogHandler)
+            handler.get_name() not in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}
             for handler in controller._logger.handlers
         )
 
@@ -872,35 +900,57 @@ class TestConfigureLogging:
 
     def configure_logging_wrapper(
         self,
-        bucket: str = DEFAULT_BUCKET,
-        prefix: str = DEFAULT_PREFIX,
         pipeline: str = DEFAULT_PIPELINE,
         data_delivery_period: datetime = DELIVERY_PERIOD,
         attempt_no: int = 1,
         run_id: str = RUN_ID,
+        bucket: str = DEFAULT_BUCKET,
+        log_store_prefix: str = DEFAULT_LOG_STORE_PREFIX,
+        athena_prefix: str = DEFAULT_ATHENA_PREFIX,
+        athena_database_name: str = DEFAULT_ATHENA_DATABASE,
+        athena_table_name: str = DEFAULT_ATHENA_TABLE,
         batch_size: int = 500,
     ) -> LoggingController:
         """Wrapper for the configure_logging function to simplify test calls."""
         return configure_logging(
-            bucket=bucket,
-            prefix=prefix,
             pipeline=pipeline,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
             run_id=run_id,
+            bucket=bucket,
+            log_store_prefix=log_store_prefix,
+            athena_prefix=athena_prefix,
+            athena_database_name=athena_database_name,
+            athena_table_name=athena_table_name,
             batch_size=batch_size,
         )
 
     def test_configure_returns_success(self, s3: boto3.client) -> None:
         """Test that configure_logging returns a LoggingController and sets up handlers correctly."""
 
-        controller = self.configure_logging_wrapper()
+        controller = self.configure_logging_wrapper(
+            log_store_prefix="custom/log-store",
+            athena_prefix="s3://curated-bucket/custom/logs/",
+            athena_database_name="custom_log_database",
+            athena_table_name="pipeline_events",
+        )
         root_logger = logging.getLogger()
         assert controller._logger is root_logger
         assert root_logger.level == logging.INFO
-        assert _JSONL_HANDLER_NAME in [
-            handler.get_name() for handler in root_logger.handlers
-        ]
+        handlers_by_name = {
+            handler.get_name(): handler for handler in root_logger.handlers
+        }
+        assert _JSONL_HANDLER_NAME in handlers_by_name
+        assert _CONSOLE_HANDLER_NAME in handlers_by_name
+        assert handlers_by_name[_CONSOLE_HANDLER_NAME].formatter._fmt == (  # type: ignore[union-attr]
+            "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
+        )
+        jsonl_handler = handlers_by_name[_JSONL_HANDLER_NAME]
+        assert isinstance(jsonl_handler, JsonlLogHandler)
+        assert jsonl_handler._log_prefix == "custom/log-store"
+        assert jsonl_handler._athena_prefix == "s3://curated-bucket/custom/logs/"
+        assert jsonl_handler._db_name == "custom_log_database"
+        assert jsonl_handler._table_name == "pipeline_events"
         assert isinstance(controller, LoggingController)
 
     @pytest.mark.parametrize("batch_size", [0, -1, True])
@@ -1022,12 +1072,15 @@ class TestModuleLogger:
         """Test that %s-style args passed through are lazily interpolated into the final message."""
 
         _ = configure_logging(
-            bucket=DEFAULT_BUCKET,
-            prefix=DEFAULT_PREFIX,
             pipeline=DEFAULT_PIPELINE,
             data_delivery_period=DELIVERY_PERIOD,
             attempt_no=1,
             run_id=RUN_ID,
+            bucket=DEFAULT_BUCKET,
+            log_store_prefix=DEFAULT_LOG_STORE_PREFIX,
+            athena_prefix=DEFAULT_ATHENA_PREFIX,
+            athena_database_name=DEFAULT_ATHENA_DATABASE,
+            athena_table_name=DEFAULT_ATHENA_TABLE,
             batch_size=3,
         )
 
@@ -1042,11 +1095,13 @@ class TestModuleLogger:
         )
 
         key = (
-            jsonl_handler._create_key_directory()
+            jsonl_handler._create_key_directory(jsonl_handler._log_prefix)
             + f"{os.getpid()!s}_{jsonl_handler._writer_id}_0.jsonl"
         )
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         log = logs[key]
 
         assert log[1]["logger_name"] == "third_party.test"
@@ -1083,6 +1138,10 @@ class TestLoggingEndToEnd:
     def configure(
         self,
         *,
+        log_store_prefix: str = DEFAULT_LOG_STORE_PREFIX,
+        athena_prefix: str = DEFAULT_ATHENA_PREFIX,
+        athena_database_name: str = DEFAULT_ATHENA_DATABASE,
+        athena_table_name: str = DEFAULT_ATHENA_TABLE,
         batch_size: int = 3,
         pipeline: str = DEFAULT_PIPELINE,
         attempt_no: int = 1,
@@ -1090,12 +1149,15 @@ class TestLoggingEndToEnd:
     ) -> tuple[LoggingController, JsonlLogHandler]:
         """Configure logging and return the controller plus the underlying JSONL handler."""
         controller = configure_logging(
-            bucket=DEFAULT_BUCKET,
-            prefix=DEFAULT_PREFIX,
             pipeline=pipeline,
             data_delivery_period=DELIVERY_PERIOD,
             attempt_no=attempt_no,
             run_id=run_id,
+            bucket=DEFAULT_BUCKET,
+            log_store_prefix=log_store_prefix,
+            athena_prefix=athena_prefix,
+            athena_database_name=athena_database_name,
+            athena_table_name=athena_table_name,
             batch_size=batch_size,
         )
         jsonl_handler = next(
@@ -1115,8 +1177,8 @@ class TestLoggingEndToEnd:
     ) -> str:
         """Build the expected S3 key for a given part number."""
         return (
-            f"{DEFAULT_PREFIX}/data_delivery_period=20240102/attempt_no={attempt_no}/"
-            f"run_id={run_id}/{os.getpid()}_{jsonl_handler._writer_id}_{part_number}.jsonl"
+            f"{jsonl_handler._create_key_directory(jsonl_handler._log_prefix)}"
+            f"{os.getpid()}_{jsonl_handler._writer_id}_{part_number}.jsonl"
         )
 
     def base_row(
@@ -1197,10 +1259,16 @@ class TestLoggingEndToEnd:
 
         root_logger = logging.getLogger()
         assert jsonl_handler not in root_logger.handlers
+        assert all(
+            handler.get_name() != _CONSOLE_HANDLER_NAME
+            for handler in root_logger.handlers
+        )
         assert controller._is_shutdown is True
         assert jsonl_handler._buffer == []
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         part_0_key = self.expected_object_key(jsonl_handler, 0)
         part_1_key = self.expected_object_key(jsonl_handler, 1)
         part_2_key = self.expected_object_key(jsonl_handler, 2)
@@ -1316,6 +1384,11 @@ class TestLoggingEndToEnd:
 
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
+            console_handler = next(
+                handler
+                for handler in controller._logger.handlers
+                if handler.get_name() == _CONSOLE_HANDLER_NAME
+            )
             pipeline_logger = ModuleLogger(
                 logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.pipeline")
             )
@@ -1336,8 +1409,11 @@ class TestLoggingEndToEnd:
         assert jsonl_handler._buffer == []
         assert controller._is_shutdown is expect_shutdown_recorded
         assert (jsonl_handler not in root_logger.handlers) is expect_handler_removed
+        assert (console_handler not in root_logger.handlers) is expect_handler_removed
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         key = self.expected_object_key(jsonl_handler, 0)
         assert list(logs) == [key]
         assert logs[key] == [
@@ -1395,7 +1471,9 @@ class TestLoggingEndToEnd:
                     logging.shutdown()
 
         assert len(jsonl_handler._buffer) > 0
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         assert logs == {}
 
     def test_flush_delegates_retry_and_threshold_behaviour_to_handler(
@@ -1432,7 +1510,9 @@ class TestLoggingEndToEnd:
         # buffered, including the synthetic failure notices recorded along the way.
         controller.flush()
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         key = self.expected_object_key(jsonl_handler, 0)
         assert list(logs) == [key]
         assert [record["message"] for record in logs[key]] == [
@@ -1483,7 +1563,9 @@ class TestLoggingEndToEnd:
 
         assert all(not thread.is_alive() for thread in threads)
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         all_records = [record for records in logs.values() for record in records]
         worker_records = [
             record
@@ -1545,7 +1627,9 @@ class TestLoggingEndToEnd:
             with controller:
                 pass
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         key = self.expected_object_key(jsonl_handler, 0)
         assert list(logs) == [key]
         assert logs[key] == [
@@ -1584,7 +1668,9 @@ class TestLoggingEndToEnd:
                     logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.attempt")
                 ).info("Second attempt processing", table="table_a", stage="Start")
 
-        logs = read_jsonl_logs(s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX)
+        logs = read_jsonl_logs(
+            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        )
         first_key = self.expected_object_key(first_handler, 0, attempt_no=1)
         second_key = self.expected_object_key(second_handler, 0, attempt_no=2)
         assert set(logs) == {first_key, second_key}

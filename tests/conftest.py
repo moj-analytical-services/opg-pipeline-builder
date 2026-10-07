@@ -95,7 +95,7 @@ def setup_logging(s3: boto3.client) -> Generator[None]:
         run_id="test-run-id",
         bucket="log-bucket",
         log_store_prefix="prefix",
-        athena_prefix="s3://log-bucket/prefix/curated/",
+        athena_prefix="prefix/curated/",
         athena_database_name="test_logging",
         athena_table_name="pipeline_logs",
     )

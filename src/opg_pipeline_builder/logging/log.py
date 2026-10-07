@@ -15,6 +15,14 @@ _JSONL_HANDLER_NAME = "json_handler"
 _CONSOLE_HANDLER_NAME = "console_handler"
 
 
+def _validate_s3_prefix(prefix: str, prefix_name: str, bucket: str) -> None:
+    """Require a bucket-relative S3 key prefix."""
+    if "s3://" in prefix.lower() or bucket in prefix:
+        raise ValueError(
+            f"{prefix_name} must not include 's3://' or bucket '{bucket}'."
+        )
+
+
 class CustomLogFields(BaseModel):
     """Pydantic model representing custom log fields.
 
@@ -218,7 +226,7 @@ class JsonlLogHandler(logging.Handler):
 
         wr.s3.to_parquet(
             df=logs,
-            path=self._athena_prefix,
+            path=f"s3://{self._bucket}/{self._athena_prefix}",
             dataset=True,
             mode="append",
             database=self._db_name,
@@ -408,9 +416,11 @@ def configure_logging(
         bucket: str
             The S3 bucket where logs will be stored.
         log_store_prefix: str
-            The S3 prefix (folder path) under which raw logs will be stored.
+            Bucket-relative S3 key prefix for raw logs. Do not include the bucket or
+            the 's3://' scheme.
         athena_prefix: str
-            The S3 prefix (folder path) under which curated logs will be stored.
+            Bucket-relative S3 key prefix for curated logs. Do not include the bucket or
+            the 's3://' scheme.
         athena_database_name: str
             The name of the Athena database where curated logs will be stored.
         athena_table_name: str
@@ -427,6 +437,9 @@ def configure_logging(
     """
     if batch_size < 1 or isinstance(batch_size, bool):
         raise ValueError("Batch size must be an integer >= 1.")
+
+    _validate_s3_prefix(log_store_prefix, "log_store_prefix", bucket)
+    _validate_s3_prefix(athena_prefix, "athena_prefix", bucket)
 
     package_logger = logging.getLogger()
     package_logger.setLevel(logging.INFO)

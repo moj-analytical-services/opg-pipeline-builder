@@ -32,7 +32,7 @@ RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
 DELIVERY_PERIOD = datetime(2024, 1, 2, tzinfo=UTC)
 DEFAULT_BUCKET = "log-bucket"
 DEFAULT_LOG_STORE_PREFIX = "prefix/to/log"
-DEFAULT_ATHENA_PREFIX = "s3://log-bucket/prefix/to/log/curated/"
+DEFAULT_ATHENA_PREFIX = "prefix/to/log/curated/"
 DEFAULT_ATHENA_DATABASE = "opg_test_logging"
 DEFAULT_ATHENA_TABLE = "test_logging_curated"
 DEFAULT_PIPELINE = "test_pipeline"
@@ -565,7 +565,7 @@ class TestJsonlLogHandler:
 
     def test_registers_scoped_run_as_partitioned_dataset(self) -> None:
         log_store_prefix = "custom/log-store"
-        athena_prefix = "s3://curated-bucket/custom/logs/"
+        athena_prefix = "custom/logs/"
         database_name = "custom_log_database"
         table_name = "pipeline_events"
         handler = create_handler(
@@ -594,7 +594,7 @@ class TestJsonlLogHandler:
         mock_create_database.assert_called_once_with(database_name, exist_ok=True)
         mock_to_parquet.assert_called_once_with(
             df=mock_read_json.return_value,
-            path=athena_prefix,
+            path=f"s3://{DEFAULT_BUCKET}/{athena_prefix}",
             dataset=True,
             mode="append",
             database=database_name,
@@ -929,7 +929,7 @@ class TestConfigureLogging:
 
         controller = self.configure_logging_wrapper(
             log_store_prefix="custom/log-store",
-            athena_prefix="s3://curated-bucket/custom/logs/",
+            athena_prefix="custom/logs/",
             athena_database_name="custom_log_database",
             athena_table_name="pipeline_events",
         )
@@ -947,10 +947,31 @@ class TestConfigureLogging:
         jsonl_handler = handlers_by_name[_JSONL_HANDLER_NAME]
         assert isinstance(jsonl_handler, JsonlLogHandler)
         assert jsonl_handler._log_prefix == "custom/log-store"
-        assert jsonl_handler._athena_prefix == "s3://curated-bucket/custom/logs/"
+        assert jsonl_handler._athena_prefix == "custom/logs/"
         assert jsonl_handler._db_name == "custom_log_database"
         assert jsonl_handler._table_name == "pipeline_events"
         assert isinstance(controller, LoggingController)
+
+    @pytest.mark.parametrize(
+        ("prefix_name", "invalid_prefix"),
+        [
+            ("log_store_prefix", "s3://log-bucket/custom/logs/"),
+            ("log_store_prefix", "log-bucket/custom/logs/"),
+            ("athena_prefix", "s3://log-bucket/custom/logs/"),
+            ("athena_prefix", "log-bucket/custom/logs/"),
+        ],
+    )
+    def test_configure_rejects_bucket_or_scheme_in_prefix(
+        self, prefix_name: str, invalid_prefix: str
+    ) -> None:
+        """Reject full S3 URIs where bucket-relative prefixes are required."""
+        with (
+            patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client,
+            pytest.raises(ValueError, match=f"{prefix_name} must not include"),
+        ):
+            self.configure_logging_wrapper(**{prefix_name: invalid_prefix})  # type: ignore[arg-type]
+
+        mock_client.assert_not_called()
 
     @pytest.mark.parametrize("batch_size", [0, -1, True])
     def test_configure_invalid_batch_size(self, batch_size: int) -> None:

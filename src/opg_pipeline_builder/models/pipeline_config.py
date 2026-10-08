@@ -61,7 +61,7 @@ class PipelineConfig(BaseModel):
         """Create a reference table for the pipeline configuration."""
         return pl.DataFrame(
             {
-                "database_name": [self.name],
+                "pipeline_name": [self.name],
                 "description": [self.description],
                 "github_repo": [self.github_repo],
                 "data_cadence": [self.data_cadence],

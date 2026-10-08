@@ -1,7 +1,7 @@
 import re
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -9,99 +9,14 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from opg_pipeline_builder.logging.log import CustomLogFields
 from opg_pipeline_builder.models import metadata_model as m
 from opg_pipeline_builder.models import modelling_exceptions as exc
-
-
-def create_column(
-    name: str = "id",
-    description: str = "description",
-    semantic_type: str = "generic_string",
-    etl_stages: list[str] | None = None,
-    sensitive: bool = False,
-    is_composite_key: bool = False,
-    is_partition: bool = False,
-    input_data_type: Any = "str",
-    output_data_type: Any = "str",
-    input_value_format: str = "",
-    output_value_format: str = "",
-    regex_pattern: str = "",
-    nullable: bool = False,
-    allowed_values: list[str | int] | None = None,
-    default_value: str | int | None = "default",
-    **extra_fields: Any,
-) -> m.Column:
-    """Create a Column instance with the given parameters."""
-
-    allowed_values = allowed_values or []
-    if etl_stages is None:
-        etl_stages = ["raw", "curated"]
-
-    return m.Column.model_validate(
-        {
-            "name": name,
-            "description": description,
-            "semantic_type": semantic_type,
-            "etl_stages": etl_stages,
-            "sensitive": sensitive,
-            "is_composite_key": is_composite_key,
-            "is_partition": is_partition,
-            "input_data_type": input_data_type,
-            "output_data_type": output_data_type,
-            "input_value_format": input_value_format,
-            "output_value_format": output_value_format,
-            "regex_pattern": regex_pattern,
-            "nullable": nullable,
-            "allowed_values": allowed_values,
-            "default_value": default_value,
-            **extra_fields,
-        },
-        context={"table_name": "test_table"},
-    )
-
-
-def create_file_format(
-    stage: str = "raw", file_format: str = "parquet"
-) -> m.FileFormat:
-    return m.FileFormat.model_validate(
-        {"stage": stage, "format": file_format},
-        context={"table_name": "test_table"},
-    )
-
-
-def create_table_metadata(
-    name: str,
-    file_formats: list[m.FileFormat],
-    columns: list[m.Column],
-    description: str = "description",
-    **extra_fields: Any,
-) -> m.TableMetaData:
-    return m.TableMetaData(
-        name=name,
-        description=description,
-        file_formats=file_formats,
-        columns=columns,
-        **extra_fields,
-    )
-
-
-def assert_log_record(
-    caplog: pytest.LogCaptureFixture,
-    message: str,
-    table: str = "test_table",
-    field: str = "N/A",
-    stage: Literal["Start", "Processing", "End"] = "Processing",
-) -> None:
-    """Assert that a log message has the expected structured metadata."""
-    record = next(record for record in caplog.records if record.getMessage() == message)
-    if not record:
-        raise AssertionError(f"Log message '{message}' not found")
-    assert record.__dict__["custom_fields"] == CustomLogFields(
-        process_stage=stage,
-        table=table,
-        field=field,
-    )
+from tests.test_utils import (
+    assert_log_record,
+    create_column,
+    create_file_format,
+    create_table_metadata,
+)
 
 
 class TestColumn:
@@ -1033,7 +948,7 @@ class TestMetaData:
     def test_metadata_valid(self) -> None:
         """Test that the MetaData model is correctly instantiated and contains the expected tables and columns."""
         metadata = m.MetaData(
-            database="test",
+            pipeline="test",
             tables={
                 "test_table": create_table_metadata(
                     "test_table",
@@ -1048,7 +963,7 @@ class TestMetaData:
             },
         )
 
-        assert metadata.database == "test"
+        assert metadata.pipeline == "test"
         assert metadata.tables["test_table"].file_formats[0].format == "parquet"
         assert metadata.tables["test_table2"].columns[0].name == "name"
         assert metadata.tables["test_table2"].file_formats[0].stage == "curated"
@@ -1056,7 +971,7 @@ class TestMetaData:
     def test_metadata_get_table_metadata_valid(self) -> None:
         """Test that get_table_metadata returns the correct TableMetaData object for a valid table."""
         metadata = m.MetaData(
-            database="test",
+            pipeline="test",
             tables={
                 "test_table": create_table_metadata(
                     "test_table",
@@ -1087,7 +1002,7 @@ class TestMetaData:
     ) -> None:
         """Test that get_table_metadata raises an InvalidTableError for an invalid table."""
         metadata = m.MetaData(
-            database="test",
+            pipeline="test",
             tables={
                 "test_table": create_table_metadata(
                     "test_table",
@@ -1116,7 +1031,7 @@ class TestMetaData:
     def test_output_to_df(self) -> None:
         """Test the output_to_df method of the MetaData class."""
         metadata = m.MetaData(
-            database="test",
+            pipeline="test",
             tables={
                 "test_table": create_table_metadata(
                     "test_table",
@@ -1184,7 +1099,7 @@ def test_load_metadata_success(caplog: pytest.LogCaptureFixture) -> None:
     Also serves to validate a bespoke test metadata file which covers most/all use cases
     for the actual metadata (thus testing the models handles them correctly).
     """
-    metadata = m.load_metadata(Path("tests/data/meta_data"), "test_database")
+    metadata = m.load_metadata(Path("tests/data/metadata"), "test_pipeline")
 
     assert sorted(metadata.tables.keys()) == ["test_table", "test_table_2"]
     assert metadata.tables["test_table"].columns[0].name == "id"
@@ -1192,7 +1107,7 @@ def test_load_metadata_success(caplog: pytest.LogCaptureFixture) -> None:
 
     assert_log_record(
         caplog,
-        "Loading metadata for database: 'test_database'.",
+        "Loading metadata for pipeline: 'test_pipeline'.",
         table="N/A",
         stage="Start",
     )
@@ -1206,17 +1121,17 @@ def test_load_metadata_empty(caplog: pytest.LogCaptureFixture) -> None:
     for the actual metadata (thus testing the models handles them correctly).
     """
     with pytest.raises(FileNotFoundError):
-        m.load_metadata(Path("tests/data/meta_data"), "non-existent database")
+        m.load_metadata(Path("tests/data/meta_data"), "non-existent pipeline")
 
     assert_log_record(
         caplog,
-        "Loading metadata for database: 'non-existent database'.",
+        "Loading metadata for pipeline: 'non-existent pipeline'.",
         table="N/A",
         stage="Start",
     )
     assert_log_record(
         caplog,
-        "No metadata was found for database: 'non-existent database'.",
+        "No metadata was found for pipeline: 'non-existent pipeline'.",
         table="N/A",
     )
 
@@ -1226,8 +1141,8 @@ def test_output_metadata_as_csv() -> None:
     output_path.mkdir(parents=True, exist_ok=True)
 
     m.output_metadata_as_csv(
-        Path("tests/data/meta_data"),
-        ["test_database"],
+        Path("tests/data/metadata"),
+        ["test_pipeline"],
         Path("tests/data/outputs/metadata"),
     )
 
@@ -1237,8 +1152,8 @@ def test_output_metadata_as_csv() -> None:
 
     exp_df = pd.DataFrame(
         data={
-            "System": ["test_database"] * 26,
-            "Dataset": ["test_database"] * 26,
+            "System": ["test_pipeline"] * 26,
+            "Dataset": ["test_pipeline"] * 26,
             "Data Table": ["test_table"] * 13 + ["test_table_2"] * 13,
             "Data Field": [
                 "address",
@@ -1336,7 +1251,7 @@ def test_metadata_models_forbid_extra_fields() -> None:
     with pytest.raises(ValidationError):
         metadata_data: dict[str, Any] = {
             "tables": {},
-            "database": "test",
+            "pipeline": "test",
             "unexpected_attribute": "value",
         }
         m.MetaData.model_validate(metadata_data)

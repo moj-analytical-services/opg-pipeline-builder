@@ -395,7 +395,7 @@ class TableMetaData(BaseModel):
 class MetaData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    database: str
+    pipeline: str
     tables: dict[str, TableMetaData]
 
     def get_table_metadata(self, table_name: str) -> TableMetaData:
@@ -411,7 +411,7 @@ class MetaData(BaseModel):
         table = self.tables.get(table_name, None)
 
         if not table:
-            err = f"Table '{table_name}' is not configured in the metadata for '{self.database}'"
+            err = f"Table '{table_name}' is not configured in the metadata for '{self.pipeline}'"
             log.error(err, table=table_name)
             raise exc.InvalidTableError(err)
 
@@ -430,7 +430,7 @@ class MetaData(BaseModel):
             reference_tables.append(
                 pl.DataFrame(
                     {
-                        "database_name": [self.database],
+                        "pipeline_name": [self.pipeline],
                         "table_name": [table.name],
                         "description": [table.description],
                     }
@@ -453,7 +453,7 @@ class MetaData(BaseModel):
                 reference_tables.append(
                     pl.DataFrame(
                         {
-                            "database_name": [self.database],
+                            "pipeline_name": [self.pipeline],
                             "table_name": [table.name],
                             "column_name": [column.name],
                             "description": [column.description],
@@ -487,8 +487,8 @@ class MetaData(BaseModel):
                 if column.exists_in_stage("curated"):
                     data.append(
                         {
-                            "System": self.database,
-                            "Dataset": self.database,
+                            "System": self.pipeline,
+                            "Dataset": self.pipeline,
                             "Data Table": table.name,
                             "Data Field": column.name,
                             "Description": "",
@@ -501,37 +501,37 @@ class MetaData(BaseModel):
         return pd.concat(output_dfs)
 
 
-def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
+def load_metadata(metadata_path: Path, pipeline_name: str) -> MetaData:
     """Load a metadata file and convert it into the Pydantic model.
 
     Args:
-        database_name (str): The name of the database to load metadata for
+        pipeline_name (str): The name of the pipeline to load metadata for
         metadata_path (Path): The base path where metadata files are stored
 
     Returns:
         MetaData: The Metadata object
     """
-    log.info("Loading metadata for database: '%s'.", database_name, stage="Start")
+    log.info("Loading metadata for pipeline: '%s'.", pipeline_name, stage="Start")
 
-    db_metadata_files = list((metadata_path / database_name).glob("*.json"))
+    db_metadata_files = list((metadata_path / pipeline_name).glob("*.json"))
 
     if not db_metadata_files:
-        err = f"No metadata was found for database: '{database_name}'."
+        err = f"No metadata was found for pipeline: '{pipeline_name}'."
         log.error(err)
         raise FileNotFoundError(err)
 
-    database_metadata: dict[str, Any] = {}
+    pipeline_metadata: dict[str, Any] = {}
 
     for file in db_metadata_files:
         with (file).open(encoding="utf-8", mode="r") as json_file:
             log.info("Validating metadata for %s", file.stem)
             metadata_file = json.load(json_file)
-            database_metadata[file.stem] = TableMetaData.model_validate(
+            pipeline_metadata[file.stem] = TableMetaData.model_validate(
                 metadata_file,
                 context={"table_name": metadata_file["name"]},
             )
     log.info("Finished loading metadata.", stage="End")
-    return MetaData(database=database_name, tables=database_metadata)
+    return MetaData(pipeline=pipeline_name, tables=pipeline_metadata)
 
 
 def output_metadata_as_csv(
@@ -540,7 +540,7 @@ def output_metadata_as_csv(
     """Output metadata for all pipelines as a single CSV file.
 
     Args:
-        metadata_path (Path): The folder path containing all the database specific metadata folders
+        metadata_path (Path): The folder path containing all the pipeline specific metadata folders
         metadata_files (list[str]): Folder names within the metadata path to be output
         output_path (Path): The folder to write them metadata to
 
@@ -550,8 +550,8 @@ def output_metadata_as_csv(
 
     metadata_dfs: list[pd.DataFrame] = []
 
-    for database_name in metadata_files:
-        metadata = load_metadata(metadata_path, database_name)
+    for pipeline_name in metadata_files:
+        metadata = load_metadata(metadata_path, pipeline_name)
         metadata_dfs.append(metadata.output_opg_metadata_format())
 
     metadata_df = pd.concat(metadata_dfs)

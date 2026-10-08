@@ -7,7 +7,11 @@ import pytest
 from _pytest.monkeypatch import MonkeyPatch
 from moto import mock_aws
 
-from opg_pipeline_builder.logging.log import PACKAGE_LOGGER_NAME, configure_logging
+from opg_pipeline_builder.logging.log import (
+    _CONSOLE_HANDLER_NAME,
+    _JSONL_HANDLER_NAME,
+    configure_logging,
+)
 
 
 @pytest.fixture(scope="function")
@@ -28,7 +32,7 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
         "AWS_SESSION_TOKEN": "test_session_token",  # nosec
         "AWS_DEFAULT_REGION": "eu-west-1",
         "DEFAULT_BUCKET": "test-bucket",
-        "DATABASE": "test-database",
+        "PIPELINE_NAME": "test_pipeline",
         "ENV": "test",
     }
 
@@ -36,15 +40,29 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
         monkeypatch_session.setenv(key, value)
 
 
+@pytest.fixture(name="_suppress_aws_logs", autouse=True, scope="session")
+def suppress_aws_logs() -> Generator[None]:
+    """Suppress AWS library logs for the lifetime of the mocked clients."""
+    loggers = [logging.getLogger(name) for name in ("botocore", "awswrangler", "boto3")]
+    original_levels = [logger.level for logger in loggers]
+    for logger in loggers:
+        logger.setLevel(logging.CRITICAL)
+
+    yield
+
+    for logger, level in zip(loggers, original_levels, strict=True):
+        logger.setLevel(level)
+
+
 @pytest.fixture(name="s3", scope="session")
-def mock_s3() -> Generator[boto3.client]:
+def mock_s3(_suppress_aws_logs: None) -> Generator[boto3.client]:
     "Return a mocked S3 client."
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
 
 
 @pytest.fixture(name="glue", scope="session")
-def mock_glue() -> Generator[boto3.client]:
+def mock_glue(_suppress_aws_logs: None) -> Generator[boto3.client]:
     "Return a mocked glue client."
     with mock_aws():
         yield boto3.client("glue", region_name="eu-west-2")
@@ -69,32 +87,27 @@ def setup_log_bucket(s3: boto3.client) -> Generator[None]:
 
 @pytest.fixture(autouse=True, scope="session")
 def setup_logging(s3: boto3.client) -> Generator[None]:
-    """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
-    logging.getLogger("botocore").setLevel(logging.CRITICAL)
-    logging.getLogger("awswrangler").setLevel(logging.CRITICAL)
-    logging.getLogger("boto3").setLevel(logging.CRITICAL)
-
+    """Configure package logging for the test session."""
     configure_logging(
-        bucket="log-bucket",
-        prefix="prefix",
-        database="database_name",
+        pipeline="pipeline_name",
         data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
         attempt_no=1,
         run_id="test-run-id",
+        bucket="log-bucket",
+        log_store_prefix="prefix",
+        athena_prefix="prefix/curated/",
+        athena_database_name="test_logging",
+        athena_table_name="pipeline_logs",
     )
 
     yield
 
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
-    for handler in list(package_logger.handlers):
-        handler.close()
-        package_logger.removeHandler(handler)
-    package_logger.propagate = True
-    package_logger.setLevel(logging.NOTSET)
-
-    logging.getLogger("botocore").setLevel(logging.DEBUG)
-    logging.getLogger("awswrangler").setLevel(logging.DEBUG)
-    logging.getLogger("boto3").setLevel(logging.DEBUG)
+    root_logger = logging.getLogger()
+    for handler in list(root_logger.handlers):
+        if handler.get_name() in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}:
+            root_logger.removeHandler(handler)
+            logging.Handler.close(handler)
+    root_logger.setLevel(logging.NOTSET)
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -110,7 +123,7 @@ def configure_caplog(
     caplog: pytest.LogCaptureFixture,
 ) -> Generator[pytest.LogCaptureFixture]:
     """Configure the caplog handler for the package logger."""
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
+    package_logger = logging.getLogger()
     package_logger.addHandler(caplog.handler)
 
     yield caplog

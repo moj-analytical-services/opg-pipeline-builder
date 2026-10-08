@@ -3,28 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from opg_pipeline_builder.models import modelling_exceptions as exc
-from opg_pipeline_builder.models.pipeline_config import PipelineConfig
-
-
-def create_pipeline_config(
-    name: str = "name",
-    description: str = "description",
-    land_path: str = "s3://bucket-name/{{ env }}/{{ db }}/land/table-name",
-    archive_path: str = "s3://bucket-name/{{ env }}/{{ db }}/archive/table-name",
-    curated_path: str = "s3://bucket-name/{{ env }}/{{ db }}/curated/table-name",
-    github_repo: str = "https://github.com/user/repo",
-    data_cadence: str = "daily",
-) -> PipelineConfig:
-    """Create a PipelineConfig instance with default or provided values."""
-    return PipelineConfig(
-        name=name,
-        description=description,
-        land_path=land_path,
-        archive_path=archive_path,
-        curated_path=curated_path,
-        github_repo=github_repo,
-        data_cadence=data_cadence,
-    )
+from tests.test_utils import create_pipeline_config
 
 
 class TestPipelineConfig:
@@ -35,7 +14,7 @@ class TestPipelineConfig:
         ) as mock_valid:
             config = create_pipeline_config()
 
-        assert config.name == "name"
+        assert config.name == "test_pipeline"
         assert mock_valid.call_count == 1
 
     def test_validate_name_invalid(self) -> None:

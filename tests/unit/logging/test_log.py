@@ -17,16 +17,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from freezegun import freeze_time
 from pydantic import ValidationError
 
-from opg_pipeline_builder.logging.log import (
-    _CONSOLE_HANDLER_NAME,
-    _JSONL_HANDLER_NAME,
-    CustomLogFields,
-    JsonlLogHandler,
-    LoggingController,
-    ModuleLogger,
-    StructuredLogRecord,
-    configure_logging,
-)
+from opg_pipeline_builder.logging import log
+from opg_pipeline_builder.logging import log_exceptions as exc
 
 RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
 DELIVERY_PERIOD = datetime(2024, 1, 2, tzinfo=UTC)
@@ -38,10 +30,15 @@ DEFAULT_ATHENA_TABLE = "test_logging_curated"
 DEFAULT_PIPELINE = "test_pipeline"
 
 
+##################
+# LOG TEST UTILS #
+##################
+
+
 def configuration_log_line_number() -> int:
     """Return the source line recorded by the configuration log entry."""
     source, first_line = inspect.getsourcelines(
-        JsonlLogHandler._write_configuration_log
+        log.JsonlLogHandler._write_configuration_log
     )
     return first_line + next(
         index
@@ -62,14 +59,14 @@ def create_handler(
     athena_database_name: str = DEFAULT_ATHENA_DATABASE,
     athena_table_name: str = DEFAULT_ATHENA_TABLE,
     batch_size: int = 2,
-) -> JsonlLogHandler:
+) -> log.JsonlLogHandler:
     """Create a JSONL handler backed by mocked S3."""
     if apply_patches:
         with (
-            patch.object(JsonlLogHandler, "_validate_log_location"),
-            patch.object(JsonlLogHandler, "_write_configuration_log"),
+            patch.object(log.JsonlLogHandler, "_validate_log_location"),
+            patch.object(log.JsonlLogHandler, "_write_configuration_log"),
         ):
-            return JsonlLogHandler(
+            return log.JsonlLogHandler(
                 pipeline=pipeline,
                 data_delivery_period=data_delivery_period,
                 attempt_no=attempt_no,
@@ -82,7 +79,7 @@ def create_handler(
                 batch_size=batch_size,
             )
     else:
-        return JsonlLogHandler(
+        return log.JsonlLogHandler(
             pipeline=pipeline,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
@@ -102,14 +99,14 @@ def create_log_record(
     line_number: int = 42,
     message: str = "test log",
     args: tuple[object, ...] = (),
-    custom_fields: CustomLogFields | None = None,
+    custom_fields: log.CustomLogFields | None = None,
 ) -> logging.LogRecord:
     """Create a representative logging record."""
-    custom_fields = custom_fields or CustomLogFields(
+    custom_fields = custom_fields or log.CustomLogFields(
         process="Logging",
-        process_stage="Processing",
         table="table_a",
         field="field_a",
+        process_stage="Processing",
     )
     return logging.makeLogRecord(
         {
@@ -127,7 +124,7 @@ def create_log_record(
     )
 
 
-def mock_flush_locked(handler: JsonlLogHandler) -> None:
+def mock_flush_locked(handler: log.JsonlLogHandler) -> None:
     """Mock the _flush_locked method of a JsonlLogHandler."""
     handler._buffer = []
 
@@ -159,7 +156,7 @@ def reset_root_logger() -> Generator[None]:
     session_handlers = [
         handler
         for handler in original_handlers
-        if handler.get_name() in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}
+        if handler.get_name() in {log._CONSOLE_HANDLER_NAME, log._JSONL_HANDLER_NAME}
     ]
     for handler in session_handlers:
         root_logger.removeHandler(handler)
@@ -191,12 +188,41 @@ def mock_athena_clients() -> Generator[None]:
         yield
 
 
+##############
+# UNIT TESTS #
+##############
+
+
+def test_validate_s3_prefix_valid() -> None:
+    "Test that a valid S3 prefix passes validation."
+    log._validate_s3_prefix(
+        prefix="valid/prefix", prefix_name="log_store", bucket="my-bucket"
+    )
+
+
+@pytest.mark.parametrize(
+    ("prefix", "bucket"),
+    [
+        ("s3://invalid/prefix", "my-bucket"),
+        ("s3://my-bucket/invalid/prefix", "my-bucket"),
+        ("my-bucket/invalid/prefix", "my-bucket"),
+    ],
+)
+def test_validate_s3_prefix_invalid(prefix: str, bucket: str) -> None:
+    "Test that an invalid S3 prefix raises a InvalidPrefixError."
+    with pytest.raises(
+        exc.InvalidPrefixError,
+        match="s3 prefix 'log_store' for storing logs must not include 's3://' or the bucket name",
+    ):
+        log._validate_s3_prefix(prefix, "log_store", bucket)
+
+
 class TestCustomLogFields:
     """Tests for the CustomLogFields model."""
 
     def test_accepts_valid_fields(self) -> None:
         """Test that valid custom log fields are accepted."""
-        fields = CustomLogFields(
+        fields = log.CustomLogFields(
             process="Logging", table="table_a", field="field_a", process_stage="Start"
         )
         assert fields.model_dump() == {
@@ -219,12 +245,12 @@ class TestCustomLogFields:
         }
         del values[missing]
         with pytest.raises(ValidationError):
-            CustomLogFields.model_validate(values)
+            log.CustomLogFields.model_validate(values)
 
     def test_rejects_extra_fields(self) -> None:
         """Test that extra custom log fields are rejected."""
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            CustomLogFields.model_validate(
+            log.CustomLogFields.model_validate(
                 {
                     "process": "Logging",
                     "table": "table_a",
@@ -237,11 +263,23 @@ class TestCustomLogFields:
     def test_rejects_invalid_process_stage(self) -> None:
         """Test that an invalid process stage is rejected."""
         with pytest.raises(ValidationError):
-            CustomLogFields(
+            log.CustomLogFields(
                 process="Logging",
                 table="table_a",
                 field="field_a",
                 process_stage="Invalid",
+            )
+
+    def test_rejects_empty_process(self) -> None:
+        """Test that an empty 'process' field is rejected."""
+        with pytest.raises(
+            exc.InvalidProcessError, match="Field 'process' must have a value"
+        ):
+            log.CustomLogFields(
+                process="",
+                table="table_a",
+                field="field_a",
+                process_stage="Start",
             )
 
 
@@ -271,14 +309,14 @@ class TestStructuredLogRecord:
 
     def test_accepts_complete_record_and_json_dump(self) -> None:
         """Test that a complete structured log record is accepted and can be dumped to JSON."""
-        record = StructuredLogRecord.model_validate(self.valid_values)
+        record = log.StructuredLogRecord.model_validate(self.valid_values)
         output = record.model_dump()
         assert output == self.valid_values
 
     def test_rejects_extra_field(self) -> None:
         """Test that extra fields in a structured log record are rejected."""
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            StructuredLogRecord.model_validate(
+            log.StructuredLogRecord.model_validate(
                 {**self.valid_values, "extra_field": "not allowed"}
             )
 
@@ -289,7 +327,7 @@ class TestStructuredLogRecord:
             ValidationError,
             match=f"Validation of StructuredLogRecord failed: field '{field}' must be non-empty",
         ):
-            StructuredLogRecord.model_validate({**self.valid_values, field: " "})
+            log.StructuredLogRecord.model_validate({**self.valid_values, field: " "})
 
     @pytest.mark.parametrize(
         ("attempt_no", "exception"),
@@ -303,7 +341,7 @@ class TestStructuredLogRecord:
     def test_validate_attempt_no_invalid(self, attempt_no: int, exception: Any) -> None:
         """Test that non-positive attempt numbers are rejected."""
         with exception:
-            StructuredLogRecord.model_validate(
+            log.StructuredLogRecord.model_validate(
                 {**self.valid_values, "attempt_no": attempt_no}
             )
 
@@ -324,7 +362,7 @@ class TestStructuredLogRecord:
         self, field: str, datetime_value: datetime
     ) -> None:
         """Test that naive datetime fields are rejected."""
-        log_record = StructuredLogRecord.model_validate(
+        log_record = log.StructuredLogRecord.model_validate(
             {**self.valid_values, field: datetime_value}
         )
         assert getattr(log_record, field) == datetime(2024, 1, 2, 17, 0, 0, tzinfo=UTC)
@@ -336,7 +374,7 @@ class TestStructuredLogRecord:
     def test_validate_datetimes_are_timezone_aware_invalid(self, field: str) -> None:
         """Test that naive datetime fields are rejected."""
         with pytest.raises(ValidationError):
-            StructuredLogRecord.model_validate(
+            log.StructuredLogRecord.model_validate(
                 {**self.valid_values, field: datetime(2024, 1, 2)}  # noqa: DTZ001
             )
 
@@ -345,8 +383,10 @@ class TestJsonlLogHandler:
     def test_init(self, s3: boto3.client) -> None:
         """Test that the handler initializes correctly with default values."""
         with (
-            patch.object(JsonlLogHandler, "_validate_log_location") as mock_location,
-            patch.object(JsonlLogHandler, "_write_configuration_log") as mock_write,
+            patch.object(
+                log.JsonlLogHandler, "_validate_log_location"
+            ) as mock_location,
+            patch.object(log.JsonlLogHandler, "_write_configuration_log") as mock_write,
         ):
             handler = create_handler(apply_patches=False)
             assert handler._pipeline == DEFAULT_PIPELINE
@@ -440,8 +480,8 @@ class TestJsonlLogHandler:
                 "log_level": "INFO",
                 "log_timestamp": "2024-01-02T00:00:00Z",
                 "process": "Configuration",
-                "table": "N/A",
-                "field": "N/A",
+                "table": "",
+                "field": "",
                 "process_stage": "End",
                 "message": "Logging configured successfully.",
             }
@@ -453,8 +493,8 @@ class TestJsonlLogHandler:
         handler = create_handler(batch_size=5)
 
         with (
-            patch.object(JsonlLogHandler, "_record_to_row") as mock_record,
-            patch.object(JsonlLogHandler, "_flush_locked") as mock_flush,
+            patch.object(log.JsonlLogHandler, "_record_to_row") as mock_record,
+            patch.object(log.JsonlLogHandler, "_flush_locked") as mock_flush,
         ):
             mock_record.side_effect = (
                 {"message": "First application event"},
@@ -477,9 +517,9 @@ class TestJsonlLogHandler:
         handler = create_handler(batch_size=3)
 
         with (
-            patch.object(JsonlLogHandler, "_record_to_row") as mock_record,
+            patch.object(log.JsonlLogHandler, "_record_to_row") as mock_record,
             patch.object(
-                JsonlLogHandler,
+                log.JsonlLogHandler,
                 "_flush_locked",
                 side_effect=mock_flush_locked,
                 autospec=True,
@@ -511,12 +551,14 @@ class TestJsonlLogHandler:
 
         with (
             patch.object(
-                JsonlLogHandler,
+                log.JsonlLogHandler,
                 "_flush_locked",
                 side_effect=mock_flush_locked,
                 autospec=True,
             ) as mock_flush,
-            patch.object(JsonlLogHandler, "_register_logs_in_athena") as mock_register,
+            patch.object(
+                log.JsonlLogHandler, "_register_logs_in_athena"
+            ) as mock_register,
         ):
             handler.close()
             handler.close()
@@ -533,8 +575,12 @@ class TestJsonlLogHandler:
             {"message": "Second application event"},
         ]
         with (
-            patch.object(JsonlLogHandler, "_flush_locked", autospec=True) as mock_flush,
-            patch.object(JsonlLogHandler, "_register_logs_in_athena") as mock_register,
+            patch.object(
+                log.JsonlLogHandler, "_flush_locked", autospec=True
+            ) as mock_flush,
+            patch.object(
+                log.JsonlLogHandler, "_register_logs_in_athena"
+            ) as mock_register,
             pytest.raises(RuntimeError),
         ):
             handler.close()
@@ -550,9 +596,11 @@ class TestJsonlLogHandler:
         """Test that a registration failure is propagated by close."""
         handler = create_handler()
         with (
-            patch.object(JsonlLogHandler, "_flush_locked", autospec=True) as mock_flush,
             patch.object(
-                JsonlLogHandler,
+                log.JsonlLogHandler, "_flush_locked", autospec=True
+            ) as mock_flush,
+            patch.object(
+                log.JsonlLogHandler,
                 "_register_logs_in_athena",
                 side_effect=RuntimeError("Athena unavailable"),
             ) as mock_register,
@@ -563,11 +611,21 @@ class TestJsonlLogHandler:
         mock_flush.assert_called_once()
         mock_register.assert_called_once_with()
 
+    def test_create_key_directory(self) -> None:
+        """Test that the object key is generated correctly."""
+        handler = create_handler()
+        key_directory = handler._create_key_directory(DEFAULT_LOG_STORE_PREFIX)
+        assert (
+            key_directory
+            == f"prefix/to/log/data_delivery_period=20240102/attempt_no=1/run_id={RUN_ID}/"
+        )
+
     def test_registers_scoped_run_as_partitioned_dataset(self) -> None:
         log_store_prefix = "custom/log-store"
         athena_prefix = "custom/logs/"
         database_name = "custom_log_database"
         table_name = "pipeline_events"
+
         handler = create_handler(
             log_store_prefix=log_store_prefix,
             athena_prefix=athena_prefix,
@@ -600,15 +658,6 @@ class TestJsonlLogHandler:
             database=database_name,
             table=table_name,
             partition_cols=["data_delivery_period", "attempt_no", "run_id"],
-        )
-
-    def test_create_key_directory(self) -> None:
-        """Test that the object key is generated correctly."""
-        handler = create_handler()
-        key_directory = handler._create_key_directory(DEFAULT_LOG_STORE_PREFIX)
-        assert (
-            key_directory
-            == f"prefix/to/log/data_delivery_period=20240102/attempt_no=1/run_id={RUN_ID}/"
         )
 
     def test_put_object_success(self, s3: boto3.client) -> None:
@@ -670,7 +719,7 @@ class TestJsonlLogHandler:
     def test_flush_locked_empty(self) -> None:
         """Test that flushing an empty buffer does not raise an error."""
         handler = create_handler(batch_size=5)
-        with patch.object(JsonlLogHandler, "_put_object") as mock_put:
+        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
             handler._flush_locked()
 
         mock_put.assert_not_called()
@@ -697,7 +746,7 @@ class TestJsonlLogHandler:
         for iteration in range(1, 3):
             handler.emit(create_log_record(message=f"application event: {iteration}"))
             with patch.object(
-                JsonlLogHandler, "_put_object", side_effect=exception
+                log.JsonlLogHandler, "_put_object", side_effect=exception
             ) as mock_put:
                 handler._flush_locked()
             assert handler._write_failures == iteration
@@ -708,7 +757,7 @@ class TestJsonlLogHandler:
             )
             assert len(handler._buffer) == iteration * 2
 
-        with patch.object(JsonlLogHandler, "_put_object") as mock_put:
+        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
             handler._flush_locked()
 
         mock_put.assert_called_once()
@@ -725,7 +774,7 @@ class TestJsonlLogHandler:
 
         for iteration in range(1, 4):
             handler.emit(create_log_record(message=f"application event: {iteration}"))
-            with patch.object(JsonlLogHandler, "_put_object", side_effect=OSError):
+            with patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError):
                 handler._flush_locked()
             assert handler._write_failures == iteration
             assert f"failure_count={iteration}" in capsys.readouterr().out
@@ -734,7 +783,7 @@ class TestJsonlLogHandler:
 
         handler.emit(create_log_record(message=f"application event: {iteration}"))
         with (
-            patch.object(JsonlLogHandler, "_put_object", side_effect=OSError),
+            patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError),
             pytest.raises(
                 RuntimeError, match="Have attempted to write JSONL logs 4 times"
             ),
@@ -787,14 +836,14 @@ class TestJsonlLogHandler:
 
 
 class TestLoggingController:
-    def create_controller(self) -> LoggingController:
+    def create_controller(self) -> log.LoggingController:
         logger = logging.getLogger()
         handler = create_handler(batch_size=5)
         logger.addHandler(handler)
         console_handler = logging.StreamHandler()
-        console_handler.set_name(_CONSOLE_HANDLER_NAME)
+        console_handler.set_name(log._CONSOLE_HANDLER_NAME)
         logger.addHandler(console_handler)
-        return LoggingController(logger)
+        return log.LoggingController(logger)
 
     def test_flush_success(self) -> None:
         """Test that the flush method calls the handler's _flush_locked method."""
@@ -802,7 +851,7 @@ class TestLoggingController:
         handler = next(
             handler
             for handler in controller._logger.handlers
-            if isinstance(handler, JsonlLogHandler)
+            if isinstance(handler, log.JsonlLogHandler)
         )
         with patch.object(handler, "_flush_locked") as mock_flush_locked:
             controller.flush()
@@ -819,13 +868,14 @@ class TestLoggingController:
     def test_shutdown_success(self) -> None:
         """Test that the shutdown method sets the _is_shutdown flag to True."""
         controller = self.create_controller()
-        with patch.object(JsonlLogHandler, "close") as mock_close:
+        with patch.object(log.JsonlLogHandler, "close") as mock_close:
             controller.shutdown()
 
         assert mock_close.call_count == 1  # Only checking the json handler
         assert controller._is_shutdown
         assert all(
-            handler.get_name() not in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}
+            handler.get_name()
+            not in {log._CONSOLE_HANDLER_NAME, log._JSONL_HANDLER_NAME}
             for handler in controller._logger.handlers
         )
 
@@ -833,7 +883,7 @@ class TestLoggingController:
         """Test that the shutdown method raises an error if logging has already been shut down."""
         controller = self.create_controller()
         controller._is_shutdown = True
-        with patch.object(JsonlLogHandler, "close") as mock_close:
+        with patch.object(log.JsonlLogHandler, "close") as mock_close:
             controller.shutdown()
 
         assert mock_close.call_count == 0
@@ -843,7 +893,7 @@ class TestLoggingController:
         controller = self.create_controller()
         with (
             patch.object(
-                JsonlLogHandler, "close", side_effect=RuntimeError
+                log.JsonlLogHandler, "close", side_effect=RuntimeError
             ) as mock_close,
             pytest.raises(RuntimeError),
         ):
@@ -852,7 +902,8 @@ class TestLoggingController:
         assert mock_close.call_count == 1
         assert not controller._is_shutdown
         assert all(
-            handler.get_name() not in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}
+            handler.get_name()
+            not in {log._CONSOLE_HANDLER_NAME, log._JSONL_HANDLER_NAME}
             for handler in controller._logger.handlers
         )
 
@@ -860,7 +911,7 @@ class TestLoggingController:
         """Test that exiting a `with` block normally shuts down logging."""
         controller = self.create_controller()
         with (
-            patch.object(JsonlLogHandler, "close") as mock_close,
+            patch.object(log.JsonlLogHandler, "close") as mock_close,
             controller,
         ):
             assert True
@@ -872,7 +923,7 @@ class TestLoggingController:
         """Test that a body exception still triggers shutdown and is not swallowed."""
         controller = self.create_controller()
         with (
-            patch.object(JsonlLogHandler, "close") as mock_close,
+            patch.object(log.JsonlLogHandler, "close") as mock_close,
             pytest.raises(ValueError, match="pipeline failed"),
             controller,
         ):
@@ -886,7 +937,7 @@ class TestLoggingController:
         controller = self.create_controller()
         with (
             patch.object(
-                JsonlLogHandler, "close", side_effect=RuntimeError("flush failed")
+                log.JsonlLogHandler, "close", side_effect=RuntimeError("flush failed")
             ),
             pytest.raises(RuntimeError, match="flush failed"),
             controller,
@@ -909,9 +960,9 @@ class TestConfigureLogging:
         athena_database_name: str = DEFAULT_ATHENA_DATABASE,
         athena_table_name: str = DEFAULT_ATHENA_TABLE,
         batch_size: int = 500,
-    ) -> LoggingController:
+    ) -> log.LoggingController:
         """Wrapper for the configure_logging function to simplify test calls."""
-        return configure_logging(
+        return log.configure_logging(
             pipeline=pipeline,
             data_delivery_period=data_delivery_period,
             attempt_no=attempt_no,
@@ -939,18 +990,18 @@ class TestConfigureLogging:
         handlers_by_name = {
             handler.get_name(): handler for handler in root_logger.handlers
         }
-        assert _JSONL_HANDLER_NAME in handlers_by_name
-        assert _CONSOLE_HANDLER_NAME in handlers_by_name
-        assert handlers_by_name[_CONSOLE_HANDLER_NAME].formatter._fmt == (  # type: ignore[union-attr]
+        assert log._JSONL_HANDLER_NAME in handlers_by_name
+        assert log._CONSOLE_HANDLER_NAME in handlers_by_name
+        assert handlers_by_name[log._CONSOLE_HANDLER_NAME].formatter._fmt == (  # type: ignore[union-attr]
             "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
         )
-        jsonl_handler = handlers_by_name[_JSONL_HANDLER_NAME]
-        assert isinstance(jsonl_handler, JsonlLogHandler)
+        jsonl_handler = handlers_by_name[log._JSONL_HANDLER_NAME]
+        assert isinstance(jsonl_handler, log.JsonlLogHandler)
         assert jsonl_handler._log_prefix == "custom/log-store"
         assert jsonl_handler._athena_prefix == "custom/logs/"
         assert jsonl_handler._db_name == "custom_log_database"
         assert jsonl_handler._table_name == "pipeline_events"
-        assert isinstance(controller, LoggingController)
+        assert isinstance(controller, log.LoggingController)
 
     @pytest.mark.parametrize(
         ("prefix_name", "invalid_prefix"),
@@ -967,7 +1018,10 @@ class TestConfigureLogging:
         """Reject full S3 URIs where bucket-relative prefixes are required."""
         with (
             patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client,
-            pytest.raises(ValueError, match=f"{prefix_name} must not include"),
+            pytest.raises(
+                exc.InvalidPrefixError,
+                match=f"s3 prefix '{prefix_name}' for storing logs must not include 's3://' or the bucket name.",
+            ),
         ):
             self.configure_logging_wrapper(**{prefix_name: invalid_prefix})  # type: ignore[arg-type]
 
@@ -1003,7 +1057,7 @@ class TestConfigureLogging:
         with pytest.raises(RuntimeError, match="Failed to prepare JSONL log location"):
             self.configure_logging_wrapper(bucket="does-not-exist")
 
-        assert _JSONL_HANDLER_NAME not in [
+        assert log._JSONL_HANDLER_NAME not in [
             handler.get_name() for handler in logging.getLogger().handlers
         ]
 
@@ -1011,41 +1065,43 @@ class TestConfigureLogging:
 class TestModuleLogger:
     def test_rejects_extra_model_fields(self) -> None:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            ModuleLogger.model_validate(
+            log.ModuleLogger.model_validate(
                 {
                     "logger": logging.getLogger("opg_pipeline_builder.test"),
+                    "process": "Logging",
                     "extra_field": "not allowed",
                 }
             )
 
-    def test_error(self) -> None:
+    def test_error_process_set(self) -> None:
         """Test that the error method logs an error message correctly."""
-        module_logger = ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test")
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.test"),
+            process="Logging",
         )
 
         with patch.object(logging.Logger, "error") as mock_error:
             module_logger.error("Test error message")
             module_logger.error(
                 "Another test error message",
-                process="Logging",
                 table="table",
                 field="field",
                 stage="Start",
             )
+
         assert mock_error.call_count == 2
         assert mock_error.call_args_list[0][0] == ("Test error message",)
         assert mock_error.call_args_list[0][1]["extra"] == {
-            "custom_fields": CustomLogFields(
-                process="N/A",
-                table="N/A",
-                field="N/A",
+            "custom_fields": log.CustomLogFields(
+                process="Logging",
+                table="",
+                field="",
                 process_stage="Processing",
             )
         }
         assert mock_error.call_args_list[1][0] == ("Another test error message",)
         assert mock_error.call_args_list[1][1]["extra"] == {
-            "custom_fields": CustomLogFields(
+            "custom_fields": log.CustomLogFields(
                 process="Logging",
                 table="table",
                 field="field",
@@ -1053,14 +1109,123 @@ class TestModuleLogger:
             )
         }
 
-    def test_info(self) -> None:
+    def test_error_process_not_set(self) -> None:
+        """Test that the error method logs an error message correctly."""
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.test"),
+        )
+
+        with patch.object(logging.Logger, "error") as mock_error:
+            module_logger.error("Test error message", process="Logging")
+            module_logger.error(
+                "Another test error message",
+                process="Logging",
+                table="table",
+                field="field",
+                stage="Start",
+            )
+
+        assert mock_error.call_count == 2
+        assert mock_error.call_args_list[0][0] == ("Test error message",)
+        assert mock_error.call_args_list[0][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Logging",
+                table="",
+                field="",
+                process_stage="Processing",
+            )
+        }
+        assert mock_error.call_args_list[1][0] == ("Another test error message",)
+        assert mock_error.call_args_list[1][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Logging",
+                table="table",
+                field="field",
+                process_stage="Start",
+            )
+        }
+
+    def test_error_process_changed(self) -> None:
+        """Test that the error method logs an error message correctly."""
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.test"),
+            process="Logging",
+        )
+
+        with patch.object(logging.Logger, "error") as mock_error:
+            module_logger.error("Test error message", process="Changed")
+            module_logger.error(
+                "Another test error message",
+                process="Changed",
+                table="table",
+                field="field",
+                stage="Start",
+            )
+
+        assert mock_error.call_count == 2
+        assert mock_error.call_args_list[0][0] == ("Test error message",)
+        assert mock_error.call_args_list[0][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Changed",
+                table="",
+                field="",
+                process_stage="Processing",
+            )
+        }
+        assert mock_error.call_args_list[1][0] == ("Another test error message",)
+        assert mock_error.call_args_list[1][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Changed",
+                table="table",
+                field="field",
+                process_stage="Start",
+            )
+        }
+
+    def test_info_process_set(self) -> None:
         """Test that the info method logs an info message correctly."""
-        module_logger = ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test")
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.test"),
+            process="Logging",
         )
 
         with patch.object(logging.Logger, "info") as mock_info:
             module_logger.info("Test info message")
+            module_logger.info(
+                "Another test info message",
+                table="table",
+                field="field",
+                stage="Start",
+            )
+
+        assert mock_info.call_count == 2
+        assert mock_info.call_args_list[0][0] == ("Test info message",)
+        assert mock_info.call_args_list[0][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Logging",
+                table="",
+                field="",
+                process_stage="Processing",
+            )
+        }
+        assert mock_info.call_args_list[1][0] == ("Another test info message",)
+        assert mock_info.call_args_list[1][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Logging",
+                table="table",
+                field="field",
+                process_stage="Start",
+            )
+        }
+
+    def test_info_process_not_set(self) -> None:
+        """Test that the info method logs an info message correctly."""
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.test"),
+        )
+
+        with patch.object(logging.Logger, "info") as mock_info:
+            module_logger.info("Test info message", process="Logging")
             module_logger.info(
                 "Another test info message",
                 process="Logging",
@@ -1068,20 +1233,57 @@ class TestModuleLogger:
                 field="field",
                 stage="Start",
             )
+
         assert mock_info.call_count == 2
         assert mock_info.call_args_list[0][0] == ("Test info message",)
         assert mock_info.call_args_list[0][1]["extra"] == {
-            "custom_fields": CustomLogFields(
-                process="N/A",
-                table="N/A",
-                field="N/A",
+            "custom_fields": log.CustomLogFields(
+                process="Logging",
+                table="",
+                field="",
                 process_stage="Processing",
             )
         }
         assert mock_info.call_args_list[1][0] == ("Another test info message",)
         assert mock_info.call_args_list[1][1]["extra"] == {
-            "custom_fields": CustomLogFields(
+            "custom_fields": log.CustomLogFields(
                 process="Logging",
+                table="table",
+                field="field",
+                process_stage="Start",
+            )
+        }
+
+    def test_info_process_changed(self) -> None:
+        """Test that the info method logs an info message correctly."""
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.test"), process="E2E test"
+        )
+
+        with patch.object(logging.Logger, "info") as mock_info:
+            module_logger.info("Test info message", process="Changed")
+            module_logger.info(
+                "Another test info message",
+                process="Changed",
+                table="table",
+                field="field",
+                stage="Start",
+            )
+
+        assert mock_info.call_count == 2
+        assert mock_info.call_args_list[0][0] == ("Test info message",)
+        assert mock_info.call_args_list[0][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Changed",
+                table="",
+                field="",
+                process_stage="Processing",
+            )
+        }
+        assert mock_info.call_args_list[1][0] == ("Another test info message",)
+        assert mock_info.call_args_list[1][1]["extra"] == {
+            "custom_fields": log.CustomLogFields(
+                process="Changed",
                 table="table",
                 field="field",
                 process_stage="Start",
@@ -1091,7 +1293,7 @@ class TestModuleLogger:
     def test_lazy_formatting_is_applied(self, s3: boto3.client) -> None:
         """Test that %s-style args passed through are lazily interpolated into the final message."""
 
-        _ = configure_logging(
+        _ = log.configure_logging(
             pipeline=DEFAULT_PIPELINE,
             data_delivery_period=DELIVERY_PERIOD,
             attempt_no=1,
@@ -1104,14 +1306,16 @@ class TestModuleLogger:
             batch_size=3,
         )
 
-        module_logger = ModuleLogger(logger=logging.getLogger("third_party.test"))
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("third_party.test"), process="E2E test"
+        )
         module_logger.info("Processed %s rows in %s seconds", 42, 1.5, table="table_a")
         module_logger.info("Processed %s rows in %s seconds", 42, 2.5, table="table_b")
 
         jsonl_handler = next(
             handler
             for handler in logging.getLogger().handlers
-            if isinstance(handler, JsonlLogHandler)
+            if isinstance(handler, log.JsonlLogHandler)
         )
 
         key = (
@@ -1119,15 +1323,15 @@ class TestModuleLogger:
             + f"{os.getpid()!s}_{jsonl_handler._writer_id}_0.jsonl"
         )
 
-        logs = read_jsonl_logs(
+        all_logs = read_jsonl_logs(
             s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
         )
-        log = logs[key]
+        test_log = all_logs[key]
 
-        assert log[1]["logger_name"] == "third_party.test"
-        assert log[2]["logger_name"] == "third_party.test"
-        assert "Processed 42 rows in 1.5 seconds" in log[1]["message"]
-        assert "Processed 42 rows in 2.5 seconds" in log[2]["message"]
+        assert test_log[1]["logger_name"] == "third_party.test"
+        assert test_log[2]["logger_name"] == "third_party.test"
+        assert "Processed 42 rows in 1.5 seconds" in test_log[1]["message"]
+        assert "Processed 42 rows in 2.5 seconds" in test_log[2]["message"]
 
 
 class TestLoggingEndToEnd:
@@ -1166,9 +1370,9 @@ class TestLoggingEndToEnd:
         pipeline: str = DEFAULT_PIPELINE,
         attempt_no: int = 1,
         run_id: str = RUN_ID,
-    ) -> tuple[LoggingController, JsonlLogHandler]:
+    ) -> tuple[log.LoggingController, log.JsonlLogHandler]:
         """Configure logging and return the controller plus the underlying JSONL handler."""
-        controller = configure_logging(
+        controller = log.configure_logging(
             pipeline=pipeline,
             data_delivery_period=DELIVERY_PERIOD,
             attempt_no=attempt_no,
@@ -1183,17 +1387,12 @@ class TestLoggingEndToEnd:
         jsonl_handler = next(
             handler
             for handler in controller._logger.handlers
-            if isinstance(handler, JsonlLogHandler)
+            if isinstance(handler, log.JsonlLogHandler)
         )
         return controller, jsonl_handler
 
     def expected_object_key(
-        self,
-        jsonl_handler: JsonlLogHandler,
-        part_number: int,
-        *,
-        attempt_no: int = 1,
-        run_id: str = RUN_ID,
+        self, jsonl_handler: log.JsonlLogHandler, part_number: int
     ) -> str:
         """Build the expected S3 key for a given part number."""
         return (
@@ -1209,9 +1408,9 @@ class TestLoggingEndToEnd:
         function: str,
         line_number: int,
         log_level: str,
-        process: str = "N/A",
-        table: str = "N/A",
-        field: str = "N/A",
+        process: str = "",
+        table: str = "",
+        field: str = "",
         process_stage: str = "Processing",
         message: str,
         pipeline: str = DEFAULT_PIPELINE,
@@ -1247,11 +1446,13 @@ class TestLoggingEndToEnd:
 
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=4)
-            extract_logger = ModuleLogger(
-                logger=logging.getLogger(f"{logging.getLogger().name}.extract")
+            extract_logger = log.ModuleLogger(
+                logger=logging.getLogger(f"{logging.getLogger().name}.extract"),
+                process="E2E test",
             )
-            load_logger = ModuleLogger(
-                logger=logging.getLogger(f"{logging.getLogger().name}.load")
+            load_logger = log.ModuleLogger(
+                logger=logging.getLogger(f"{logging.getLogger().name}.load"),
+                process="E2E test",
             )
 
             # These three records bring the buffer (which already holds the config log) to the
@@ -1273,14 +1474,14 @@ class TestLoggingEndToEnd:
             controller.flush()
 
             line_6 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            load_logger.info("Load finished", table="table_a", field="N/A", stage="End")
+            load_logger.info("Load finished", table="table_a", field="", stage="End")
 
             controller.shutdown()
 
         root_logger = logging.getLogger()
         assert jsonl_handler not in root_logger.handlers
         assert all(
-            handler.get_name() != _CONSOLE_HANDLER_NAME
+            handler.get_name() != log._CONSOLE_HANDLER_NAME
             for handler in root_logger.handlers
         )
         assert controller._is_shutdown is True
@@ -1310,9 +1511,10 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_1,
                 log_level="INFO",
+                process="E2E test",
                 process_stage="Start",
                 table="table_a",
-                field="N/A",
+                field="",
                 message="Extract started",
             ),
             self.base_row(
@@ -1321,6 +1523,7 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_2,
                 log_level="INFO",
+                process="E2E test",
                 process_stage="Processing",
                 table="table_a",
                 field="col_a",
@@ -1332,9 +1535,10 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_3,
                 log_level="INFO",
+                process="E2E test",
                 process_stage="Start",
                 table="table_a",
-                field="N/A",
+                field="",
                 message="Load started",
             ),
         ]
@@ -1345,6 +1549,7 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_4,
                 log_level="INFO",
+                process="E2E test",
                 process_stage="Processing",
                 table="table_a",
                 field="col_a",
@@ -1356,6 +1561,7 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_5,
                 log_level="ERROR",
+                process="E2E test",
                 process_stage="Processing",
                 table="table_a",
                 field="col_a",
@@ -1369,9 +1575,10 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_6,
                 log_level="INFO",
+                process="E2E test",
                 process_stage="End",
                 table="table_a",
-                field="N/A",
+                field="",
                 message="Load finished",
             ),
         ]
@@ -1407,9 +1614,9 @@ class TestLoggingEndToEnd:
             console_handler = next(
                 handler
                 for handler in controller._logger.handlers
-                if handler.get_name() == _CONSOLE_HANDLER_NAME
+                if handler.get_name() == log._CONSOLE_HANDLER_NAME
             )
-            pipeline_logger = ModuleLogger(
+            pipeline_logger = log.ModuleLogger(
                 logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
             )
 
@@ -1418,11 +1625,19 @@ class TestLoggingEndToEnd:
                     assert entered is controller
                     line_1 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
                     pipeline_logger.info(
-                        "Pipeline started", table="table_a", stage="Start"
+                        "Pipeline started",
+                        process="E2E test",
+                        table="table_a",
+                        stage="Start",
                     )
             else:
                 line_1 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-                pipeline_logger.info("Pipeline started", table="table_a", stage="Start")
+                pipeline_logger.info(
+                    "Pipeline started",
+                    process="E2E test",
+                    table="table_a",
+                    stage="Start",
+                )
                 logging.shutdown()
 
         root_logger = logging.getLogger()
@@ -1452,9 +1667,10 @@ class TestLoggingEndToEnd:
                 function=function_name,
                 line_number=line_1,
                 log_level="INFO",
+                process="E2E test",
                 process_stage="Start",
                 table="table_a",
-                field="N/A",
+                field="",
                 message="Pipeline started",
             ),
         ]
@@ -1475,13 +1691,15 @@ class TestLoggingEndToEnd:
 
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
-            pipeline_logger = ModuleLogger(
+            pipeline_logger = log.ModuleLogger(
                 logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
             )
-            pipeline_logger.info("Pipeline started", table="table_a", stage="Start")
+            pipeline_logger.info(
+                "Pipeline started", process="E2E test", table="table_a", stage="Start"
+            )
 
             with (
-                patch.object(JsonlLogHandler, "_put_object", side_effect=OSError()),
+                patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError()),
                 pytest.raises(RuntimeError, match="Failed to write"),
             ):
                 if trigger == "context_manager":
@@ -1509,12 +1727,14 @@ class TestLoggingEndToEnd:
         """
 
         controller, jsonl_handler = self.configure(batch_size=100)
-        pipeline_logger = ModuleLogger(
+        pipeline_logger = log.ModuleLogger(
             logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
         )
-        pipeline_logger.info("Started processing", table="table_a", stage="Start")
+        pipeline_logger.info(
+            "Started processing", process="E2E test", table="table_a", stage="Start"
+        )
 
-        with patch.object(JsonlLogHandler, "_put_object", side_effect=OSError()):
+        with patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError()):
             # A transient failure is recoverable - controller.flush() just records it.
             controller.flush()
             assert jsonl_handler._write_failures == 1
@@ -1559,10 +1779,11 @@ class TestLoggingEndToEnd:
             controller, jsonl_handler = self.configure(batch_size=4)
 
             def worker(worker_number: int) -> None:
-                worker_logger = ModuleLogger(
+                worker_logger = log.ModuleLogger(
                     logger=logging.getLogger(
                         f"{logging.getLogger().name}.worker_{worker_number}"
-                    )
+                    ),
+                    process="E2E test",
                 )
                 for message_number in range(messages_per_worker):
                     worker_logger.info(
@@ -1622,6 +1843,7 @@ class TestLoggingEndToEnd:
                     if record["message"] == "worker-0-0"
                 ),
                 log_level="INFO",
+                process="E2E test",
                 process_stage="Processing",
                 table="table_a",
                 message="worker-0-0",
@@ -1676,23 +1898,33 @@ class TestLoggingEndToEnd:
                 batch_size=10, attempt_no=1
             )
             with first_controller:
-                ModuleLogger(
+                log.ModuleLogger(
                     logger=logging.getLogger(f"{logging.getLogger().name}.attempt")
-                ).info("First attempt processing", table="table_a", stage="Start")
+                ).info(
+                    "First attempt processing",
+                    process="E2E test",
+                    table="table_a",
+                    stage="Start",
+                )
 
             second_controller, second_handler = self.configure(
                 batch_size=10, attempt_no=2
             )
             with second_controller:
-                ModuleLogger(
+                log.ModuleLogger(
                     logger=logging.getLogger(f"{logging.getLogger().name}.attempt")
-                ).info("Second attempt processing", table="table_a", stage="Start")
+                ).info(
+                    "Second attempt processing",
+                    process="E2E test",
+                    table="table_a",
+                    stage="Start",
+                )
 
         logs = read_jsonl_logs(
             s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
         )
-        first_key = self.expected_object_key(first_handler, 0, attempt_no=1)
-        second_key = self.expected_object_key(second_handler, 0, attempt_no=2)
+        first_key = self.expected_object_key(first_handler, 0)
+        second_key = self.expected_object_key(second_handler, 0)
         assert set(logs) == {first_key, second_key}
 
         assert [record["message"] for record in logs[first_key]] == [

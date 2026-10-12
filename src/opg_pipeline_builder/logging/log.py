@@ -11,15 +11,17 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
+from opg_pipeline_builder.logging import log_exceptions as exc
+
 _JSONL_HANDLER_NAME = "json_handler"
 _CONSOLE_HANDLER_NAME = "console_handler"
 
 
 def _validate_s3_prefix(prefix: str, prefix_name: str, bucket: str) -> None:
-    """Require a bucket-relative S3 key prefix."""
+    """Check that the provided prefix does not contain 's3://' or the bucket name."""
     if "s3://" in prefix.lower() or bucket in prefix:
-        raise ValueError(
-            f"{prefix_name} must not include 's3://' or bucket '{bucket}'."
+        raise exc.InvalidPrefixError(
+            f"s3 prefix '{prefix_name}' for storing logs must not include 's3://' or the bucket name."
         )
 
 
@@ -37,11 +39,19 @@ class CustomLogFields(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("process")
+    @classmethod
+    def validate_process(cls, value: str) -> str:
+        """Validate that the 'process' field is non-empty."""
+        if not value or not value.strip():
+            raise exc.InvalidProcessError("Field 'process' must have a value")
+        return value
+
 
 class StructuredLogRecord(BaseModel):
     """Pydantic model representing a structured log record written to JSONL.
 
-    This is the definitive definition of a valid log record. It receives data from the logger.record object,
+    This is the definition of a valid log record. It receives data from the logger.record object,
     the CustomLogFields values and pipeline/run values stored in the JSONL handler via the configuration.
     """
 
@@ -167,8 +177,8 @@ class JsonlLogHandler(logging.Handler):
                 log_level="INFO",
                 log_timestamp=datetime.now(tz=UTC),
                 process="Configuration",
-                table="N/A",
-                field="N/A",
+                table="",
+                field="",
                 process_stage="End",
                 message="Logging configured successfully.",
             ).model_dump(mode="json")
@@ -484,6 +494,7 @@ class ModuleLogger(BaseModel):
     """Model to validate that all required custom fields have been provided."""
 
     logger: logging.Logger
+    process: str | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
@@ -491,14 +502,17 @@ class ModuleLogger(BaseModel):
         self,
         message: str,
         *args: object,
-        process: str = "N/A",
-        table: str = "N/A",
-        field: str = "N/A",
+        process: str | None = None,
+        table: str = "",
+        field: str = "",
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation error with structured context."""
         custom_fields = CustomLogFields(
-            process=process, table=table, field=field, process_stage=stage
+            process=process if process is not None else self.process,
+            table=table,
+            field=field,
+            process_stage=stage,
         )
 
         self.logger.error(
@@ -512,14 +526,17 @@ class ModuleLogger(BaseModel):
         self,
         message: str,
         *args: object,
-        process: str = "N/A",
-        table: str = "N/A",
-        field: str = "N/A",
+        process: str | None = None,
+        table: str = "",
+        field: str = "",
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation event with structured context."""
         custom_fields = CustomLogFields(
-            process=process, table=table, field=field, process_stage=stage
+            process=process if process is not None else self.process,
+            table=table,
+            field=field,
+            process_stage=stage,
         )
         self.logger.info(
             message,

@@ -32,8 +32,20 @@ def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
         run_config.curated_path
         == "s3://bucket-name/test/test_pipeline/curated/table-name"
     )
-    assert_log_record(caplog, "Creating run config", table="run_config", stage="Start")
-    assert_log_record(caplog, "Run config created", table="run_config", stage="End")
+    assert_log_record(
+        caplog,
+        "Creating run config",
+        process="Run validation",
+        table="run_config",
+        stage="Start",
+    )
+    assert_log_record(
+        caplog,
+        "Run config created",
+        process="Run validation",
+        table="run_config",
+        stage="End",
+    )
 
 
 def test_create_run_config_mismatched_pipeline_name(
@@ -56,9 +68,17 @@ def test_create_run_config_mismatched_pipeline_name(
     ):
         create_run_config(pipeline=pipeline, settings=settings)
 
-    assert_log_record(caplog, "Creating run config", table="run_config", stage="Start")
+    assert_log_record(
+        caplog,
+        "Creating run config",
+        process="Run validation",
+        table="run_config",
+        stage="Start",
+    )
     assert_log_record(
         caplog,
         "Pipeline name 'wrong_pipeline' does not match settings PIPELINE_NAME 'test_pipeline'",
+        process="Run validation",
         table="run_config",
+        stage="Processing",
     )

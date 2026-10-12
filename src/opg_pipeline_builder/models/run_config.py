@@ -7,7 +7,7 @@ from opg_pipeline_builder.models.pipeline_config import PipelineConfig
 from opg_pipeline_builder.models.settings_config import SettingsConfig
 from opg_pipeline_builder.models.utils import render_s3_path
 
-log = ModuleLogger(logger=getLogger(__name__))
+log = ModuleLogger(logger=getLogger(__name__), process="Run validation")
 
 
 class RunConfig(BaseModel):

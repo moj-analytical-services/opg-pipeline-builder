@@ -495,22 +495,29 @@ class ModuleLogger(BaseModel):
 
     logger: logging.Logger
     process: str | None = None
+    table: str | None = None
 
-    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        extra="forbid", arbitrary_types_allowed=True, validate_assignment=True
+    )
+
+    def set_table(self, table: str) -> None:
+        """Set the table name for the logger."""
+        self.table = table
 
     def error(
         self,
         message: str,
         *args: object,
         process: str | None = None,
-        table: str = "",
+        table: str | None = None,
         field: str = "",
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation error with structured context."""
         custom_fields = CustomLogFields(
             process=process if process is not None else self.process,
-            table=table,
+            table=table if table is not None else self.table,
             field=field,
             process_stage=stage,
         )
@@ -527,14 +534,14 @@ class ModuleLogger(BaseModel):
         message: str,
         *args: object,
         process: str | None = None,
-        table: str = "",
+        table: str | None = None,
         field: str = "",
         stage: Literal["Start", "Processing", "End"] = "Processing",
     ) -> None:
         """Log a metadata validation event with structured context."""
         custom_fields = CustomLogFields(
             process=process if process is not None else self.process,
-            table=table,
+            table=table if table is not None else self.table,
             field=field,
             process_stage=stage,
         )

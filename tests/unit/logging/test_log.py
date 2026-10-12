@@ -1069,22 +1069,23 @@ class TestModuleLogger:
                 {
                     "logger": logging.getLogger("opg_pipeline_builder.test"),
                     "process": "Logging",
+                    "table": "Logger",
                     "extra_field": "not allowed",
                 }
             )
 
-    def test_error_process_set(self) -> None:
+    def test_error_args_set_in_module_logger(self) -> None:
         """Test that the error method logs an error message correctly."""
         module_logger = log.ModuleLogger(
             logger=logging.getLogger("opg_pipeline_builder.test"),
             process="Logging",
+            table="Logger",
         )
 
         with patch.object(logging.Logger, "error") as mock_error:
             module_logger.error("Test error message")
             module_logger.error(
                 "Another test error message",
-                table="table",
                 field="field",
                 stage="Start",
             )
@@ -1094,7 +1095,7 @@ class TestModuleLogger:
         assert mock_error.call_args_list[0][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="",
+                table="Logger",
                 field="",
                 process_stage="Processing",
             )
@@ -1103,24 +1104,24 @@ class TestModuleLogger:
         assert mock_error.call_args_list[1][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="table",
+                table="Logger",
                 field="field",
                 process_stage="Start",
             )
         }
 
-    def test_error_process_not_set(self) -> None:
+    def test_error_args_not_set_in_module_logger(self) -> None:
         """Test that the error method logs an error message correctly."""
         module_logger = log.ModuleLogger(
             logger=logging.getLogger("opg_pipeline_builder.test"),
         )
 
         with patch.object(logging.Logger, "error") as mock_error:
-            module_logger.error("Test error message", process="Logging")
+            module_logger.error("Test error message", process="Logging", table="Logger")
             module_logger.error(
                 "Another test error message",
                 process="Logging",
-                table="table",
+                table="Logger",
                 field="field",
                 stage="Start",
             )
@@ -1130,7 +1131,7 @@ class TestModuleLogger:
         assert mock_error.call_args_list[0][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="",
+                table="Logger",
                 field="",
                 process_stage="Processing",
             )
@@ -1139,7 +1140,7 @@ class TestModuleLogger:
         assert mock_error.call_args_list[1][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="table",
+                table="Logger",
                 field="field",
                 process_stage="Start",
             )
@@ -1150,14 +1151,17 @@ class TestModuleLogger:
         module_logger = log.ModuleLogger(
             logger=logging.getLogger("opg_pipeline_builder.test"),
             process="Logging",
+            table="Logger",
         )
 
         with patch.object(logging.Logger, "error") as mock_error:
-            module_logger.error("Test error message", process="Changed")
+            module_logger.error(
+                "Test error message", process="Changed", table="Logger_changed"
+            )
             module_logger.error(
                 "Another test error message",
                 process="Changed",
-                table="table",
+                table="Logger_changed",
                 field="field",
                 stage="Start",
             )
@@ -1167,7 +1171,7 @@ class TestModuleLogger:
         assert mock_error.call_args_list[0][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Changed",
-                table="",
+                table="Logger_changed",
                 field="",
                 process_stage="Processing",
             )
@@ -1176,24 +1180,24 @@ class TestModuleLogger:
         assert mock_error.call_args_list[1][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Changed",
-                table="table",
+                table="Logger_changed",
                 field="field",
                 process_stage="Start",
             )
         }
 
-    def test_info_process_set(self) -> None:
+    def test_info_args_set_in_module_logger(self) -> None:
         """Test that the info method logs an info message correctly."""
         module_logger = log.ModuleLogger(
             logger=logging.getLogger("opg_pipeline_builder.test"),
             process="Logging",
+            table="Logger",
         )
 
         with patch.object(logging.Logger, "info") as mock_info:
             module_logger.info("Test info message")
             module_logger.info(
                 "Another test info message",
-                table="table",
                 field="field",
                 stage="Start",
             )
@@ -1203,7 +1207,7 @@ class TestModuleLogger:
         assert mock_info.call_args_list[0][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="",
+                table="Logger",
                 field="",
                 process_stage="Processing",
             )
@@ -1212,24 +1216,24 @@ class TestModuleLogger:
         assert mock_info.call_args_list[1][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="table",
+                table="Logger",
                 field="field",
                 process_stage="Start",
             )
         }
 
-    def test_info_process_not_set(self) -> None:
+    def test_info_args_not_set_in_module_logger(self) -> None:
         """Test that the info method logs an info message correctly."""
         module_logger = log.ModuleLogger(
             logger=logging.getLogger("opg_pipeline_builder.test"),
         )
 
         with patch.object(logging.Logger, "info") as mock_info:
-            module_logger.info("Test info message", process="Logging")
+            module_logger.info("Test info message", process="Logging", table="Logger")
             module_logger.info(
                 "Another test info message",
                 process="Logging",
-                table="table",
+                table="Logger",
                 field="field",
                 stage="Start",
             )
@@ -1239,7 +1243,7 @@ class TestModuleLogger:
         assert mock_info.call_args_list[0][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="",
+                table="Logger",
                 field="",
                 process_stage="Processing",
             )
@@ -1248,7 +1252,7 @@ class TestModuleLogger:
         assert mock_info.call_args_list[1][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Logging",
-                table="table",
+                table="Logger",
                 field="field",
                 process_stage="Start",
             )
@@ -1257,15 +1261,19 @@ class TestModuleLogger:
     def test_info_process_changed(self) -> None:
         """Test that the info method logs an info message correctly."""
         module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"), process="E2E test"
+            logger=logging.getLogger("opg_pipeline_builder.test"),
+            process="Logging",
+            table="Logger",
         )
 
         with patch.object(logging.Logger, "info") as mock_info:
-            module_logger.info("Test info message", process="Changed")
+            module_logger.info(
+                "Test info message", process="Changed", table="Logger_changed"
+            )
             module_logger.info(
                 "Another test info message",
                 process="Changed",
-                table="table",
+                table="Logger_changed",
                 field="field",
                 stage="Start",
             )
@@ -1275,7 +1283,7 @@ class TestModuleLogger:
         assert mock_info.call_args_list[0][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Changed",
-                table="",
+                table="Logger_changed",
                 field="",
                 process_stage="Processing",
             )
@@ -1284,7 +1292,7 @@ class TestModuleLogger:
         assert mock_info.call_args_list[1][1]["extra"] == {
             "custom_fields": log.CustomLogFields(
                 process="Changed",
-                table="table",
+                table="Logger_changed",
                 field="field",
                 process_stage="Start",
             )
@@ -1449,32 +1457,34 @@ class TestLoggingEndToEnd:
             extract_logger = log.ModuleLogger(
                 logger=logging.getLogger(f"{logging.getLogger().name}.extract"),
                 process="E2E test",
+                table="E2E table",
             )
             load_logger = log.ModuleLogger(
                 logger=logging.getLogger(f"{logging.getLogger().name}.load"),
                 process="E2E test",
+                table="E2E table",
             )
 
             # These three records bring the buffer (which already holds the config log) to the
             # batch_size of 3, triggering an automatic flush.
             line_1 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            extract_logger.info("Extract started", table="table_a", stage="Start")
+            extract_logger.info("Extract started", stage="Start")
             line_2 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            extract_logger.info("Extract row", table="table_a", field="col_a")
+            extract_logger.info("Extract row", field="col_a")
             line_3 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            load_logger.info("Load started", table="table_a", stage="Start")
+            load_logger.info("Load started", stage="Start")
 
             # These two records stay below the threshold, so nothing is flushed automatically.
             line_4 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            load_logger.info("Loading field", table="table_a", field="col_a")
+            load_logger.info("Loading field", field="col_a")
             line_5 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            load_logger.error("Load validation failed", table="table_a", field="col_a")
+            load_logger.error("Load validation failed", field="col_a")
 
             # A deliberate manual flush uploads the buffered records without closing anything.
             controller.flush()
 
             line_6 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            load_logger.info("Load finished", table="table_a", field="", stage="End")
+            load_logger.info("Load finished", field="", stage="End")
 
             controller.shutdown()
 
@@ -1513,7 +1523,7 @@ class TestLoggingEndToEnd:
                 log_level="INFO",
                 process="E2E test",
                 process_stage="Start",
-                table="table_a",
+                table="E2E table",
                 field="",
                 message="Extract started",
             ),
@@ -1525,7 +1535,7 @@ class TestLoggingEndToEnd:
                 log_level="INFO",
                 process="E2E test",
                 process_stage="Processing",
-                table="table_a",
+                table="E2E table",
                 field="col_a",
                 message="Extract row",
             ),
@@ -1537,7 +1547,7 @@ class TestLoggingEndToEnd:
                 log_level="INFO",
                 process="E2E test",
                 process_stage="Start",
-                table="table_a",
+                table="E2E table",
                 field="",
                 message="Load started",
             ),
@@ -1551,7 +1561,7 @@ class TestLoggingEndToEnd:
                 log_level="INFO",
                 process="E2E test",
                 process_stage="Processing",
-                table="table_a",
+                table="E2E table",
                 field="col_a",
                 message="Loading field",
             ),
@@ -1563,7 +1573,7 @@ class TestLoggingEndToEnd:
                 log_level="ERROR",
                 process="E2E test",
                 process_stage="Processing",
-                table="table_a",
+                table="E2E table",
                 field="col_a",
                 message="Load validation failed",
             ),
@@ -1577,7 +1587,7 @@ class TestLoggingEndToEnd:
                 log_level="INFO",
                 process="E2E test",
                 process_stage="End",
-                table="table_a",
+                table="E2E table",
                 field="",
                 message="Load finished",
             ),

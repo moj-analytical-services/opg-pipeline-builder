@@ -65,3 +65,12 @@ class DuplicateFileFormatStagesError(Exception):
     def __init__(self, error: str):
         super().__init__(error)
         self.error = error
+
+
+# SETTINGS EXCEPTIONS
+
+
+class InvalidEnvironmentError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error

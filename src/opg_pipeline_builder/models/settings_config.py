@@ -6,10 +6,11 @@ from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from opg_pipeline_builder.constants import ALLOWED_ENVS
-from opg_pipeline_builder.logging.log import ModuleLogger
+from opg_pipeline_builder.logging import ModuleLogger
+from opg_pipeline_builder.models.modelling_exceptions import InvalidEnvironmentError
 from opg_pipeline_builder.models.utils import field_name
 
-log = ModuleLogger(logger=getLogger(__name__))
+log = ModuleLogger(logger=getLogger(__name__), process="Settings validation")
 
 
 class SettingsConfig(BaseSettings):
@@ -30,6 +31,6 @@ class SettingsConfig(BaseSettings):
         """Validate that the environment is one of the allowed environments."""
         if value not in ALLOWED_ENVS:
             err = f"ENV must be one of {', '.join(ALLOWED_ENVS)}"
-            log.error(err, table="settings_config", field=field_name(info))
-            raise ValueError(err)
+            log.error(err, table="settings", field=field_name(info))
+            raise InvalidEnvironmentError(err)
         return value

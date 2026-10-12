@@ -3,6 +3,7 @@ import os
 import pytest
 
 from opg_pipeline_builder.constants import ALLOWED_ENVS
+from opg_pipeline_builder.models.modelling_exceptions import InvalidEnvironmentError
 from opg_pipeline_builder.models.settings_config import SettingsConfig
 from tests.test_utils import assert_log_record
 
@@ -24,13 +25,15 @@ def test_settings_config_env_invalid(
     os.environ["ENV"] = env
     os.environ["PIPELINE_NAME"] = "test_pipeline"
     with pytest.raises(
-        ValueError, match=f"ENV must be one of {', '.join(ALLOWED_ENVS)}"
+        InvalidEnvironmentError, match=f"ENV must be one of {', '.join(ALLOWED_ENVS)}"
     ):
         SettingsConfig()
 
     assert_log_record(
         caplog,
         f"ENV must be one of {', '.join(ALLOWED_ENVS)}",
-        table="settings_config",
+        process="Settings validation",
+        table="settings",
         field="ENV",
+        stage="Processing",
     )

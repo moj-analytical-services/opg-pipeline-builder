@@ -127,8 +127,9 @@ def output_yaml_data(filepath: Path, data: dict[Any, Any]) -> None:
 def assert_log_record(
     caplog: pytest.LogCaptureFixture,
     message: str,
-    table: str = "N/A",
-    field: str = "N/A",
+    process: str,
+    table: str = "",
+    field: str = "",
     stage: Literal["Start", "Processing", "End"] = "Processing",
 ) -> None:
     """Assert that a log message has the expected structured metadata."""
@@ -136,7 +137,8 @@ def assert_log_record(
     if not record:
         raise AssertionError(f"Log message '{message}' not found")
     assert record.__dict__["custom_fields"] == CustomLogFields(
-        process_stage=stage,
+        process=process,
         table=table,
         field=field,
+        process_stage=stage,
     )

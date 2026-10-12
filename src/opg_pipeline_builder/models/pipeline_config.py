@@ -16,7 +16,7 @@ from opg_pipeline_builder.validation.validators import (
     is_valid_s3_path_template,
 )
 
-log = ModuleLogger(logger=getLogger(__name__))
+log = ModuleLogger(logger=getLogger(__name__), process="Pipeline validation")
 
 
 class PipelineConfig(BaseModel):
@@ -41,7 +41,8 @@ class PipelineConfig(BaseModel):
         """Validate the pipeline name is a valid SQL/Athena identifier."""
         err = is_valid_identifier(value)
         if err:
-            log.error(err, table="pipeline_config", field=field_name(info))
+            err = f"Pipeline name '{value}' is invalid: {err}."
+            log.error(err, table="pipeline", field=field_name(info))
             raise exc.InvalidPipelineNameError(err)
 
         return value
@@ -52,7 +53,8 @@ class PipelineConfig(BaseModel):
         """Validate the land, archive, and curated paths."""
         err = is_valid_s3_path_template(value, field_name(info))
         if err:
-            log.error(err, table="pipeline_config", field=field_name(info))
+            err = f"S3 path for field '{field_name(info)}' is invalid: {err}."
+            log.error(err, table="pipeline", field=field_name(info))
             raise exc.InvalidPathError(err)
 
         return value

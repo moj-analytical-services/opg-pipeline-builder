@@ -14,13 +14,10 @@ from pydantic import (
     Field,
     ValidationInfo,
     field_validator,
-    model_validator,
 )
 
 from opg_pipeline_builder.logging import logging_utils as u
-from opg_pipeline_builder.validation.validators import is_valid_identifier
 
-PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
 
@@ -187,7 +184,7 @@ class JsonlLogHandler(logging.Handler):
                 run_id=self._config.run_id,
                 data_delivery_period=self._config.data_delivery_period,
                 attempt_no=self._config.attempt_no,
-                logger_name=PACKAGE_LOGGER_NAME,
+                logger_name=logging.getLogger().name,
                 module="opg_pipeline_builder.logging.log",
                 function="configure_logging",
                 line_number=sys._getframe().f_lineno,
@@ -283,7 +280,7 @@ class JsonlLogHandler(logging.Handler):
                     run_id=self._config.run_id,
                     data_delivery_period=self._config.data_delivery_period,
                     attempt_no=self._config.attempt_no,
-                    logger_name=PACKAGE_LOGGER_NAME,
+                    logger_name=logging.getLogger().name,
                     module="opg_pipeline_builder.logging.log",
                     function="_flush_locked",
                     line_number=sys._getframe().f_lineno,
@@ -428,13 +425,13 @@ def configure_logging(
         ValueError: If the batch size is less than 1.
         RuntimeError: If the logger has already been configured.
     """
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
-    package_logger.setLevel(logging.INFO)
-    package_logger.propagate = False
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.propagate = False
 
     if any(
         handler.get_name() in [_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME]
-        for handler in package_logger.handlers
+        for handler in root_logger.handlers
     ):
         raise RuntimeError(
             "Logger has already been configured. This should only be done once per process."
@@ -460,11 +457,11 @@ def configure_logging(
             datefmt="%Y-%m-%d %H:%M:%S",
         )
     )
-    package_logger.addHandler(stream_handler)
+    root_logger.addHandler(stream_handler)
     jsonl_handler.set_name(_JSONL_HANDLER_NAME)
-    package_logger.addHandler(jsonl_handler)
+    root_logger.addHandler(jsonl_handler)
 
-    return LoggingController(package_logger)
+    return LoggingController(root_logger)
 
 
 class ModuleLogger(BaseModel):

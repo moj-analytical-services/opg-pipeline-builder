@@ -13,7 +13,6 @@ import weakref
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
-from contextlib import nullcontext as does_not_raise
 from datetime import UTC, datetime, timedelta, timezone
 from threading import Barrier, Event, Thread, current_thread
 from typing import Any
@@ -40,9 +39,7 @@ DEFAULT_ATHENA_PREFIX = "prefix/to/log/curated/"
 DEFAULT_ATHENA_DATABASE = "opg_test_logging"
 DEFAULT_ATHENA_TABLE = "test_logging_curated"
 DEFAULT_PIPELINE = "test_pipeline"
-DEFAULT_BATCH_SIZE = 500
-SMALL_BATCH_SIZE = 5
-CUSTOM_TEST_BATCH_SIZE = 2
+DEFAULT_BATCH_SIZE = 5  # Shared test default unless a specific threshold is under test.
 BUFFER_ROWS_AFTER_WARNING = 2
 FLUSH_THRESHOLD = 3
 FIRST_BATCH_RECORD_COUNT = 4
@@ -85,10 +82,8 @@ def config_values(**overrides: Any) -> dict[str, Any]:
 def create_handler(
     *, apply_patches: bool = True, **overrides: Any
 ) -> log.JsonlLogHandler:
-    """Create a handler, optionally suppressing preflight and the configuration row."""
-    config = log.LoggingConfig.model_validate(
-        config_values(**{"batch_size": 2, **overrides})
-    )
+    """Create a handler with a small test batch, optionally suppressing startup work."""
+    config = log.LoggingConfig.model_validate(config_values(**overrides))
     with (
         (
             patch.object(log.JsonlLogHandler, "_validate_log_location")
@@ -377,11 +372,11 @@ class TestStructuredLogRecord:
     @pytest.mark.parametrize(
         ("log_level", "expectation"),
         [
-            ("DEBUG", does_not_raise()),
-            ("INFO", does_not_raise()),
-            ("WARNING", does_not_raise()),
-            ("ERROR", does_not_raise()),
-            ("CRITICAL", does_not_raise()),
+            ("DEBUG", nullcontext()),
+            ("INFO", nullcontext()),
+            ("WARNING", nullcontext()),
+            ("ERROR", nullcontext()),
+            ("CRITICAL", nullcontext()),
             ("TRACE", pytest.raises(ValidationError)),
             ("info", pytest.raises(ValidationError)),
             ("", pytest.raises(ValidationError)),
@@ -465,11 +460,9 @@ class TestJsonlLogHandler:
             patch.object(log.JsonlLogHandler, "_write_configuration_log") as mock_write,
         ):
             handler = create_handler(apply_patches=False)
-            assert handler._config.model_dump() == config_values(
-                batch_size=CUSTOM_TEST_BATCH_SIZE
-            )
-            assert handler._batch_size == CUSTOM_TEST_BATCH_SIZE
-            assert handler._base_batch_size == CUSTOM_TEST_BATCH_SIZE
+            assert handler._config.model_dump() == config_values()
+            assert handler._batch_size == DEFAULT_BATCH_SIZE
+            assert handler._base_batch_size == DEFAULT_BATCH_SIZE
             assert handler._part_number == 0
             assert handler._writer_id
             assert handler._buffer == []
@@ -594,19 +587,19 @@ class TestJsonlLogHandler:
         ("logger_name", "custom_fields", "expectation", "written"),
         [
             # No custom fields: skipped (console only), whatever the namespace.
-            ("opg_pipeline_builder.models.x", "missing", does_not_raise(), False),
-            ("consumer_repo.etl", "missing", does_not_raise(), False),
-            ("urllib3.connectionpool", "missing", does_not_raise(), False),
-            ("root", "missing", does_not_raise(), False),
-            ("consumer_repo.etl", None, does_not_raise(), False),
+            ("opg_pipeline_builder.models.x", "missing", nullcontext(), False),
+            ("consumer_repo.etl", "missing", nullcontext(), False),
+            ("urllib3.connectionpool", "missing", nullcontext(), False),
+            ("root", "missing", nullcontext(), False),
+            ("consumer_repo.etl", None, nullcontext(), False),
             # Valid custom fields: written, whatever the namespace.
-            ("opg_pipeline_builder.models.x", "valid", does_not_raise(), True),
-            ("third_party.module", "valid", does_not_raise(), True),
+            ("opg_pipeline_builder.models.x", "valid", nullcontext(), True),
+            ("third_party.module", "valid", nullcontext(), True),
             # Present but not a CustomLogFields instance: rejected.
             ("consumer_repo.etl", {"process": "x"}, pytest.raises(TypeError), False),
             ("consumer_repo.etl", 1, pytest.raises(TypeError), False),
-            ("consumer_repo.etl", {}, does_not_raise(), False),
-            ("consumer_repo.etl", False, does_not_raise(), False),
+            ("consumer_repo.etl", {}, nullcontext(), False),
+            ("consumer_repo.etl", False, nullcontext(), False),
         ],
     )
     def test_emit_requires_custom_fields(
@@ -617,7 +610,7 @@ class TestJsonlLogHandler:
         written: bool,  # noqa: FBT001
     ) -> None:
         """Test that only records with valid custom fields are written; records without them are skipped."""
-        handler = create_handler(batch_size=10)
+        handler = create_handler()
         record_values: dict[str, Any] = {
             "name": logger_name,
             "module": "module",
@@ -648,7 +641,7 @@ class TestJsonlLogHandler:
 
     def test_emit_after_close_raises(self) -> None:
         """Test that records emitted after close raise rather than being silently lost."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         handler.close()
 
         with pytest.raises(RuntimeError, match="already been closed"):
@@ -659,7 +652,7 @@ class TestJsonlLogHandler:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Test that flush() never uploads or raises, and warns (stderr + one buffered record) only once."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         handler._buffer = [{"message": "buffered"}]
 
         with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
@@ -689,7 +682,7 @@ class TestJsonlLogHandler:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Test that the stdlib atexit path warns via flush() but still uploads via close()."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         handler.emit(create_log_record(message="trailing log"))
 
         with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
@@ -733,7 +726,7 @@ class TestJsonlLogHandler:
     @pytest.mark.parametrize("count", [2, 3])
     def test_emit_buffers_and_flushes_at_threshold(self, count: int) -> None:
         """Below the threshold rows remain in order; at the threshold they are flushed."""
-        handler = create_handler(batch_size=3)
+        handler = create_handler(batch_size=FLUSH_THRESHOLD)
         records = [
             create_log_record(message=f"event {number}") for number in range(count)
         ]
@@ -766,7 +759,7 @@ class TestJsonlLogHandler:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Close once and propagate registration failures without dumping uploaded records."""
-        handler = create_handler(batch_size=3)
+        handler = create_handler()
         handler._buffer = [
             {"message": "First application event"},
             {"message": "Second application event"},
@@ -986,7 +979,7 @@ class TestJsonlLogHandler:
 
     def test_flush_locked_success(self, s3: boto3.client) -> None:
         """Test that the handler successfully flushes the buffer to S3."""
-        handler = create_handler(apply_patches=False, batch_size=5)
+        handler = create_handler(apply_patches=False)
 
         handler.emit(create_log_record(message="First application event"))
         handler.emit(create_log_record(message="Second application event"))
@@ -996,7 +989,7 @@ class TestJsonlLogHandler:
 
         assert handler._buffer == []
         assert handler._part_number == 1
-        assert handler._batch_size == SMALL_BATCH_SIZE
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
 
         handler.emit(create_log_record(message="Fourth application event"))
 
@@ -1004,7 +997,7 @@ class TestJsonlLogHandler:
 
         assert handler._buffer == []
         assert handler._part_number == EXPECTED_UPLOAD_PART_COUNT
-        assert handler._batch_size == SMALL_BATCH_SIZE
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
 
         logs = read_jsonl_logs(s3)
 
@@ -1028,14 +1021,14 @@ class TestJsonlLogHandler:
 
     def test_flush_locked_empty(self) -> None:
         """Test that flushing an empty buffer does not raise an error."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
             handler._flush_locked()
 
         mock_put.assert_not_called()
         assert handler._buffer == []
         assert handler._part_number == 0
-        assert handler._batch_size == SMALL_BATCH_SIZE
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
 
     @pytest.mark.parametrize(
         ("exception"),
@@ -1049,7 +1042,7 @@ class TestJsonlLogHandler:
         self, exception: Any, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Test that the full buffer is correctly flushed after two failed attempts."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
 
         for iteration in range(1, 3):
             handler.emit(create_log_record(message=f"application event: {iteration}"))
@@ -1059,7 +1052,7 @@ class TestJsonlLogHandler:
                 handler._flush_locked()
             assert handler._write_failures == iteration
             assert f"failure_count={iteration}" in capsys.readouterr().err
-            assert handler._batch_size == SMALL_BATCH_SIZE * (iteration + 1)
+            assert handler._batch_size == DEFAULT_BATCH_SIZE * (iteration + 1)
             assert any(
                 "Failed to write JSONL" in log["message"] for log in handler._buffer
             )
@@ -1071,7 +1064,7 @@ class TestJsonlLogHandler:
         mock_put.assert_called_once()
         assert handler._buffer == []
         assert handler._part_number == 1
-        assert handler._batch_size == SMALL_BATCH_SIZE
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
         assert handler._write_failures == 0
 
     @pytest.mark.parametrize(
@@ -1083,7 +1076,7 @@ class TestJsonlLogHandler:
         They propagate immediately and leave the retry state untouched, so they are not reported as a
         failed write and retried.
         """
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         handler.emit(create_log_record())
         buffered = list(handler._buffer)
 
@@ -1094,13 +1087,13 @@ class TestJsonlLogHandler:
             handler._flush_locked()
 
         assert handler._write_failures == 0
-        assert handler._batch_size == SMALL_BATCH_SIZE
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
         assert handler._buffer == buffered
         assert handler._part_number == 0
 
     def test_flush_locked_failure_record(self) -> None:
         """Test the internal failure record's attribution and empty table/field values."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         handler.emit(create_log_record())
 
         with patch.object(
@@ -1147,7 +1140,7 @@ class TestJsonlLogHandler:
 
         A failed upload must not consume a part number.
         """
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         uploaded: list[str] = []
 
         handler.emit(create_log_record())
@@ -1184,7 +1177,7 @@ class TestJsonlLogHandler:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Test that the full buffer is correctly flushed after two failed attempts."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
 
         for iteration in range(1, 4):
             handler.emit(create_log_record(message=f"application event: {iteration}"))
@@ -1192,7 +1185,7 @@ class TestJsonlLogHandler:
                 handler._flush_locked()
             assert handler._write_failures == iteration
             assert f"failure_count={iteration}" in capsys.readouterr().err
-            assert handler._batch_size == SMALL_BATCH_SIZE * (iteration + 1)
+            assert handler._batch_size == DEFAULT_BATCH_SIZE * (iteration + 1)
             assert len(handler._buffer) == iteration * 2
 
         handler.emit(create_log_record(message=f"application event: {iteration}"))
@@ -1207,7 +1200,7 @@ class TestJsonlLogHandler:
 
     def test_record_to_row_success(self) -> None:
         """Test that a log record is correctly converted to a row."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
 
         with freeze_time("2024-06-01 12:00:00"):
             record = create_log_record(
@@ -1235,7 +1228,7 @@ class TestJsonlLogHandler:
 
     def test_record_to_row_captures_exception(self) -> None:
         """Test that the full traceback (cause, context, notes) is written to the exception column."""
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         record = create_log_record(message="Load failed")
 
         try:
@@ -1268,7 +1261,7 @@ class TestJsonlLogHandler:
 
         exc_info=True outside an 'except' block produces (None, None, None).
         """
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         record = create_log_record()
         record.exc_info = exc_info
 
@@ -1282,7 +1275,7 @@ class TestJsonlLogHandler:
     ) -> None:
         """Test that long text is capped: the message keeps its start, the traceback keeps its end."""
         monkeypatch.setattr(log, "_MAX_TEXT_LENGTH", 10)
-        handler = create_handler(batch_size=5)
+        handler = create_handler()
         record = create_log_record(message="0123456789ABCDEF")
         record.exc_info = (ValueError, ValueError("x"), None)
         record.exc_text = "Traceback line\nValueError: x"
@@ -1310,7 +1303,7 @@ class TestLoggingController:
     def create_controller(self) -> log.LoggingController:
         """Attach fresh test handlers and return a controller that owns both."""
         logger = logging.getLogger()
-        handler = create_handler(batch_size=SMALL_BATCH_SIZE)
+        handler = create_handler()
         handler.set_name(log._JSONL_HANDLER_NAME)
         console_handler = logging.StreamHandler()
         console_handler.set_name(log._CONSOLE_HANDLER_NAME)
@@ -1982,7 +1975,7 @@ class TestModuleLogger:
 
     def test_lazy_formatting_is_applied(self, s3: boto3.client) -> None:
         """Test that %s-style args passed through are lazily interpolated into the final message."""
-        log.configure_logging(**config_values(batch_size=3))
+        log.configure_logging(**config_values(batch_size=FLUSH_THRESHOLD))
 
         module_logger = log.ModuleLogger(
             logger=logging.getLogger("third_party.test"), process="Lazy formatting"
@@ -2018,10 +2011,8 @@ class TestLoggingEndToEnd:
     def configure(
         self, **overrides: Any
     ) -> tuple[log.LoggingController, log.JsonlLogHandler]:
-        """Configure logging and return the controller plus the underlying JSONL handler."""
-        controller = log.configure_logging(
-            **config_values(**{"batch_size": 3, **overrides})
-        )
+        """Configure a small test batch and return the controller and JSONL handler."""
+        controller = log.configure_logging(**config_values(**overrides))
         jsonl_handler = next(
             handler
             for handler in controller._logger.handlers
@@ -2176,7 +2167,7 @@ class TestLoggingEndToEnd:
         function_name = inspect.currentframe().f_code.co_name  # type: ignore[union-attr]
 
         with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure(batch_size=10)
+            controller, jsonl_handler = self.configure()
             console_handler = next(
                 handler
                 for handler in controller._logger.handlers
@@ -2262,7 +2253,7 @@ class TestLoggingEndToEnd:
         propagates out of the trigger itself, and nothing partial reaches S3.
         """
         with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure(batch_size=10)
+            controller, jsonl_handler = self.configure()
             pipeline_logger = log.ModuleLogger(
                 logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
             )
@@ -2310,7 +2301,7 @@ class TestLoggingEndToEnd:
         through controller.flush() handles the same failures and recovery correctly, without
         re-asserting every detail already covered there.
         """
-        controller, jsonl_handler = self.configure(batch_size=100)
+        controller, jsonl_handler = self.configure()
         pipeline_logger = log.ModuleLogger(
             logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
         )
@@ -2571,7 +2562,7 @@ class TestLoggingEndToEnd:
         unexpected_errors: list[BaseException] = []
         registered: list[pd.DataFrame] = []
 
-        controller, jsonl_handler = self.configure(batch_size=5)
+        controller, jsonl_handler = self.configure()
 
         def worker(worker_number: int) -> None:
             """Emit pre-shutdown records and race subsequent writes with shutdown."""
@@ -2645,7 +2636,7 @@ class TestLoggingEndToEnd:
     ) -> None:
         """Test that shutting down immediately after configure_logging still flushes the config record."""
         with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure(batch_size=10)
+            controller, jsonl_handler = self.configure()
             with controller:
                 pass
 
@@ -2661,7 +2652,7 @@ class TestLoggingEndToEnd:
     ) -> None:
         """Test that error(exc_info=True) writes the full traceback to JSONL and prints it to the console."""
         with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure(batch_size=10)
+            controller, jsonl_handler = self.configure()
             module_logger = log.ModuleLogger(
                 logger=logging.getLogger(f"{logging.getLogger().name}.load"),
                 process="E2E test",
@@ -2706,7 +2697,7 @@ class TestLoggingEndToEnd:
                 (1, "First attempt processing"),
                 (2, "Second attempt processing"),
             ]:
-                controller, handler = self.configure(batch_size=10, attempt_no=attempt)
+                controller, handler = self.configure(attempt_no=attempt)
                 with controller:
                     log.ModuleLogger(logger=logging.getLogger("root.attempt")).info(
                         message,

@@ -11,14 +11,14 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     ValidationInfo,
     field_validator,
     model_validator,
-    Field,
 )
 
-from opg_pipeline_builder.validation.validators import is_valid_identifier
 from opg_pipeline_builder.logging import logging_utils as u
+from opg_pipeline_builder.validation.validators import is_valid_identifier
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
@@ -37,29 +37,6 @@ class LoggingConfig(BaseModel):
     batch_size: int = Field(strict=True)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_s3_prefixes(self) -> "LoggingConfig":
-        """Validate that S3 prefixes are correctly formatted and don't clash.
-
-        The eventual location of the parquet files (Athena table) may reside inside
-        the location of the log store prefix. But the log store prefix must not be
-        the same as, or nested inside, the Athena prefix.
-        """
-        u.validate_s3_prefix(self.prefix, "prefix", self.bucket)
-        u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
-        u.validate_prefix_layout(self.prefix, self.athena_prefix)
-        return self
-
-    @field_validator("athena_database_name", "athena_table_name")
-    @classmethod
-    def validate_athena_db_and_table(cls, value: str, info: ValidationInfo) -> str:
-        """Require Athena database and table names to be valid identifiers."""
-        identifier_error = is_valid_identifier(value)
-        if identifier_error:
-            err = f"Validating StructuredLogRecord: {identifier_error}: '{info.field_name}.'"
-            raise ValueError(err)
-        return value
 
     @field_validator("pipeline", "run_id")
     @classmethod

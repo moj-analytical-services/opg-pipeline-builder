@@ -1,7 +1,6 @@
-"""Utility functions for validating logging configuration and S3 prefixes."""
-
 import datetime
 import json
+import logging
 from typing import Any
 from urllib.parse import quote
 
@@ -55,6 +54,20 @@ def is_timezone_aware(value: datetime.datetime) -> bool:
     return value.tzinfo is not None and value.utcoffset() is not None
 
 
+def truncate_text(value: str, max_length: int, *, keep_end: bool = False) -> str:
+    """Cap text at max_length characters, adding a marker that states how much was removed.
+
+    By default the start is kept. Set keep_end to keep the end instead (e.g. for tracebacks, where the
+    raised exception is the last line).
+    """
+    if len(value) <= max_length:
+        return value
+    marker = f"...[truncated {len(value) - max_length} characters]..."
+    if keep_end:
+        return f"{marker}{value[-max_length:]}"
+    return f"{value[:max_length]}{marker}"
+
+
 def validate_s3_prefix(prefix: str, name: str, bucket: str) -> None:
     """Check that the prefix is a non-empty, bucket-relative S3 key prefix.
 
@@ -87,3 +100,7 @@ def encode_partition_value(value: object) -> str:
 
 def to_jsonl_line(row: dict[str, Any]) -> str:
     return json.dumps(row, separators=(",", ":"))
+
+
+def is_handler_attached(handler: str) -> bool:
+    return any(h.get_name() == handler for h in logging.getLogger().handlers)

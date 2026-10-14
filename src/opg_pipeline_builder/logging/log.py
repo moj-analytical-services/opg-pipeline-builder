@@ -30,7 +30,7 @@ from pydantic import (
 )
 
 from opg_pipeline_builder.logging import log_exceptions as exc
-from opg_pipeline_builder.logging import logging_utils as u
+from opg_pipeline_builder.logging import log_utils as u
 from opg_pipeline_builder.validation.validators import is_valid_identifier
 
 _JSONL_HANDLER_NAME = "json_handler"
@@ -158,7 +158,7 @@ class LoggingConfig(BaseModel):
     @field_validator("attempt_no", "batch_size")
     @classmethod
     def validate_attempt_no(cls, value: int, info: ValidationInfo) -> int:
-        """Require a positive run attempt number."""
+        """Require positive run attempt numbers and batch sizes."""
         if value < 1:
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be >=1."
             raise ValueError(err)
@@ -283,7 +283,7 @@ class JsonlLogHandler(logging.Handler):
         """Buffer one record, uploading a batch to S3 when the buffer is full.
 
         Raises:
-            ValueError: If 'custom_fields' is present but is not a CustomLogFields instance.
+            TypeError: If 'custom_fields' is truthy but is not a CustomLogFields instance.
             RuntimeError: If handler has already been closed, so records are never silently lost.
         """
         # Skips logging calls without custom_fields which are required for the JSONL log format.
@@ -497,9 +497,11 @@ class JsonlLogHandler(logging.Handler):
         )
 
     def flush(self) -> None:
-        """Do not use. Instead flush via LoggingController.flush() or on close.
+        """Warn once about unmanaged flushing without uploading any records.
 
-        Warn once on unmanaged flushing;
+        Python's logging shutdown calls this before close(). For an open handler, the warning
+        is printed to stderr and buffered for the subsequent upload. Closed handlers and
+        repeated calls do nothing. Use LoggingController.flush() for an actual upload.
         """
         with self._locked():
             if self._closed or self._unmanaged_flush_warned:
@@ -540,7 +542,7 @@ class LoggingController:
         self._is_shutdown = False
 
     def __enter__(self) -> Self:
-        """Support use as a context manager."""
+        """Return this controller when entering its context manager."""
         return self
 
     def __exit__(
@@ -566,7 +568,14 @@ class LoggingController:
             )
 
     def flush(self) -> None:
-        """Upload buffered records without closing package logging."""
+        """Attempt to upload buffered records without closing the owned JSONL handlers.
+
+        Recoverable sink failures retain the buffer for a later attempt.
+
+        Raises:
+            RuntimeError: If the controller is shut down or a handler exceeds its retry cap.
+            Exception: If a handler encounters an unexpected error during serialization or upload.
+        """
         if self._is_shutdown:
             err = "Logging has already been shut down."
             raise RuntimeError(err)
@@ -624,34 +633,24 @@ def configure_logging(  # noqa: PLR0917 PLR0913
     returns a controller configured for the specific pipeline run.
 
     Args:
-        pipeline: str
-            The name of the pipeline associated with the logs.
-        data_delivery_period: datetime
-            The data delivery period for the logs. Must be timezone-aware; it is normalised to UTC.
-        attempt_no: int
-            The attempt number for this data delivery period.
-        run_id: str
-            Airflow run identifier used to isolate records and objects.
-        bucket: str
-            The S3 bucket where logs will be stored.
-        log_store_prefix: str
-            Bucket-relative S3 key prefix for raw logs. Do not include the bucket or
-            the 's3://' scheme. Must not be the same as, or nested inside, 'athena_prefix'.
-        athena_prefix: str
-            Bucket-relative S3 key prefix for curated logs. Do not include the bucket or
-            the 's3://' scheme.
-        athena_database_name: str
-            The name of the existing Athena database where curated logs will be stored.
-        athena_table_name: str
-            The name of the Athena table where curated logs will be stored.
-        batch_size: int, optional
-            Number of records written in each JSONL S3 object.
+        bucket: S3 bucket where raw and curated logs will be stored.
+        log_store_prefix: Bucket-relative raw JSONL prefix, without the bucket or 's3://'.
+            Must not equal or sit inside athena_prefix.
+        athena_prefix: Bucket-relative curated Parquet prefix, without the bucket or 's3://'.
+        athena_database_name: Glue database for curated logs; created on registration if absent.
+        athena_table_name: Athena table for the curated Parquet dataset.
+        pipeline: Non-empty pipeline identifier associated with the logs.
+        data_delivery_period: Timezone-aware delivery period, normalised to UTC.
+        attempt_no: Positive attempt number for this data delivery period.
+        run_id: Non-empty run identifier used to isolate records and objects.
+        batch_size: Positive integer buffer threshold; defaults to 500. Booleans, strings
+            and floats are rejected rather than coerced.
 
     Returns:
-        LoggingController: Controller for flushing and shutting down logging.
+        Controller owning the newly attached JSONL and console handlers.
 
     Raises:
-        ValueError: If the batch size is not an integer >= 1 or the data delivery period is naive.
+        ValidationError: If configuration fields fail type, identifier, range or timezone validation.
         InvalidPrefixError: If either prefix is invalid or the prefixes overlap.
         RuntimeError: If the logger has already been configured or the log location is unreachable.
     """

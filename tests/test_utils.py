@@ -38,7 +38,7 @@ def create_column(
 
     return m.Column.model_validate(
         {
-            "name": name,
+            "column_name": name,
             "description": description,
             "semantic_type": semantic_type,
             "etl_stages": etl_stages,
@@ -55,7 +55,7 @@ def create_column(
             "default_value": default_value,
             **extra_fields,
         },
-        context={"table_name": "test_table"},
+        # context={"table_name": "test_table"},
     )
 
 
@@ -64,7 +64,7 @@ def create_file_format(
 ) -> m.FileFormat:
     return m.FileFormat.model_validate(
         {"stage": stage, "format": file_format},
-        context={"table_name": "test_table"},
+        # context={"table_name": "test_table"},
     )
 
 
@@ -76,7 +76,7 @@ def create_table_metadata(
     **extra_fields: Any,
 ) -> m.TableMetaData:
     return m.TableMetaData(
-        name=name,
+        table_name=name,
         description=description,
         file_formats=file_formats,
         columns=columns,

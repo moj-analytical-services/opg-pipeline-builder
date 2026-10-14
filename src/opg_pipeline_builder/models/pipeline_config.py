@@ -16,7 +16,9 @@ from opg_pipeline_builder.validation.validators import (
     is_valid_s3_path_template,
 )
 
-log = ModuleLogger(logger=getLogger(__name__), process="Pipeline validation")
+log = ModuleLogger(
+    logger=getLogger(__name__), process="Validating model", table="Pipeline config"
+)
 
 
 class PipelineConfig(BaseModel):
@@ -42,7 +44,7 @@ class PipelineConfig(BaseModel):
         err = is_valid_identifier(value)
         if err:
             err = f"Pipeline name '{value}' is invalid: {err}."
-            log.error(err, table="pipeline", field=field_name(info))
+            log.error(err, field=field_name(info))
             raise exc.InvalidPipelineNameError(err)
 
         return value
@@ -54,7 +56,7 @@ class PipelineConfig(BaseModel):
         err = is_valid_s3_path_template(value, field_name(info))
         if err:
             err = f"S3 path for field '{field_name(info)}' is invalid: {err}."
-            log.error(err, table="pipeline", field=field_name(info))
+            log.error(err, field=field_name(info))
             raise exc.InvalidPathError(err)
 
         return value

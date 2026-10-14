@@ -18,41 +18,50 @@ from tests.test_utils import (
     create_table_metadata,
 )
 
+PROCESS = "Metadata validation"
+
 
 class TestColumn:
     def test_column_valid(self) -> None:
         """Test that a column with valid attributes is created correctly."""
-        column = create_column(
-            name="address",
-            description="An address",
-            semantic_type="postcode",
-            sensitive=True,
-            is_composite_key=True,
-            is_partition=True,
-            input_data_type="int",
-            output_data_type="str",
-            input_value_format="datetime",
-            output_value_format="datetime",
-            regex_pattern=".*",
-            nullable=False,
-            allowed_values=[1, 2],
-            default_value=1,
+        table = create_table_metadata(
+            name="test_table",
+            file_formats=[create_file_format()],
+            columns=[
+                create_column(
+                    name="address",
+                    description="An address",
+                    semantic_type="postcode",
+                    sensitive=True,
+                    is_composite_key=True,
+                    is_partition=True,
+                    input_data_type="int",
+                    output_data_type="str",
+                    input_value_format="datetime",
+                    output_value_format="datetime",
+                    regex_pattern=".*",
+                    nullable=False,
+                    allowed_values=[1, 2],
+                    default_value=1,
+                )
+            ],
         )
-        assert column.name == "address"
-        assert column.description == "An address"
-        assert column.semantic_type == "postcode"
-        assert column.etl_stages == ["raw", "curated"]
-        assert column.sensitive is True
-        assert column.is_composite_key is True
-        assert column.is_partition is True
-        assert column.input_data_type == int
-        assert column.output_data_type == str
-        assert column.input_value_format == "datetime"
-        assert column.output_value_format == "datetime"
-        assert column.regex_pattern == ".*"
-        assert not column.nullable
-        assert column.allowed_values == [1, 2]
-        assert column.default_value == 1
+        assert table.columns[0]._table_name == "test_table"
+        assert table.columns[0].column_name == "address"
+        assert table.columns[0].description == "An address"
+        assert table.columns[0].semantic_type == "postcode"
+        assert table.columns[0].etl_stages == ["raw", "curated"]
+        assert table.columns[0].sensitive is True
+        assert table.columns[0].is_composite_key is True
+        assert table.columns[0].is_partition is True
+        assert table.columns[0].input_data_type == int
+        assert table.columns[0].output_data_type == str
+        assert table.columns[0].input_value_format == "datetime"
+        assert table.columns[0].output_value_format == "datetime"
+        assert table.columns[0].regex_pattern == ".*"
+        assert not table.columns[0].nullable
+        assert table.columns[0].allowed_values == [1, 2]
+        assert table.columns[0].default_value == 1
 
     def test_validate_name_valid(self) -> None:
         """Test that a valid column name is accepted."""
@@ -61,7 +70,7 @@ class TestColumn:
         ) as mock_valid:
             mock_valid.return_value = ""
             col = create_column()
-        assert col.name == "id"
+        assert col.column_name == "id"
 
     def test_validate_name_invalid(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test that an invalid column name raises InvalidColumnNameError"""
@@ -72,7 +81,13 @@ class TestColumn:
             with pytest.raises(exc.InvalidColumnNameError):
                 create_column()
 
-        assert_log_record(caplog, "Validation error", field="name")
+        assert_log_record(
+            caplog,
+            "Validation error",
+            process=process,
+            table="test_table",
+            field="name",
+        )
 
     @pytest.mark.parametrize(
         ("semantic_type"),
@@ -106,7 +121,10 @@ class TestColumn:
         assert_log_record(
             caplog,
             f"Semantic type '{semantic_type}' is not in the ALLOWED_SEMANTIC_TYPES constant",
+            process=process,
+            table="test_table",
             field="semantic_type",
+            stage="Processing",
         )
 
     @pytest.mark.parametrize(
@@ -148,7 +166,9 @@ class TestColumn:
         """Test that invalid ETL stages raise InvalidStageError."""
         with pytest.raises(exc.InvalidStageError, match=exp_err):
             create_column(etl_stages=etl_stage)
-        assert_log_record(caplog, exp_err, field="etl_stages")
+        assert_log_record(
+            caplog, exp_err, process=process, table="test_table", field="etl_stages"
+        )
 
     def test_validate_etl_stage_empty(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test that an empty ETL stages list raises InvalidStageError."""
@@ -156,7 +176,13 @@ class TestColumn:
             exc.InvalidStageError, match="ETL stages list cannot be empty"
         ):
             create_column(etl_stages=[])
-        assert_log_record(caplog, "ETL stages list cannot be empty", field="etl_stages")
+        assert_log_record(
+            caplog,
+            "ETL stages list cannot be empty",
+            process=process,
+            table="test_table",
+            field="etl_stages",
+        )
 
     @pytest.mark.parametrize(
         ("data_type"),
@@ -217,6 +243,8 @@ class TestColumn:
         assert_log_record(
             caplog,
             f"Data type '{err_attr_val}' for field '{err_attr}' is not in the ALLOWED_DATA_TYPES constant",
+            process=process,
+            table="test_table",
             field=err_attr,
         )
 
@@ -257,8 +285,9 @@ class TestColumn:
         assert_log_record(
             caplog,
             f"Value format '{err_attr_val}' for field '{err_attr}' is not in the ALLOWED_VALUE_FORMATS constant",
-            "test_table",
-            err_attr,
+            process=process,
+            table="test_table",
+            field=err_attr,
         )
 
     @pytest.mark.parametrize(
@@ -304,6 +333,8 @@ class TestColumn:
         assert_log_record(
             caplog,
             "Column 'id' is part of a composite key or partition and cannot be nullable",
+            process=process,
+            table="test_table",
             field="nullable",
         )
 
@@ -366,6 +397,8 @@ class TestColumn:
         assert_log_record(
             caplog,
             "Only check allowed values for 'str' and 'int' input data types. Skipping check for 'test_table'",
+            process=process,
+            table="test_table",
             field="allowed_values",
         )
 
@@ -390,6 +423,8 @@ class TestColumn:
         assert_log_record(
             caplog,
             f"Allowed value '{allowed_values[0]}' with type '{type(allowed_values[0])}' does not match the input data type '{data_type}'",
+            process=process,
+            table="test_table",
             field="allowed_values",
         )
 
@@ -430,6 +465,8 @@ class TestColumn:
         assert_log_record(
             caplog,
             "Skipping default values check for 'test_table' as it is not int or str",
+            process=process,
+            table="test_table",
             field="default_value",
         )
 
@@ -454,8 +491,9 @@ class TestColumn:
         assert_log_record(
             caplog,
             f"Default value '{default_value}' with type '{type(default_value)}' does not match the input data type '{data_type}'",
-            "test_table",
-            "default_value",
+            process=process,
+            table="test_table",
+            field="default_value",
         )
 
     @pytest.mark.parametrize(
@@ -499,7 +537,13 @@ class TestColumn:
         column = create_column(allowed_values=allowed_values)
         assert column.value_is_allowed(value) is expected
         if log:
-            assert_log_record(caplog, log, table="N/A", field="allowed_values")
+            assert_log_record(
+                caplog,
+                log,
+                process="Allowed value check",
+                table="",
+                field="allowed_values",
+            )
 
 
 class TestFileFormat:
@@ -518,6 +562,7 @@ class TestFileFormat:
             caplog,
             "ETL stage 'invalid' is not in the ALLOWED_ETL_STAGES constant",
             field="stage",
+            process="Metadata validation",
         )
 
     @pytest.mark.parametrize(
@@ -540,6 +585,7 @@ class TestFileFormat:
             caplog,
             "File format 'invalid' is not in the ALLOWED_FILE_FORMATS constant",
             field="format",
+            process="Metadata validation",
         )
 
 
@@ -609,6 +655,7 @@ class TestTableMetaData:
                 caplog,
                 f"Duplicate field found: '{duplicate_field}'",
                 field=duplicate_field,
+                process="Metadata validation",
             )
 
     def test_all_file_format_stages_unique_valid(self) -> None:
@@ -647,12 +694,14 @@ class TestTableMetaData:
             )
 
         assert_log_record(
-            caplog, f"Duplicate file format stage found: '{duplicate_stage}'"
+            caplog,
+            f"Duplicate file format stage found: '{duplicate_stage}'",
+            process="Metadata validation",
         )
         assert_log_record(
             caplog,
             "One or more file format stages are defined twice for the same table",
-            field="N/A",
+            process="Metadata validation",
         )
 
     @pytest.mark.parametrize(
@@ -732,6 +781,7 @@ class TestTableMetaData:
             assert_log_record(
                 caplog,
                 f"ETL stage '{stage}' is defined in the file formats, but not for any columns",
+                process="Metadata validation",
             )
             assert (
                 f"The following ETL stages are defined for file formats, but not for any columns: [{', '.join(unreconciled_formats)}]"
@@ -741,6 +791,7 @@ class TestTableMetaData:
             assert_log_record(
                 caplog,
                 f"ETL stage '{stage}' is defined for columns, but not in the file formats",
+                process="Metadata validation",
             )
             assert (
                 f"The following ETL stages are defined for columns, but not in the file formats: [{', '.join(unreconciled_columns)}]"
@@ -798,7 +849,7 @@ class TestTableMetaData:
             ],
         )
 
-        assert [column.name for column in table_metadata.composite_key] == [
+        assert [column.column_name for column in table_metadata.composite_key] == [
             "id",
             "address",
         ]
@@ -815,7 +866,7 @@ class TestTableMetaData:
             ],
         )
 
-        assert [column.name for column in table_metadata.partition_key] == [
+        assert [column.column_name for column in table_metadata.partition_key] == [
             "id",
             "address",
         ]
@@ -854,6 +905,7 @@ class TestTableMetaData:
         assert_log_record(
             caplog,
             "No file format metadata is configured for stage 'invalid' for table 'test_table'",
+            process="Metadata validation",
         )
 
     def test_get_columns_for_stage_populated(self) -> None:
@@ -869,7 +921,7 @@ class TestTableMetaData:
         )
 
         columns = table_metadata.get_columns_for_stage("curated")
-        assert [column.name for column in columns] == ["id", "type"]
+        assert [column.column_name for column in columns] == ["id", "type"]
 
     def test_get_columns_for_stage_empty(self) -> None:
         """Test that get_columns_for_stage returns an empty list for a stage with no columns."""
@@ -894,7 +946,7 @@ class TestTableMetaData:
         )
 
         column = table_metadata.get_column("name")
-        assert column.name == "name"
+        assert column.column_name == "name"
         assert column.etl_stages == ["raw", "curated"]
 
     def test_get_column_empty(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -912,6 +964,7 @@ class TestTableMetaData:
             caplog,
             "Column 'invalid' was not found in the metadata for table 'test_table'.",
             field="invalid",
+            process="Metadata validation",
         )
 
     def test_get_sensitive_columns_populated(self) -> None:
@@ -927,7 +980,7 @@ class TestTableMetaData:
         )
 
         sensitive_columns = table_metadata.get_sensitive_columns()
-        assert [column.name for column in sensitive_columns] == ["ssn", "email"]
+        assert [column.column_name for column in sensitive_columns] == ["ssn", "email"]
 
     def test_get_sensitive_columns_empty(self) -> None:
         """Test that get_sensitive_columns returns an empty list for a table with no sensitive columns."""
@@ -992,7 +1045,9 @@ class TestMetaData:
 
         table_metadata = metadata.get_table_metadata("test_table2")
 
-        assert [col.name for col in table_metadata.partition_key] == ["other_name"]
+        assert [col.column_name for col in table_metadata.partition_key] == [
+            "other_name"
+        ]
         assert table_metadata.name == "test_table2"
         assert table_metadata.columns[0].name == "other_name"
         assert table_metadata.file_formats[0].stage == "curated"
@@ -1108,10 +1163,12 @@ def test_load_metadata_success(caplog: pytest.LogCaptureFixture) -> None:
     assert_log_record(
         caplog,
         "Loading metadata for pipeline: 'test_pipeline'.",
-        table="N/A",
+        process="Load metadata",
         stage="Start",
     )
-    assert_log_record(caplog, "Finished loading metadata.", table="N/A", stage="End")
+    assert_log_record(
+        caplog, "Finished loading metadata.", process="Load metadata", stage="End"
+    )
 
 
 def test_load_metadata_empty(caplog: pytest.LogCaptureFixture) -> None:
@@ -1126,13 +1183,13 @@ def test_load_metadata_empty(caplog: pytest.LogCaptureFixture) -> None:
     assert_log_record(
         caplog,
         "Loading metadata for pipeline: 'non-existent pipeline'.",
-        table="N/A",
+        process="Load metadata",
         stage="Start",
     )
     assert_log_record(
         caplog,
         "No metadata was found for pipeline: 'non-existent pipeline'.",
-        table="N/A",
+        process="Load metadata",
     )
 
 

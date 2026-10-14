@@ -46,24 +46,28 @@ def load_pipeline_config(configs_folder: Path, name: str) -> PipelineConfig:
 
 
 def setup_run_config(configs_folder: Path) -> RunConfig:
-    log.info("Setting up run configuration", stage="Start")
+    log.info("Configuring pipeline", process="Configuring", stage="Start")
 
     settings = SettingsConfig()
-    log.info(
-        "Loaded DAG settings: Running '%s' pipeline in %s",
-        settings.PIPELINE_NAME,
-        settings.ENV,
-    )
+    log.info("Loaded DAG settings", process="Configuring", table="settings")
 
     pipeline = load_pipeline_config(
         configs_folder=configs_folder, name=settings.PIPELINE_NAME
     )
-    log.info("Loaded pipeline configuration for '%s'", pipeline.name)
+    log.info("Loaded pipeline configuration", process="Configuring", table="pipeline")
 
     run_config = create_run_config(
         pipeline=pipeline,
         settings=settings,
     )
 
-    log.info("Run configuration set up successfully", stage="End")
+    : Running '%s' pipeline in %s",
+        settings.PIPELINE_NAME,
+        settings.ENV,
+
+    log.info(
+        "Run configuration set up successfully",
+        process="Configuring",
+        stage="End",
+    )
     return run_config

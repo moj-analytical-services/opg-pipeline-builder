@@ -14,7 +14,7 @@ class DataDeliveryTracker(BaseModel):
     data_delivery_period: datetime
     pipeline_name: str
     received_datetime: datetime
-    pipeline_params: str
+    pipeline_params: list[str]
     current_pipeline_stage: str
     valid: bool
     status: str

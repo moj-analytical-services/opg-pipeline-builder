@@ -2,7 +2,7 @@ from opg_pipeline_builder.constants import ALLOWED_ENVS
 
 
 def is_valid_identifier(identifier: str) -> str:
-    """Validate that the provided identifier is a valid SQL/Athena identifier.
+    """Validate that the provided identifier is a valid.
 
     Checks:
     - Must not be empty

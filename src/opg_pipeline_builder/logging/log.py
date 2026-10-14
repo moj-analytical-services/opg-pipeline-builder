@@ -1,42 +1,57 @@
-import json
+"""Structured logging utilities for the OPG pipeline builder."""
+
 import logging
 import os
 import sys
+import threading
+import traceback
 import uuid
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
+from types import TracebackType
 from typing import Any, Literal, Self
 
+import awswrangler as wr
 import boto3
+import pandas as pd
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    TypeAdapter,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
-PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
-_CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
-_JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
+from opg_pipeline_builder.logging import log_exceptions as exc
+from opg_pipeline_builder.logging import logging_utils as u
+from opg_pipeline_builder.validation.validators import is_valid_identifier
 
+_JSONL_HANDLER_NAME = "json_handler"
+_CONSOLE_HANDLER_NAME = "console_handler"
+_S3_RETRY_CONFIG = Config(retries={"mode": "standard", "max_attempts": 5})
+_CONFIGURE_LOCK = threading.Lock()  # Ensures thread-safe configuration
+_MAX_TEXT_LENGTH = 32_768  # Caps the message and exception text written to JSONL
+_DATETIME_JSON = TypeAdapter(datetime)
+_UNMANAGED_FLUSH_WARNING = (
+    "JsonlLogHandler is being flushed outside of LoggingController. Use "
+    "'with configure_logging(...) as controller:' for proper management of the JSONL handler."
+)
 
-class CustomLogFields(BaseModel):
-    """Pydantic model representing custom log fields.
-
-    These fields provide context for individual log entries. The model requires
-    all three fields and rejects additional values.
-    """
-
-    table: str
-    field: str
-    process_stage: Literal["Start", "Processing", "End"]
-
-    model_config = ConfigDict(extra="forbid")
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+ProcessStage = Literal["Start", "Processing", "End"]
 
 
 class StructuredLogRecord(BaseModel):
-    """Pydantic model representing a structured log record written to JSONL.
+    """Pydantic model representing a structured log record written to JSONL."""
 
-    This is the definitive definition of a valid log record. It receives data from the logger.record object,
-    the CustomLogFields values and pipeline/run values stored in the JSONL handler via the configuration.
-    """
-
-    database: str
+    pipeline: str
     run_id: str
     data_delivery_period: datetime
     attempt_no: int
@@ -44,162 +59,361 @@ class StructuredLogRecord(BaseModel):
     module: str
     function: str
     line_number: int
-    log_level: str
+    log_level: LogLevel
     log_timestamp: datetime
-    process_stage: Literal["Start", "Processing", "End"]
+    process: str
     table: str
     field: str
+    process_stage: ProcessStage
     message: str
+    exception: str = ""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    @field_validator("database", "run_id")
+
+class CustomLogFields(BaseModel):
+    """Pydantic model representing custom log fields.
+
+    These fields provide context for individual log entries. All four fields are required,
+    'process' must be non-empty (surrounding whitespace is stripped), and additional fields
+    are rejected.
+    """
+
+    process: str
+    table: str
+    field: str
+    process_stage: ProcessStage
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @field_validator("process", mode="before")
     @classmethod
-    def validate_database_and_run_id(cls, value: str, info: ValidationInfo) -> str:
-        """Require non-empty run context identifiers."""
-        if not value.strip():
-            err = f"Validation of StructuredLogRecord failed: field '{info.field_name}' must be non-empty."
+    def validate_process(cls, value: str) -> str:
+        """Validate that the 'process' field is non-empty and strip surrounding whitespace."""
+        if not u.not_empty(value):
+            err = "Validation of CustomLogFields failed: field 'process' must be non-empty."
+            raise exc.InvalidProcessError(err)
+        return value.strip()
+
+
+class LoggingConfig(BaseModel):
+    """Pydantic model for validating user supplied configuration."""
+
+    bucket: str
+    log_store_prefix: str
+    athena_prefix: str
+    athena_database_name: str
+    athena_table_name: str
+    pipeline: str
+    data_delivery_period: datetime
+    attempt_no: int
+    run_id: str
+    batch_size: int = Field(strict=True)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_s3_prefixes(self) -> "LoggingConfig":
+        """Validate that S3 prefixes are correctly formatted and don't clash.
+
+        The eventual location of the parquet files (Athena table) may reside inside
+        the location of the log store prefix. But the log store prefix must not be
+        the same as, or nested inside, the Athena prefix.
+        """
+        u.validate_s3_prefix(self.log_store_prefix, "log_store_prefix", self.bucket)
+        u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
+        u.validate_prefix_layout(self.log_store_prefix, self.athena_prefix)
+        return self
+
+    @field_validator("athena_database_name", "athena_table_name")
+    @classmethod
+    def validate_athena_db_and_table(cls, value: str, info: ValidationInfo) -> str:
+        """Require Athena database and table names to be valid identifiers."""
+        identifier_error = is_valid_identifier(value)
+        if identifier_error:
+            err = f"Validating StructuredLogRecord: {identifier_error}: '{info.field_name}.'"
             raise ValueError(err)
         return value
 
-    @field_validator("attempt_no")
+    @field_validator("pipeline", "run_id")
     @classmethod
-    def validate_attempt_no(cls, value: int) -> int:
-        """Require a positive run attempt number."""
-        if value < 1:
-            raise ValueError("Attempt number must be an integer >= 1.")
+    def validate_pipeline_and_run_id(cls, value: str, info: ValidationInfo) -> str:
+        """Require non-empty run context identifiers."""
+        if not u.not_empty(value):
+            err = f"Validating StructuredLogRecord: '{info.field_name}' must be non-empty."
+            raise ValueError(err)
         return value
 
-    @field_validator("data_delivery_period", "log_timestamp")
+    @field_validator("data_delivery_period")
     @classmethod
-    def validate_datetimes_are_timezone_aware(cls, value: datetime) -> datetime:
+    def validate_datetimes_are_timezone_aware(
+        cls, value: datetime, info: ValidationInfo
+    ) -> datetime:
         """Require timezone-aware datetimes and normalize them to UTC."""
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("Datetime fields must be timezone-aware.")
+        if not u.is_timezone_aware(value):
+            err = f"Validating StructuredLogRecord: '{info.field_name}' must be timezone-aware."
+            raise ValueError(err)
         return value.astimezone(UTC)
+
+    @field_validator("attempt_no", "batch_size")
+    @classmethod
+    def validate_attempt_no(cls, value: int, info: ValidationInfo) -> int:
+        """Require a positive run attempt number."""
+        if value < 1:
+            err = f"Validating StructuredLogRecord: '{info.field_name}' must be >=1."
+            raise ValueError(err)
+        return value
 
 
 class JsonlLogHandler(logging.Handler):
-    """Buffer records and upload JSONL objects to S3 in batches."""
+    """Buffer records and upload JSONL objects to S3 in batches.
+
+    The handler is attached to the root logger so that records from consuming repositories are
+    captured. Only records carrying 'custom_fields' (i.e. emitted via ModuleLogger) are written.
+    Records without them (e.g. from third-party libraries, or code that bypasses ModuleLogger)
+    are skipped here but still reach any other handler, such as the console handler.
+    """
+
+    _closed: bool
 
     def __init__(
         self,
         *,
-        bucket: str,
-        prefix: str,
-        database: str,
-        data_delivery_period: datetime,
-        attempt_no: int,
-        run_id: str,
-        batch_size: int = 500,
+        logging_config: LoggingConfig,
     ) -> None:
+        """Initialize the JSONL log handler with the given configuration."""
         super().__init__(level=logging.INFO)
-        self._bucket = bucket
-        self._prefix = prefix
-        self._database = database
-        self._run_id = run_id
-        self._data_delivery_period = data_delivery_period
-        self._attempt_no = attempt_no
-        self._base_batch_size = batch_size
-        self._batch_size = batch_size
+        self._config = logging_config
+        self._batch_size = self._config.batch_size
+        self._base_batch_size = self._config.batch_size
         self._part_number = 0
         self._writer_id = uuid.uuid4().hex
         self._buffer: list[dict[str, Any]] = []
         self._write_failures = 0
-        self._s3 = boto3.client("s3")
+        self._unmanaged_flush_warned = False
+        self._s3 = boto3.client("s3", config=_S3_RETRY_CONFIG)
 
         self._validate_log_location()
         self._write_configuration_log()
 
     def _validate_log_location(self) -> None:
-        """Validate S3 write access with one permanent marker object.
+        """Check the S3 log location is reachable by writing one permanent marker object.
 
         This always writes to the same location and is just a marker file to confirm that
-        the s3 location is reachable and the pipeline has permission to write to it. Otherwise
-        the retry logic could see the pipeline progress before ultimately failing when trying
-        to write the log the final time. Instead, fail fast here.
+        the s3 location is reachable. It does not prove every permission the run needs (e.g.
+        reading the raw logs back, Glue or Athena access), but it does fail fast before the
+        pipeline starts processing if the bucket or prefix cannot be written to at all.
         """
-        key = f"{self._prefix.rstrip('/')}/logging-marker/marker.txt"
+        key = f"{self._config.log_store_prefix.rstrip('/')}/logging-marker/marker.txt"
         try:
             self._s3.put_object(
-                Bucket=self._bucket,
+                Bucket=self._config.bucket,
                 Key=key,
                 Body=b"",
             )
         except (BotoCoreError, ClientError, OSError) as error:
-            raise RuntimeError(
-                f"Failed to prepare JSONL log location s3://{self._bucket}/{key}"
-            ) from error
+            err = f"Failed to write marker object to s3://{self._config.bucket}/{key}: {error}"
+            raise RuntimeError(err) from error
 
-    def _write_configuration_log(self) -> None:
-        """Write a log record indicating that logging has been configured successfully.
+    def _build_row(
+        self, *, message: str, exception: str = "", **fields: Any
+    ) -> dict[str, Any]:
+        """Generate a structured log record and return it as a JSON-serializable dictionary."""
+        return StructuredLogRecord(
+            pipeline=self._config.pipeline,
+            run_id=self._config.run_id,
+            data_delivery_period=self._config.data_delivery_period,
+            attempt_no=self._config.attempt_no,
+            message=u.truncate_text(message, _MAX_TEXT_LENGTH),
+            exception=u.truncate_text(exception, _MAX_TEXT_LENGTH, keep_end=True),
+            **fields,
+        ).model_dump(mode="json")
 
-        By successfully creating a StructuredLogRecord, it confirms that the configuration values
-        are valid for the model. This is part of the fail fast strategy to prevent the pipelines
-        processing before failing when it attempts to create logs.
+    def _internal_record(
+        self,
+        *,
+        log_level: LogLevel,
+        process: str,
+        process_stage: ProcessStage,
+        message: str,
+        exception: str = "",
+    ) -> dict[str, Any]:
+        """Build a validated row for a record generated by the logging module itself.
+
+        The function name and line number are taken from the calling frame so they point at the
+        code that generated the record.
         """
-        self._buffer.append(
-            StructuredLogRecord(
-                database=self._database,
-                run_id=self._run_id,
-                data_delivery_period=self._data_delivery_period,
-                attempt_no=self._attempt_no,
-                logger_name=PACKAGE_LOGGER_NAME,
-                module="opg_pipeline_builder.logging.log",
-                function="configure_logging",
-                line_number=sys._getframe().f_lineno,
-                log_level="INFO",
-                log_timestamp=datetime.now(tz=UTC),
-                process_stage="Start",
-                table="N/A",
-                field="N/A",
-                message="Logging configured successfully.",
-            ).model_dump(mode="json")
+        caller = sys._getframe(1)  # noqa: SLF001  # pylint: disable=W0212
+        return self._build_row(
+            logger_name=logging.getLogger().name,
+            module="logging.log",
+            function=caller.f_code.co_name,
+            line_number=caller.f_lineno,
+            log_level=log_level,
+            log_timestamp=datetime.now(tz=UTC),
+            process=process,
+            table="",
+            field="",
+            process_stage=process_stage,
+            message=message,
+            exception=exception,
         )
 
-    def emit(self, record: logging.LogRecord) -> None:
-        """Append one record immediately to the JSONL file."""
-        row = self._record_to_row(record)
+    def _write_configuration_log(self) -> None:
+        """Write a log record indicating that logging has been configured successfully."""
+        self._buffer.append(
+            self._internal_record(
+                log_level="INFO",
+                process="Configuration",
+                process_stage="End",
+                message="Logging configured successfully.",
+            )
+        )
+
+    @contextmanager
+    def _locked(self) -> Generator[None]:
+        """Hold the handler lock for the duration of the block."""
         self.acquire()
         try:
+            yield
+        finally:
+            self.release()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Buffer one record, uploading a batch to S3 when the buffer is full.
+
+        Raises:
+            ValueError: If 'custom_fields' is present but is not a CustomLogFields instance.
+            RuntimeError: If handler has already been closed, so records are never silently lost.
+        """
+        # Skips logging calls without custom_fields which are required for the JSONL log format.
+        custom_fields = getattr(record, "custom_fields", None)
+        if not custom_fields:
+            return
+        if not isinstance(custom_fields, CustomLogFields):
+            err = "Custom log fields is not an instance of CustomLogFields."
+            raise TypeError(err)
+
+        row = self._record_to_row(record, custom_fields)
+
+        with self._locked():
+            if self._closed:
+                err = "Cannot write log record: the JSONL log handler has already been closed."
+                raise RuntimeError(err)
             self._buffer.append(row)
             if len(self._buffer) >= self._batch_size:
                 self._flush_locked()
-        finally:
-            self.release()
 
     def close(self) -> None:
         """Upload all remaining log records and close the handlers.
 
-        Fails the pipeline if it was unable to upload all remaining log records to S3.
+        Fails the pipeline if it was unable to upload or register all run logs. The closed
+        check and the closed flag are both handled under the handler lock, so concurrent
+        close() calls (e.g. two threads shutting down together) upload and register the run's
+        logs exactly once.
         """
-        try:
-            self.acquire()
+        with self._locked():
+            if self._closed:
+                return
+
             try:
                 self._flush_locked()
                 if self._buffer:
-                    raise RuntimeError(
-                        f"Failed to write {len(self._buffer)} log records to S3."
-                    )
+                    err = f"Failed to write {len(self._buffer)} log records to S3."
+                    raise RuntimeError(err)  # noqa: TRY301
+            except Exception:
+                self._dump_unwritten_records()
+                raise
+            else:
+                self._register_logs_in_athena()
             finally:
-                self.release()
-        finally:
-            super().close()
+                super().close()
 
-    def _object_key(self, process_id: str, part_number: int) -> str:
-        """Generate the S3 object key for a given process ID and part number."""
+    def _dump_unwritten_records(self) -> None:
+        """Print records that could not be uploaded to stderr, so the task log still holds them."""
+        print(  # noqa: T201
+            f"ERROR: {len(self._buffer)} log records could not be written to "
+            f"s3://{self._config.bucket}/{self._config.log_store_prefix}. Dumping records:",
+            file=sys.stderr,
+        )
+        for row in self._buffer:
+            print(u.to_jsonl_line(row), file=sys.stderr)  # noqa: T201
+        sys.stderr.flush()
+
+    def _create_key_directory(self, prefix: str) -> str:
+        """Generate the S3 key directory, excluding the filename.
+
+        Partition values are percent-encoded so characters such as ':', '+' and '/' cannot create
+        extra path segments or ambiguous keys.
+        """
+        partitions = {
+            "data_delivery_period": _DATETIME_JSON.dump_python(
+                self._config.data_delivery_period, mode="json"
+            ),
+            "attempt_no": self._config.attempt_no,
+            "run_id": self._config.run_id,
+        }
+        return f"{prefix.rstrip('/')}/" + "".join(
+            f"{name}={u.encode_partition_value(value)}/"
+            for name, value in partitions.items()
+        )
+
+    def _object_key(self, part_number: int) -> str:
+        """Return the S3 key of one JSONL object written by this handler.
+
+        Threads in a process share this handler, and every upload happens under its lock, so each
+        successful upload gets the next part number. Separate processes have their own handler, pid
+        and writer_id. A key is therefore unique to one upload.
+        """
         return (
-            f"{self._prefix.rstrip('/')}/"
-            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._attempt_no}/"
-            f"run_id={self._run_id}/"
-            f"{process_id}_{self._writer_id}_{part_number}.jsonl"
+            f"{self._create_key_directory(self._config.log_store_prefix)}"
+            f"{os.getpid()}_{self._writer_id}_{part_number}.jsonl"
+        )
+
+    def _register_logs_in_athena(self) -> None:
+        """Append the JSONL objects written by this handler to the curated Athena dataset.
+
+        Only the exact objects written by this handler are read, so concurrent writers in the
+        same run (e.g. other processes) never register each other's records. The Glue database
+        is created here if it does not exist.
+
+        Keys are rebuilt rather than tracked: _part_number only increments after a successful
+        upload (a failed upload retries under the same part number), so parts 0..n-1 are exactly
+        the objects written.
+        """
+        if self._part_number == 0:
+            return
+
+        logs = wr.s3.read_json(
+            path=[
+                f"s3://{self._config.bucket}/{self._object_key(part)}"
+                for part in range(self._part_number)
+            ],
+            lines=True,
+            dtype=False,
+            convert_dates=False,
+        )
+        # Pydantic omits fractional seconds when they are zero, so the format varies between rows.
+        logs["log_timestamp"] = pd.to_datetime(
+            logs["log_timestamp"], utc=True, format="ISO8601"
+        )
+        wr.catalog.create_database(self._config.athena_database_name, exist_ok=True)
+
+        wr.s3.to_parquet(
+            df=logs,
+            path=f"s3://{self._config.bucket}/{self._config.athena_prefix}",
+            dataset=True,
+            mode="append",
+            database=self._config.athena_database_name,
+            table=self._config.athena_table_name,
+            partition_cols=["data_delivery_period", "attempt_no", "run_id"],
+            dtype=u.ATHENA_COLUMN_TYPES,
         )
 
     def _put_object(self, key: str, body: bytes) -> None:
         """Upload one JSONL batch to S3."""
         self._s3.put_object(
-            Bucket=self._bucket,
+            Bucket=self._config.bucket,
             Key=key,
             Body=body,
             ContentType="application/x-ndjson",
@@ -208,52 +422,45 @@ class JsonlLogHandler(logging.Handler):
     def _flush_locked(self) -> None:
         """Upload the current buffer as one JSONL object.
 
-        Contains retry logic to extend the batch size upon failure, so that the pipeline can continue, generating
-        more logs and then attempting to flush again later. Has an upper limit on retry attempts. Generates an error
-        log ever time it fails to upload.
+        Contains retry logic to extend the batch size upon failure, so that the pipeline can
+        continue, generating more logs and then attempting to flush again later. Has an upper limit
+        on retry attempts. Generates an error log ever time it fails to upload. Only S3/network
+        errors count as sink failures; any other exception is a bug and propagates immediately.
         """
         if not self._buffer:
             return
 
-        body = "".join(
-            json.dumps(row, separators=(",", ":")) + "\n" for row in self._buffer
-        ).encode("utf-8")
-        key = self._object_key(str(os.getpid()), self._part_number)
+        body = "".join(u.to_jsonl_line(row) + "\n" for row in self._buffer).encode(
+            "utf-8"
+        )
+        key = self._object_key(self._part_number)
 
         try:
             self._put_object(key, body)
-        except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as error:
+        except (BotoCoreError, ClientError, OSError) as error:
             self._write_failures += 1
-            print(
-                f"Failed to write a batch of logs to s3://{self._bucket}/{key} "
+            print(  # noqa: T201
+                f"Failed to write a batch of logs to s3://{self._config.bucket}/{key} "
                 f"(failure_count={self._write_failures}). Error: {error}",
+                file=sys.stderr,
                 flush=True,
             )
             self._batch_size += self._base_batch_size
             if self._batch_size > self._base_batch_size * 4:
-                err = f"Have attempted to write JSONL logs {self._write_failures} times. Retry threshold exceeded"
+                err = f"Attempted to write logs {self._write_failures} times. Retries exceeded"
                 raise RuntimeError(err) from error
 
             self._buffer.append(
-                StructuredLogRecord(
-                    database=self._database,
-                    run_id=self._run_id,
-                    data_delivery_period=self._data_delivery_period,
-                    attempt_no=self._attempt_no,
-                    logger_name=PACKAGE_LOGGER_NAME,
-                    module="opg_pipeline_builder.logging.log",
-                    function="_flush_locked",
-                    line_number=sys._getframe().f_lineno,
+                self._internal_record(
                     log_level="ERROR",
-                    log_timestamp=datetime.now(tz=UTC),
+                    process="Logging",
                     process_stage="Processing",
-                    table="Unknown",
-                    field="Unknown",
                     message=(
                         f"Failed to write JSONL log batch "
                         f"(failure_count={self._write_failures})."
                     ),
-                ).model_dump(mode="json")
+                    exception="".join(traceback.format_exception(error)),
+                )
             )
             return
 
@@ -263,22 +470,21 @@ class JsonlLogHandler(logging.Handler):
         self._batch_size = self._base_batch_size
 
     def _record_to_row(
-        self, record: logging.LogRecord
-    ) -> dict[str, str | int | datetime]:
-        """Convert a logging.LogRecord to a dictionary suitable for JSONL."""
-        custom_fields: CustomLogFields | None = getattr(record, "custom_fields", None)
+        self, record: logging.LogRecord, custom_fields: CustomLogFields
+    ) -> dict[str, Any]:
+        """Convert a logging.LogRecord to a dictionary suitable for JSONL.
 
-        if not custom_fields or not isinstance(custom_fields, CustomLogFields):
-            err = (
-                "Custom log fields is missing or is not an instance of CustomLogFields."
-            )
-            raise ValueError(err)
+        If the record carries exception info, the formatted traceback (including chained causes,
+        notes and exception group members) is written to the 'exception' column. It is cached on
+        record.exc_text, sothe console handler prints the same text without formatting it again.
+        """
+        exception = ""
+        if record.exc_info and record.exc_info[0] is not None:
+            if not record.exc_text:
+                record.exc_text = logging.Formatter().formatException(record.exc_info)
+            exception = record.exc_text
 
-        log_record = StructuredLogRecord(
-            database=self._database,
-            run_id=self._run_id,
-            data_delivery_period=self._data_delivery_period,
-            attempt_no=self._attempt_no,
+        return self._build_row(
             logger_name=record.name,
             module=record.module,
             function=record.funcName,
@@ -287,94 +493,157 @@ class JsonlLogHandler(logging.Handler):
             log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
             **custom_fields.model_dump(),
             message=record.getMessage(),
+            exception=exception,
         )
 
-        return log_record.model_dump(mode="json")
+    def flush(self) -> None:
+        """Do not use. Instead flush via LoggingController.flush() or on close.
+
+        Warn once on unmanaged flushing;
+        """
+        with self._locked():
+            if self._closed or self._unmanaged_flush_warned:
+                return
+            self._unmanaged_flush_warned = True
+            print(_UNMANAGED_FLUSH_WARNING, file=sys.stderr, flush=True)  # noqa: T201
+            self._buffer.append(
+                self._internal_record(
+                    log_level="WARNING",
+                    process="Logging",
+                    process_stage="End",
+                    message=_UNMANAGED_FLUSH_WARNING,
+                )
+            )
 
 
 class LoggingController:
-    """Provides package level logging controls for manually flushing and shutting down the logging system.
+    """Provides package level logging controls for manually flushing and shutting down logging.
 
-    Prefer using this as a context manager (`with configure_logging(...) as controller:`) around the
-    pipeline body. That way shutdown() runs deterministically inside the task itself and a failed final
-    flush raises normally, failing the task. Relying solely on the interpreter's own atexit-triggered
-    logging.shutdown() is not sufficient: it only swallows OSError/ValueError raised by close(), and even
-    when other errors do propagate out of it, Python reports them as "Exception ignored in atexit
-    callback" without failing the process - so a pipeline can appear to succeed while silently losing its
-    trailing logs.
+    Prefer using this as a context manager (`with configure_logging(...) as controller:`)
+    around the pipeline body. That way shutdown() runs deterministically inside the task
+    itself and a failed final flush raises normally, failing the task. Relying solely on the
+    interpreter's own atexit-triggered logging.shutdown() is not sufficient: it only swallows
+    OSError/ValueError raised by close(), and even when other errors do propagate out of it,
+    Python reports them as "Exception ignored in atexit callback" without failing the process
+    - so a pipeline can appear to succeed while silently losing its trailing logs.
+
+    The controller only flushes, closes and removes the handlers it was given (those created by
+    configure_logging). Any other handlers on the logger are left untouched.
     """
 
-    def __init__(self, logger: logging.Logger) -> None:
+    def __init__(
+        self, logger: logging.Logger, handlers: Sequence[logging.Handler]
+    ) -> None:
+        """Initialize the LoggingController with the given logger and handlers."""
         self._logger = logger
+        self._handlers = list(handlers)
         self._is_shutdown = False
 
     def __enter__(self) -> Self:
         """Support use as a context manager."""
         return self
 
-    def __exit__(self, *_exc_info: object) -> None:
-        """Shut down deterministically so a failed final flush raises inside the task."""
-        self.shutdown()
+    def __exit__(
+        self,
+        _: type[BaseException] | None,
+        exc_value: BaseException | None,
+        __: TracebackType | None,
+    ) -> None:
+        """Shut down deterministically so a failed final flush raises inside the task.
+
+        If the body already raised, that exception stays the primary error: a shutdown failure is
+        printed to stderr and attached to it as a note rather than replacing it.
+        """
+        try:
+            self.shutdown()
+        except Exception as shutdown_error:  # pylint: disable=W0718
+            if exc_value is None:
+                raise
+            traceback.print_exception(shutdown_error, file=sys.stderr)
+            exc_value.add_note(
+                f"Logging shutdown also failed: "
+                f"{type(shutdown_error).__name__}: {shutdown_error}"
+            )
 
     def flush(self) -> None:
         """Upload buffered records without closing package logging."""
         if self._is_shutdown:
-            raise RuntimeError("Logging has already been shut down.")
-        for handler in self._logger.handlers:
+            err = "Logging has already been shut down."
+            raise RuntimeError(err)
+        for handler in self._handlers:
             if isinstance(handler, JsonlLogHandler):
-                handler.acquire()
-                try:
-                    handler._flush_locked()
-                finally:
-                    handler.release()
+                with handler._locked():  # noqa: SLF001  # pylint: disable=W0212
+                    handler._flush_locked()  # noqa: SLF001  # pylint: disable=W0212
 
     def shutdown(self) -> None:
-        """Flush, close, and remove package logging handlers."""
+        """Flush, close, and remove the handlers created by configure_logging.
+
+        Every handler is closed and removed even if an earlier one fails. The first error is
+        re-raised with notes describing any later errors. Logging is marked as shut down
+        regardless, because closed handlers cannot be reopened.
+        """
         if self._is_shutdown:
             return
 
-        close_error: Exception | None = None
-        for handler in list(self._logger.handlers):
+        self._is_shutdown = True
+        errors: list[Exception] = []
+        for handler in self._handlers:
             try:
                 handler.close()
-            except (RuntimeError, TypeError, ValueError) as error:
-                close_error = close_error or error
+            except Exception as error:  # noqa: BLE001  # pylint: disable=W0718
+                errors.append(error)
             finally:
                 self._logger.removeHandler(handler)
 
-        if close_error:
-            raise close_error
+        if errors:
+            first_error = errors[0]
+            for other_error in errors[1:]:
+                first_error.add_note(
+                    f"Another logging handler also failed to close: "
+                    f"{type(other_error).__name__}: {other_error}"
+                )
+            raise first_error
 
-        self._is_shutdown = True
 
-
-def configure_logging(
+def configure_logging(  # noqa: PLR0917 PLR0913
     bucket: str,
-    prefix: str,
-    database: str,
+    log_store_prefix: str,
+    athena_prefix: str,
+    athena_database_name: str,
+    athena_table_name: str,
+    pipeline: str,
     data_delivery_period: datetime,
     attempt_no: int,
     run_id: str,
     batch_size: int = 500,
 ) -> LoggingController:
-    """Configure package logging once with a shared console and JSONL handler.
+    """Configure root logging once with a shared console and JSONL handler.
 
-    Ensures configuration can only be run once and generates a package-level logger and
-    controller configured for the specific pipeline run.
+    Handlers are attached to the root logger so that logs from consuming repositories (which have
+    their own module namespaces) are captured. Ensures configuration can only be run once and
+    returns a controller configured for the specific pipeline run.
 
     Args:
-        bucket: str
-            The S3 bucket where logs will be stored.
-        prefix: str
-            The S3 prefix (folder path) under which logs will be stored.
-        database: str
-            The name of the database associated with the logs.
+        pipeline: str
+            The name of the pipeline associated with the logs.
         data_delivery_period: datetime
-            The data delivery period for the logs.
+            The data delivery period for the logs. Must be timezone-aware; it is normalised to UTC.
         attempt_no: int
             The attempt number for this data delivery period.
         run_id: str
             Airflow run identifier used to isolate records and objects.
+        bucket: str
+            The S3 bucket where logs will be stored.
+        log_store_prefix: str
+            Bucket-relative S3 key prefix for raw logs. Do not include the bucket or
+            the 's3://' scheme. Must not be the same as, or nested inside, 'athena_prefix'.
+        athena_prefix: str
+            Bucket-relative S3 key prefix for curated logs. Do not include the bucket or
+            the 's3://' scheme.
+        athena_database_name: str
+            The name of the existing Athena database where curated logs will be stored.
+        athena_table_name: str
+            The name of the Athena table where curated logs will be stored.
         batch_size: int, optional
             Number of records written in each JSONL S3 object.
 
@@ -382,70 +651,127 @@ def configure_logging(
         LoggingController: Controller for flushing and shutting down logging.
 
     Raises:
-        ValueError: If the batch size is less than 1.
-        RuntimeError: If the logger has already been configured.
+        ValueError: If the batch size is not an integer >= 1 or the data delivery period is naive.
+        InvalidPrefixError: If either prefix is invalid or the prefixes overlap.
+        RuntimeError: If the logger has already been configured or the log location is unreachable.
     """
-    if batch_size < 1 or isinstance(batch_size, bool):
-        raise ValueError("Batch size must be an integer >= 1.")
+    root_logger = logging.getLogger()
 
-    package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
-    package_logger.setLevel(logging.INFO)
-    package_logger.propagate = False
+    with _CONFIGURE_LOCK:
+        if u.is_handler_attached(_JSONL_HANDLER_NAME):
+            err = "Logger has already been configured."
+            raise RuntimeError(err)
 
-    if any(
-        handler.get_name() in [_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME]
-        for handler in package_logger.handlers
-    ):
-        raise RuntimeError(
-            "Logger has already been configured. This should only be done once per process."
+        logging_config = LoggingConfig(
+            pipeline=pipeline,
+            data_delivery_period=data_delivery_period,
+            attempt_no=attempt_no,
+            run_id=run_id,
+            bucket=bucket,
+            log_store_prefix=log_store_prefix,
+            athena_prefix=athena_prefix,
+            athena_database_name=athena_database_name,
+            athena_table_name=athena_table_name,
+            batch_size=batch_size,
         )
 
-    jsonl_handler = JsonlLogHandler(
-        bucket=bucket,
-        prefix=prefix,
-        database=database,
-        run_id=run_id,
-        data_delivery_period=data_delivery_period,
-        attempt_no=attempt_no,
-        batch_size=batch_size,
-    )
+        jsonl_handler = JsonlLogHandler(logging_config=logging_config)
+        jsonl_handler.set_name(_JSONL_HANDLER_NAME)
 
-    stream_handler = logging.StreamHandler()
-    stream_handler.set_name(_CONSOLE_HANDLER_NAME)
-    stream_handler.setFormatter(
-        logging.Formatter(
-            fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
+        stream_handler = logging.StreamHandler()
+        stream_handler.set_name(_CONSOLE_HANDLER_NAME)
+        stream_handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
         )
-    )
-    package_logger.addHandler(stream_handler)
-    jsonl_handler.set_name(_JSONL_HANDLER_NAME)
-    package_logger.addHandler(jsonl_handler)
 
-    return LoggingController(package_logger)
+        root_logger.setLevel(logging.INFO)
+        root_logger.addHandler(jsonl_handler)
+        root_logger.addHandler(stream_handler)
+
+    return LoggingController(root_logger, [jsonl_handler, stream_handler])
 
 
 class ModuleLogger(BaseModel):
-    """Model to validate that all required custom fields have been provided."""
+    """Wrap a logger so every record carries validated custom fields.
+
+    Table precedence: the table passed to info()/error(), then the innermost
+    active with_table() block in the current thread/task, then the table set
+    on the ModuleLogger.
+    """
 
     logger: logging.Logger
+    process: str | None = None
+    table: str = ""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+    # Per-instance, per-thread/task table set by with_table(); None means no block is active.
+    _table_override: ContextVar[str | None] = PrivateAttr(
+        default_factory=lambda: ContextVar[str | None](
+            "module_logger_table", default=None
+        )
+    )
 
-    def error(
+    model_config = ConfigDict(
+        extra="forbid", arbitrary_types_allowed=True, validate_assignment=True
+    )
+
+    @contextmanager
+    def with_table(self, table: str) -> Generator[None]:
+        """Set the table for log calls made in this thread/task within this block.
+
+        The value is held in a ContextVar, so concurrent threads/tasks sharing thi
+        ModuleLogger never see each other's table, and nested blocks restore the
+        previous value on exit. New threads (including ThreadPoolExecutor workers)
+        start with no active block, so they fall back to the logger's table.
+        """
+        token = self._table_override.set(table)
+        try:
+            yield
+        finally:
+            self._table_override.reset(token)
+
+    def _require_logging_configured(self) -> None:
+        """Raise if the JSONL handler is not attached to the root logger."""
+        if not u.is_handler_attached(_JSONL_HANDLER_NAME):
+            err = "Logging is not configured. Call configure_logging() before logging"
+            raise exc.LoggingNotConfiguredError(err)
+
+    def get_table_value(self, log_call_table: str | None = None) -> str:
+        """Get the effective table value for this logger."""
+        if log_call_table is not None:
+            return log_call_table
+        table_override = self._table_override.get()
+        return self.table if table_override is None else table_override
+
+    def error(  # noqa: PLR0913
         self,
         message: str,
         *args: object,
-        table: str = "N/A",
-        field: str = "N/A",
-        stage: Literal["Start", "Processing", "End"] = "Processing",
+        process: str | None = None,
+        table: str | None = None,
+        field: str = "",
+        stage: ProcessStage = "Processing",
+        exc_info: bool | BaseException = False,
     ) -> None:
-        """Log a metadata validation error with structured context."""
-        custom_fields = CustomLogFields(table=table, field=field, process_stage=stage)
+        """Log an error with structured context.
 
+        Pass exc_info=True inside an 'except' block (or pass the exception itself) to
+        record the full traceback, including chained causes, notes and exception group members,
+        in the 'exception' column and on the console.
+        """
+        self._require_logging_configured()
+        custom_fields = CustomLogFields(
+            process=process if process is not None else self.process,
+            table=self.get_table_value(table),
+            field=field,
+            process_stage=stage,
+        )
         self.logger.error(
             message,
             *args,
+            exc_info=exc_info,
             stacklevel=2,
             extra={"custom_fields": custom_fields},
         )
@@ -454,12 +780,20 @@ class ModuleLogger(BaseModel):
         self,
         message: str,
         *args: object,
-        table: str = "N/A",
-        field: str = "N/A",
-        stage: Literal["Start", "Processing", "End"] = "Processing",
+        process: str | None = None,
+        table: str | None = None,
+        field: str = "",
+        stage: ProcessStage = "Processing",
     ) -> None:
-        """Log a metadata validation event with structured context."""
-        custom_fields = CustomLogFields(table=table, field=field, process_stage=stage)
+        """Log an informational event with structured context."""
+        self._require_logging_configured()
+
+        custom_fields = CustomLogFields(
+            process=process if process is not None else self.process,
+            table=self.get_table_value(table),
+            field=field,
+            process_stage=stage,
+        )
         self.logger.info(
             message,
             *args,

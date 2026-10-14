@@ -60,7 +60,10 @@ ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
 
 
-[tool.lint.ruff]
+[tool.ruff]
+exclude = ["typings", "playground"]
+
+[tool.ruff.lint]
 select = [
     "A", # flake8-builtins (redefinition of bultins)
     "ANN", # flake8-annotations (type annotations are everywhere)
@@ -104,7 +107,7 @@ select = [
     "SLF", # flake8-self (private member access)
     "T10", # flake8-debugger
     "T20", # flake8-print (no print nor pprint)
-    "TCH", # flake8-type-checking (move import only intended for type-checking in "if TYPE_CHECKING" blocs)
+    "TC", # flake8-type-checking (move import only intended for type-checking in "if TYPE_CHECKING" blocs)
     "TID", # flake8-tidy-imports (ordonated imports)
     "TRY", # tryceratops (exception handling AntiPatterns)
     "UP", # pyupgrade (upgrate syntax for newer versions of Python)
@@ -112,18 +115,16 @@ select = [
     "W" # pycodestyle (violation of PEP-8)
 ]
 ignore = [
-    "ANN101", # missing type annotation for self, but hinting self all the time is useless
-    "ANN102", # missing type annotation for cls but hinting cls all the time is useless
     "ANN401", # disallows Any, but some elements should be Any when they are external
     "B024", # forces abstract classes to have at least one abstract method, but sometimes a class is virtually abstract
+    "COM812", # trailing commas are handled by the formatter (conflicts with ruff format)
     "D100", # Missing docstring in public module
     "D105", # docstrings on magic methods, useless docstrings are well known
-    "E501", # line size, but bug-bear already set it with a tolerance of 10% (B950)
-    "UP007" # ignore or-wise typing for py3.9 support
+    "E501", # line length is handled by the formatter
+    "ISC001", # implicit string concatenation is handled by the formatter (conflicts with ruff format)
 ]
-exclude = ["typings", "playground"]
 
-[tool.lint.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "docs/conf.py" = [
     "A001", # redefine some builtins (like "copyright") is OK in docs
 ]
@@ -136,11 +137,11 @@ exclude = ["typings", "playground"]
     "SLF001" # accessing private members is OK for tests
 ]
 
-[tool.lint.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.lint.ruff.isort]
-known-first-party = ["src", "tests"]
+[tool.ruff.lint.isort]
+known-first-party = ["opg_pipeline_builder", "tests"]
 
 [tool.ruff.format]
 quote-style = "double"

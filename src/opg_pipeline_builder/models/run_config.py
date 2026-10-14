@@ -7,7 +7,7 @@ from opg_pipeline_builder.models.pipeline_config import PipelineConfig
 from opg_pipeline_builder.models.settings_config import SettingsConfig
 from opg_pipeline_builder.models.utils import render_s3_path
 
-log = ModuleLogger(logger=getLogger(__name__))
+log = ModuleLogger(logger=getLogger(__name__), process="Run validation")
 
 
 class RunConfig(BaseModel):
@@ -23,6 +23,11 @@ class RunConfig(BaseModel):
 def create_run_config(pipeline: PipelineConfig, settings: SettingsConfig) -> RunConfig:
     """Create a run config from the pipeline and settings config"""
     log.info("Creating run config", table="run_config", stage="Start")
+
+    if pipeline.name != settings.PIPELINE_NAME:
+        err = f"Pipeline name '{pipeline.name}' does not match settings PIPELINE_NAME '{settings.PIPELINE_NAME}'"
+        log.error(err, table="run_config")
+        raise ValueError(err)
 
     log.info("Rendering S3 land path", table="run_config", field="land_path")
     land_path = render_s3_path(pipeline.land_path, settings.ENV, pipeline.name)

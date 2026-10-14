@@ -31,7 +31,6 @@ def create_column(
     **extra_fields: Any,
 ) -> m.Column:
     """Create a Column instance with the given parameters."""
-
     allowed_values = allowed_values or []
     if etl_stages is None:
         etl_stages = ["raw", "curated"]

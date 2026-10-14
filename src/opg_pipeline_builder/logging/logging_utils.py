@@ -103,6 +103,4 @@ def to_jsonl_line(row: dict[str, Any]) -> str:
 
 
 def is_handler_attached(handler: str) -> bool:
-    return any(
-        h.get_name() == handler for h in logging.getLogger().handlers
-    )
+    return any(h.get_name() == handler for h in logging.getLogger().handlers)

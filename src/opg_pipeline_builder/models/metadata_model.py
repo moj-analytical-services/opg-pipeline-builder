@@ -1,7 +1,6 @@
 import json
 from collections import Counter
 from logging import getLogger
-from os import name
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +9,10 @@ import polars as pl
 from pydantic import (
     BaseModel,
     ConfigDict,
+    PrivateAttr,
     ValidationInfo,
     field_validator,
     model_validator,
-    PrivateAttr,
 )
 
 from opg_pipeline_builder.constants import (
@@ -130,7 +129,6 @@ class Column(BaseModel):
         self, info: ValidationInfo
     ) -> "Column":
         """Ensure that partition and composite key columns are not nullable."""
-
         if (self.is_composite_key or self.is_partition) and self.nullable:
             err = f"Column '{self.column_name}' is part of a composite key or partition and cannot be nullable"
             log.error(err, table=self._table_name, field="nullable")
@@ -140,7 +138,6 @@ class Column(BaseModel):
     @model_validator(mode="after")
     def _allowed_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
         """Ensure that allowed values match the input data type."""
-
         if self.allowed_values:
             if self.input_data_type in (str, int):
                 for value in self.allowed_values:
@@ -156,7 +153,6 @@ class Column(BaseModel):
     @model_validator(mode="after")
     def _default_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
         """Ensure that default values match the input data type."""
-
         if self.default_value is not None:
             if self.input_data_type in (str, int):
                 if not isinstance(self.default_value, self.input_data_type):
@@ -298,12 +294,11 @@ class TableMetaData(BaseModel):
                 if stage in unreconciled_format_stages:
                     unreconciled_format_stages.remove(stage)
                     reconciled_stages.append(stage)
-                else:
-                    if (
-                        stage not in reconciled_stages
-                        and stage not in unreconciled_column_stages
-                    ):
-                        unreconciled_column_stages.append(stage)
+                elif (
+                    stage not in reconciled_stages
+                    and stage not in unreconciled_column_stages
+                ):
+                    unreconciled_column_stages.append(stage)
 
         if unreconciled_format_stages:
             for stage in unreconciled_format_stages:
@@ -554,7 +549,6 @@ def output_metadata_as_csv(
     Returns:
         None
     """
-
     metadata_dfs: list[pd.DataFrame] = []
 
     for pipeline_name in metadata_files:

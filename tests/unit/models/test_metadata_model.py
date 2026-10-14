@@ -721,7 +721,6 @@ class TestTableMetaData:
         column_stages: list[list[str]],
     ) -> None:
         """Test that column stages match the file format stages for a table."""
-
         columns = []
         for num, stages in enumerate(column_stages):
             columns.append(create_column(name=f"id_{num}", etl_stages=stages))
@@ -766,7 +765,6 @@ class TestTableMetaData:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test that column stages match the file format stages for a table."""
-
         columns = []
         for num, stages in enumerate(column_stages):
             columns.append(create_column(name=f"id_{num}", etl_stages=stages))
@@ -1240,7 +1238,7 @@ def test_output_metadata_as_csv() -> None:
                 "record_updated_datetime",
                 "triage_level2",
             ],
-            "Description": [np.NaN] * 26,
+            "Description": [np.nan] * 26,
             "Data Type": [
                 "<class 'str'>",
                 "<class 'str'>",

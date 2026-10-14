@@ -52,8 +52,8 @@ def is_valid_s3_path_template(filepath: str, field: str = "") -> str:
         return "S3 path must contain an environment variable placeholder '{{ env }}' as a subdirectory"
     if "/{{ db }}/" not in filepath:
         return "S3 path must contain a pipeline name variable placeholder '{{ db }}' as a subdirectory"
-    if f"/{field.split('_')[0]}/" not in filepath:
-        return f"S3 path must contain the corresponding etl stage '{field.split('_')[0]}' as a subdirectory"
+    if f"/{field.split('_', maxsplit=1)[0]}/" not in filepath:
+        return f"S3 path must contain the corresponding etl stage '{field.split('_', maxsplit=1)[0]}' as a subdirectory"
     return ""
 
 

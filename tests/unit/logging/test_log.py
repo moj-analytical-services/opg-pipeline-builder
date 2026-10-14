@@ -461,7 +461,6 @@ class TestJsonlLogHandler:
 
     def test_validate_log_location_valid(self, s3: boto3.client) -> None:
         """Test that the marker file is generated, and only one ever exists."""
-
         create_handler(apply_patches=False)
         create_handler(
             pipeline="other-pipeline",
@@ -686,7 +685,6 @@ class TestJsonlLogHandler:
 
     def test_write_configuration_log(self, s3: boto3.client) -> None:
         """Test that the configuration log is written correctly."""
-
         with freeze_time("2024-01-02T00:00:00Z"):
             handler = create_handler()
             handler._write_configuration_log()
@@ -954,7 +952,6 @@ class TestJsonlLogHandler:
 
     def test_put_object_success(self, s3: boto3.client) -> None:
         """Test that the handler successfully puts an object to S3."""
-
         handler = create_handler()
 
         key = handler._object_key(handler._part_number)
@@ -967,7 +964,6 @@ class TestJsonlLogHandler:
 
     def test_flush_locked_success(self, s3: boto3.client) -> None:
         """Test that the handler successfully flushes the buffer to S3."""
-
         handler = create_handler(apply_patches=False, batch_size=5)
 
         handler.emit(create_log_record(message="First application event"))
@@ -1126,7 +1122,8 @@ class TestJsonlLogHandler:
 
     def test_registration_reads_exactly_the_uploaded_keys(self) -> None:
         """Test that the keys rebuilt at registration match the keys uploaded, and a failed upload does
-        not consume a part number."""
+        not consume a part number.
+        """
         handler = create_handler(batch_size=5)
         uploaded: list[str] = []
 
@@ -1409,11 +1406,11 @@ class TestLoggingController:
                 log.JsonlLogHandler, "close", side_effect=shutdown_error
             ) as mock_close,
             expectation as raised,
+            controller as entered,
         ):
-            with controller as entered:
-                assert entered is controller
-                if body_error is not None:
-                    raise body_error
+            assert entered is controller
+            if body_error is not None:
+                raise body_error
 
         mock_close.assert_called_once_with()
         if primary_error is not None:
@@ -1443,7 +1440,6 @@ class TestConfigureLogging:
 
     def test_configure_returns_success(self, s3: boto3.client) -> None:
         """Test that configure_logging returns a LoggingController and sets up handlers correctly."""
-
         controller = self.configure_logging_wrapper(
             log_store_prefix="custom/log-store",
             athena_prefix="custom/logs/",
@@ -1508,7 +1504,6 @@ class TestConfigureLogging:
 
     def test_duplicate_configuration_raises(self, s3: boto3.client) -> None:
         """Test that configuring logging twice raises a RuntimeError."""
-
         self.configure_logging_wrapper()
         with pytest.raises(RuntimeError, match="Logger has already been configured"):
             self.configure_logging_wrapper()
@@ -1937,7 +1932,6 @@ class TestModuleLogger:
 
     def test_lazy_formatting_is_applied(self, s3: boto3.client) -> None:
         """Test that %s-style args passed through are lazily interpolated into the final message."""
-
         log.configure_logging(**config_values(batch_size=3))
 
         module_logger = log.ModuleLogger(
@@ -2132,7 +2126,6 @@ class TestLoggingEndToEnd:
         context manager) flushes and closes the handler too, but never calls `removeHandler()`
         and never touches the controller, so both stay unaffected.
         """
-
         function_name = inspect.currentframe().f_code.co_name  # type: ignore[union-attr]
 
         with freeze_time("2024-01-02T00:00:00Z"):
@@ -2222,7 +2215,6 @@ class TestLoggingEndToEnd:
         ignored in atexit callback" for errors it doesn't recognise. Either way the RuntimeError
         propagates out of the trigger itself, and nothing partial reaches S3.
         """
-
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
             pipeline_logger = log.ModuleLogger(
@@ -2268,7 +2260,6 @@ class TestLoggingEndToEnd:
         through controller.flush() handles the same failures and recovery correctly, without
         re-asserting every detail already covered there.
         """
-
         controller, jsonl_handler = self.configure(batch_size=100)
         pipeline_logger = log.ModuleLogger(
             logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
@@ -2314,7 +2305,6 @@ class TestLoggingEndToEnd:
         """Test that multiple threads writing through the same handler produce exactly the
         expected records, with none lost or duplicated, and sequential, gap-free part numbers.
         """
-
         worker_count = 3
         messages_per_worker = 5
 
@@ -2593,7 +2583,6 @@ class TestLoggingEndToEnd:
         self, s3: boto3.client
     ) -> None:
         """Test that shutting down immediately after configure_logging still flushes the config record."""
-
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
             with controller:
@@ -2647,7 +2636,6 @@ class TestLoggingEndToEnd:
         """Test that two runs for the same pipeline/data_delivery_period but different attempt_no
         write to distinct S3 partitions without colliding or mixing records.
         """
-
         expected = {}
         with freeze_time("2024-01-02T00:00:00Z"):
             for attempt, message in [

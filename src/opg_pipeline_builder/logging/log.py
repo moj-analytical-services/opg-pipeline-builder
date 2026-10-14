@@ -8,11 +8,87 @@ from typing import Any, Literal, Self
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+    Field,
+)
+
+from opg_pipeline_builder.validation.validators import is_valid_identifier
+from opg_pipeline_builder.logging import logging_utils as u
 
 PACKAGE_LOGGER_NAME = "opg_pipeline_builder"
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
+
+
+class LoggingConfig(BaseModel):
+    """Pydantic model for validating user supplied configuration."""
+
+    bucket: str
+    prefix: str
+    pipeline: str
+    data_delivery_period: datetime
+    attempt_no: int
+    run_id: str
+    batch_size: int = Field(strict=True)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_s3_prefixes(self) -> "LoggingConfig":
+        """Validate that S3 prefixes are correctly formatted and don't clash.
+
+        The eventual location of the parquet files (Athena table) may reside inside
+        the location of the log store prefix. But the log store prefix must not be
+        the same as, or nested inside, the Athena prefix.
+        """
+        u.validate_s3_prefix(self.prefix, "prefix", self.bucket)
+        u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
+        u.validate_prefix_layout(self.prefix, self.athena_prefix)
+        return self
+
+    @field_validator("athena_database_name", "athena_table_name")
+    @classmethod
+    def validate_athena_db_and_table(cls, value: str, info: ValidationInfo) -> str:
+        """Require Athena database and table names to be valid identifiers."""
+        identifier_error = is_valid_identifier(value)
+        if identifier_error:
+            err = f"Validating StructuredLogRecord: {identifier_error}: '{info.field_name}.'"
+            raise ValueError(err)
+        return value
+
+    @field_validator("pipeline", "run_id")
+    @classmethod
+    def validate_pipeline_and_run_id(cls, value: str, info: ValidationInfo) -> str:
+        """Require non-empty run context identifiers."""
+        if not u.not_empty(value):
+            err = f"Validating StructuredLogRecord: '{info.field_name}' must be non-empty."
+            raise ValueError(err)
+        return value
+
+    @field_validator("data_delivery_period")
+    @classmethod
+    def validate_datetimes_are_timezone_aware(
+        cls, value: datetime, info: ValidationInfo
+    ) -> datetime:
+        """Require timezone-aware datetimes and normalize them to UTC."""
+        if not u.is_timezone_aware(value):
+            err = f"Validating StructuredLogRecord: '{info.field_name}' must be timezone-aware."
+            raise ValueError(err)
+        return value.astimezone(UTC)
+
+    @field_validator("attempt_no", "batch_size")
+    @classmethod
+    def validate_attempt_no(cls, value: int, info: ValidationInfo) -> int:
+        """Require a positive run attempt number."""
+        if value < 1:
+            err = f"Validating StructuredLogRecord: '{info.field_name}' must be >=1."
+            raise ValueError(err)
+        return value
 
 
 class CustomLogFields(BaseModel):
@@ -85,23 +161,13 @@ class JsonlLogHandler(logging.Handler):
     def __init__(
         self,
         *,
-        bucket: str,
-        prefix: str,
-        database: str,
-        data_delivery_period: datetime,
-        attempt_no: int,
-        run_id: str,
-        batch_size: int = 500,
+        logging_config: LoggingConfig,
     ) -> None:
+        """Initialize the JSONL log handler with the given configuration."""
         super().__init__(level=logging.INFO)
-        self._bucket = bucket
-        self._prefix = prefix
-        self._database = database
-        self._run_id = run_id
-        self._data_delivery_period = data_delivery_period
-        self._attempt_no = attempt_no
-        self._base_batch_size = batch_size
-        self._batch_size = batch_size
+        self._config = logging_config
+        self._batch_size = self._config.batch_size
+        self._base_batch_size = self._config.batch_size
         self._part_number = 0
         self._writer_id = uuid.uuid4().hex
         self._buffer: list[dict[str, Any]] = []
@@ -119,16 +185,16 @@ class JsonlLogHandler(logging.Handler):
         the retry logic could see the pipeline progress before ultimately failing when trying
         to write the log the final time. Instead, fail fast here.
         """
-        key = f"{self._prefix.rstrip('/')}/logging-marker/marker.txt"
+        key = f"{self._config.prefix.rstrip('/')}/logging-marker/marker.txt"
         try:
             self._s3.put_object(
-                Bucket=self._bucket,
+                Bucket=self._config.bucket,
                 Key=key,
                 Body=b"",
             )
         except (BotoCoreError, ClientError, OSError) as error:
             raise RuntimeError(
-                f"Failed to prepare JSONL log location s3://{self._bucket}/{key}"
+                f"Failed to prepare JSONL log location s3://{self._config.bucket}/{key}"
             ) from error
 
     def _write_configuration_log(self) -> None:
@@ -140,10 +206,10 @@ class JsonlLogHandler(logging.Handler):
         """
         self._buffer.append(
             StructuredLogRecord(
-                database=self._database,
-                run_id=self._run_id,
-                data_delivery_period=self._data_delivery_period,
-                attempt_no=self._attempt_no,
+                database=self._config.pipeline,
+                run_id=self._config.run_id,
+                data_delivery_period=self._config.data_delivery_period,
+                attempt_no=self._config.attempt_no,
                 logger_name=PACKAGE_LOGGER_NAME,
                 module="opg_pipeline_builder.logging.log",
                 function="configure_logging",
@@ -189,17 +255,17 @@ class JsonlLogHandler(logging.Handler):
     def _object_key(self, process_id: str, part_number: int) -> str:
         """Generate the S3 object key for a given process ID and part number."""
         return (
-            f"{self._prefix.rstrip('/')}/"
-            f"data_delivery_period={self._data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._attempt_no}/"
-            f"run_id={self._run_id}/"
+            f"{self._config.prefix.rstrip('/')}/"
+            f"data_delivery_period={self._config.data_delivery_period.strftime('%Y%m%d')}/"
+            f"attempt_no={self._config.attempt_no}/"
+            f"run_id={self._config.run_id}/"
             f"{process_id}_{self._writer_id}_{part_number}.jsonl"
         )
 
     def _put_object(self, key: str, body: bytes) -> None:
         """Upload one JSONL batch to S3."""
         self._s3.put_object(
-            Bucket=self._bucket,
+            Bucket=self._config.bucket,
             Key=key,
             Body=body,
             ContentType="application/x-ndjson",
@@ -225,7 +291,7 @@ class JsonlLogHandler(logging.Handler):
         except (BotoCoreError, ClientError, OSError, RuntimeError, ValueError) as error:
             self._write_failures += 1
             print(
-                f"Failed to write a batch of logs to s3://{self._bucket}/{key} "
+                f"Failed to write a batch of logs to s3://{self._config.bucket}/{key} "
                 f"(failure_count={self._write_failures}). Error: {error}",
                 flush=True,
             )
@@ -236,10 +302,10 @@ class JsonlLogHandler(logging.Handler):
 
             self._buffer.append(
                 StructuredLogRecord(
-                    database=self._database,
-                    run_id=self._run_id,
-                    data_delivery_period=self._data_delivery_period,
-                    attempt_no=self._attempt_no,
+                    database=self._config.pipeline,
+                    run_id=self._config.run_id,
+                    data_delivery_period=self._config.data_delivery_period,
+                    attempt_no=self._config.attempt_no,
                     logger_name=PACKAGE_LOGGER_NAME,
                     module="opg_pipeline_builder.logging.log",
                     function="_flush_locked",
@@ -275,10 +341,10 @@ class JsonlLogHandler(logging.Handler):
             raise ValueError(err)
 
         log_record = StructuredLogRecord(
-            database=self._database,
-            run_id=self._run_id,
-            data_delivery_period=self._data_delivery_period,
-            attempt_no=self._attempt_no,
+            database=self._config.pipeline,
+            run_id=self._config.run_id,
+            data_delivery_period=self._config.data_delivery_period,
+            attempt_no=self._config.attempt_no,
             logger_name=record.name,
             module=record.module,
             function=record.funcName,
@@ -351,7 +417,7 @@ class LoggingController:
 def configure_logging(
     bucket: str,
     prefix: str,
-    database: str,
+    pipeline: str,
     data_delivery_period: datetime,
     attempt_no: int,
     run_id: str,
@@ -367,8 +433,8 @@ def configure_logging(
             The S3 bucket where logs will be stored.
         prefix: str
             The S3 prefix (folder path) under which logs will be stored.
-        database: str
-            The name of the database associated with the logs.
+        pipeline: str
+            The name of the pipeline associated with the logs.
         data_delivery_period: datetime
             The data delivery period for the logs.
         attempt_no: int
@@ -385,9 +451,6 @@ def configure_logging(
         ValueError: If the batch size is less than 1.
         RuntimeError: If the logger has already been configured.
     """
-    if batch_size < 1 or isinstance(batch_size, bool):
-        raise ValueError("Batch size must be an integer >= 1.")
-
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
     package_logger.setLevel(logging.INFO)
     package_logger.propagate = False
@@ -400,15 +463,17 @@ def configure_logging(
             "Logger has already been configured. This should only be done once per process."
         )
 
-    jsonl_handler = JsonlLogHandler(
-        bucket=bucket,
-        prefix=prefix,
-        database=database,
-        run_id=run_id,
+    logging_config = LoggingConfig(
+        pipeline=pipeline,
         data_delivery_period=data_delivery_period,
         attempt_no=attempt_no,
+        run_id=run_id,
+        bucket=bucket,
+        prefix=prefix,
         batch_size=batch_size,
     )
+
+    jsonl_handler = JsonlLogHandler(logging_config=logging_config)
 
     stream_handler = logging.StreamHandler()
     stream_handler.set_name(_CONSOLE_HANDLER_NAME)

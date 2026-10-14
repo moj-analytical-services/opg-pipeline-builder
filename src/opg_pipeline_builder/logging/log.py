@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import sys
@@ -6,27 +5,77 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal, Self
 
+import awswrangler as wr
 import boto3
+import pandas as pd
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    TypeAdapter,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from opg_pipeline_builder.logging import logging_utils as u
+from opg_pipeline_builder.validation.validators import is_valid_identifier
 
 _CONSOLE_HANDLER_NAME = "opg_pipeline_builder_console"
 _JSONL_HANDLER_NAME = "opg_pipeline_builder_jsonl"
+_S3_RETRY_CONFIG = Config(retries={"mode": "standard", "max_attempts": 5})
+_MAX_TEXT_LENGTH = 32_768  # Caps the message and exception text written to JSONL
+_DATETIME_JSON = TypeAdapter(datetime)
+
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+ProcessStage = Literal["Start", "Processing", "End"]
+
+
+class StructuredLogRecord(BaseModel):
+    """Pydantic model representing a structured log record written to JSONL."""
+
+    pipeline: str
+    run_id: str
+    data_delivery_period: datetime
+    attempt_no: int
+    logger_name: str
+    module: str
+    function: str
+    line_number: int
+    log_level: LogLevel
+    log_timestamp: datetime
+    table: str
+    field: str
+    process_stage: ProcessStage
+    message: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class CustomLogFields(BaseModel):
+    """Pydantic model representing custom log fields.
+
+    These fields provide context for individual log entries. The model requires
+    all three fields and rejects additional values.
+    """
+
+    table: str
+    field: str
+    process_stage: Literal["Start", "Processing", "End"]
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class LoggingConfig(BaseModel):
     """Pydantic model for validating user supplied configuration."""
 
     bucket: str
-    prefix: str
+    log_store_prefix: str
+    athena_prefix: str
+    athena_database_name: str
+    athena_table_name: str
     pipeline: str
     data_delivery_period: datetime
     attempt_no: int
@@ -34,6 +83,29 @@ class LoggingConfig(BaseModel):
     batch_size: int = Field(strict=True)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_s3_prefixes(self) -> "LoggingConfig":
+        """Validate that S3 prefixes are correctly formatted and don't clash.
+
+        The eventual location of the parquet files (Athena table) may reside inside
+        the location of the log store prefix. But the log store prefix must not be
+        the same as, or nested inside, the Athena prefix.
+        """
+        u.validate_s3_prefix(self.log_store_prefix, "log_store_prefix", self.bucket)
+        u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
+        u.validate_prefix_layout(self.log_store_prefix, self.athena_prefix)
+        return self
+
+    @field_validator("athena_database_name", "athena_table_name")
+    @classmethod
+    def validate_athena_db_and_table(cls, value: str, info: ValidationInfo) -> str:
+        """Require Athena database and table names to be valid identifiers."""
+        identifier_error = is_valid_identifier(value)
+        if identifier_error:
+            err = f"Validating StructuredLogRecord: {identifier_error}: '{info.field_name}.'"
+            raise ValueError(err)
+        return value
 
     @field_validator("pipeline", "run_id")
     @classmethod
@@ -63,70 +135,6 @@ class LoggingConfig(BaseModel):
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be >=1."
             raise ValueError(err)
         return value
-
-
-class CustomLogFields(BaseModel):
-    """Pydantic model representing custom log fields.
-
-    These fields provide context for individual log entries. The model requires
-    all three fields and rejects additional values.
-    """
-
-    table: str
-    field: str
-    process_stage: Literal["Start", "Processing", "End"]
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class StructuredLogRecord(BaseModel):
-    """Pydantic model representing a structured log record written to JSONL.
-
-    This is the definitive definition of a valid log record. It receives data from the logger.record object,
-    the CustomLogFields values and pipeline/run values stored in the JSONL handler via the configuration.
-    """
-
-    database: str
-    run_id: str
-    data_delivery_period: datetime
-    attempt_no: int
-    logger_name: str
-    module: str
-    function: str
-    line_number: int
-    log_level: str
-    log_timestamp: datetime
-    process_stage: Literal["Start", "Processing", "End"]
-    table: str
-    field: str
-    message: str
-
-    model_config = ConfigDict(extra="forbid")
-
-    @field_validator("database", "run_id")
-    @classmethod
-    def validate_database_and_run_id(cls, value: str, info: ValidationInfo) -> str:
-        """Require non-empty run context identifiers."""
-        if not value.strip():
-            err = f"Validation of StructuredLogRecord failed: field '{info.field_name}' must be non-empty."
-            raise ValueError(err)
-        return value
-
-    @field_validator("attempt_no")
-    @classmethod
-    def validate_attempt_no(cls, value: int) -> int:
-        """Require a positive run attempt number."""
-        if value < 1:
-            raise ValueError("Attempt number must be an integer >= 1.")
-        return value
-
-    @field_validator("data_delivery_period", "log_timestamp")
-    @classmethod
-    def validate_datetimes_are_timezone_aware(cls, value: datetime) -> datetime:
-        """Require timezone-aware datetimes and normalize them to UTC."""
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("Datetime fields must be timezone-aware.")
-        return value.astimezone(UTC)
 
 
 class JsonlLogHandler(logging.Handler):
@@ -159,7 +167,7 @@ class JsonlLogHandler(logging.Handler):
         the retry logic could see the pipeline progress before ultimately failing when trying
         to write the log the final time. Instead, fail fast here.
         """
-        key = f"{self._config.prefix.rstrip('/')}/logging-marker/marker.txt"
+        key = f"{self._config.log_store_prefix.rstrip('/')}/logging-marker/marker.txt"
         try:
             self._s3.put_object(
                 Bucket=self._config.bucket,
@@ -167,9 +175,8 @@ class JsonlLogHandler(logging.Handler):
                 Body=b"",
             )
         except (BotoCoreError, ClientError, OSError) as error:
-            raise RuntimeError(
-                f"Failed to prepare JSONL log location s3://{self._config.bucket}/{key}"
-            ) from error
+            err = f"Failed to write marker object to s3://{self._config.bucket}/{key}: {error}"
+            raise RuntimeError(err) from error
 
     def _write_configuration_log(self) -> None:
         """Write a log record indicating that logging has been configured successfully.
@@ -221,19 +228,80 @@ class JsonlLogHandler(logging.Handler):
                     raise RuntimeError(
                         f"Failed to write {len(self._buffer)} log records to S3."
                     )
+                self._register_logs_in_athena()
             finally:
                 self.release()
         finally:
             super().close()
 
-    def _object_key(self, process_id: str, part_number: int) -> str:
-        """Generate the S3 object key for a given process ID and part number."""
+    def _create_key_directory(self, prefix: str) -> str:
+        """Generate the S3 key directory, excluding the filename.
+
+        Partition values are percent-encoded so characters such as ':', '+' and '/' cannot create
+        extra path segments or ambiguous keys.
+        """
+        partitions = {
+            "data_delivery_period": _DATETIME_JSON.dump_python(
+                self._config.data_delivery_period, mode="json"
+            ),
+            "attempt_no": self._config.attempt_no,
+            "run_id": self._config.run_id,
+        }
+        return f"{prefix.rstrip('/')}/" + "".join(
+            f"{name}={u.encode_partition_value(value)}/"
+            for name, value in partitions.items()
+        )
+
+    def _object_key(self, part_number: int) -> str:
+        """Return the S3 key of one JSONL object written by this handler.
+
+        Threads in a process share this handler, and every upload happens under its lock, so each
+        successful upload gets the next part number. Separate processes have their own handler, pid
+        and writer_id. A key is therefore unique to one upload.
+        """
         return (
-            f"{self._config.prefix.rstrip('/')}/"
-            f"data_delivery_period={self._config.data_delivery_period.strftime('%Y%m%d')}/"
-            f"attempt_no={self._config.attempt_no}/"
-            f"run_id={self._config.run_id}/"
-            f"{process_id}_{self._writer_id}_{part_number}.jsonl"
+            f"{self._create_key_directory(self._config.log_store_prefix)}"
+            f"{os.getpid()}_{self._writer_id}_{part_number}.jsonl"
+        )
+
+    def _register_logs_in_athena(self) -> None:
+        """Append the JSONL objects written by this handler to the curated Athena dataset.
+
+        Only the exact objects written by this handler are read, so concurrent writers in the
+        same run (e.g. other processes) never register each other's records. The Glue database
+        is created here if it does not exist.
+
+        Keys are rebuilt rather than tracked: _part_number only increments after a successful
+        upload (a failed upload retries under the same part number), so parts 0..n-1 are exactly
+        the objects written.
+        """
+        if self._part_number == 0:
+            return
+
+        logs = wr.s3.read_json(
+            path=[
+                f"s3://{self._config.bucket}/{self._object_key(part)}"
+                for part in range(self._part_number)
+            ],
+            lines=True,
+            dtype=False,
+            convert_dates=False,
+        )
+        # Pydantic omits fractional seconds when they are zero, so the format varies between rows.
+        logs["log_timestamp"] = pd.to_datetime(
+            logs["log_timestamp"], utc=True, format="ISO8601"
+        )
+        wr.catalog.create_database(self._config.athena_database_name, exist_ok=True)
+
+        wr.s3.to_parquet(
+            df=logs,
+            path=f"s3://{self._config.bucket}/{self._config.athena_prefix}",
+            dataset=True,
+            mode="append",
+            database=self._config.athena_database_name,
+            table=self._config.athena_table_name,
+            partition_cols=["data_delivery_period", "attempt_no", "run_id"],
+            dtype=u.ATHENA_COLUMN_TYPES,
         )
 
     def _put_object(self, key: str, body: bytes) -> None:
@@ -255,10 +323,10 @@ class JsonlLogHandler(logging.Handler):
         if not self._buffer:
             return
 
-        body = "".join(
-            json.dumps(row, separators=(",", ":")) + "\n" for row in self._buffer
-        ).encode("utf-8")
-        key = self._object_key(str(os.getpid()), self._part_number)
+        body = "".join(u.to_jsonl_line(row) + "\n" for row in self._buffer).encode(
+            "utf-8"
+        )
+        key = self._object_key(self._part_number)
 
         try:
             self._put_object(key, body)
@@ -390,31 +458,43 @@ class LoggingController:
 
 def configure_logging(
     bucket: str,
-    prefix: str,
+    log_store_prefix: str,
+    athena_prefix: str,
+    athena_database_name: str,
+    athena_table_name: str,
     pipeline: str,
     data_delivery_period: datetime,
     attempt_no: int,
     run_id: str,
     batch_size: int = 500,
 ) -> LoggingController:
-    """Configure package logging once with a shared console and JSONL handler.
+    """Configure root logging once with a shared console and JSONL handler.
 
-    Ensures configuration can only be run once and generates a package-level logger and
-    controller configured for the specific pipeline run.
+    Handlers are attached to the root logger so that logs from consuming repositories (which have
+    their own module namespaces) are captured. Ensures configuration can only be run once and
+    returns a controller configured for the specific pipeline run.
 
     Args:
-        bucket: str
-            The S3 bucket where logs will be stored.
-        prefix: str
-            The S3 prefix (folder path) under which logs will be stored.
         pipeline: str
             The name of the pipeline associated with the logs.
         data_delivery_period: datetime
-            The data delivery period for the logs.
+            The data delivery period for the logs. Must be timezone-aware; it is normalised to UTC.
         attempt_no: int
             The attempt number for this data delivery period.
         run_id: str
             Airflow run identifier used to isolate records and objects.
+        bucket: str
+            The S3 bucket where logs will be stored.
+        log_store_prefix: str
+            Bucket-relative S3 key prefix for raw logs. Do not include the bucket or
+            the 's3://' scheme. Must not be the same as, or nested inside, 'athena_prefix'.
+        athena_prefix: str
+            Bucket-relative S3 key prefix for curated logs. Do not include the bucket or
+            the 's3://' scheme.
+        athena_database_name: str
+            The name of the existing Athena database where curated logs will be stored.
+        athena_table_name: str
+            The name of the Athena table where curated logs will be stored.
         batch_size: int, optional
             Number of records written in each JSONL S3 object.
 
@@ -422,8 +502,9 @@ def configure_logging(
         LoggingController: Controller for flushing and shutting down logging.
 
     Raises:
-        ValueError: If the batch size is less than 1.
-        RuntimeError: If the logger has already been configured.
+        ValueError: If the batch size is not an integer >= 1 or the data delivery period is naive.
+        InvalidPrefixError: If either prefix is invalid or the prefixes overlap.
+        RuntimeError: If the logger has already been configured or the log location is unreachable.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -443,7 +524,10 @@ def configure_logging(
         attempt_no=attempt_no,
         run_id=run_id,
         bucket=bucket,
-        prefix=prefix,
+        log_store_prefix=log_store_prefix,
+        athena_prefix=athena_prefix,
+        athena_database_name=athena_database_name,
+        athena_table_name=athena_table_name,
         batch_size=batch_size,
     )
 

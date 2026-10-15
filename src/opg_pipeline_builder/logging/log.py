@@ -31,7 +31,8 @@ from pydantic import (
 
 from opg_pipeline_builder.logging import log_exceptions as exc
 from opg_pipeline_builder.logging import log_utils as u
-from opg_pipeline_builder.validation.validators import is_valid_identifier
+from opg_pipeline_builder.validation import validation_exceptions as vexc
+from opg_pipeline_builder.validation import validators as v
 
 _JSONL_HANDLER_NAME = "json_handler"
 _CONSOLE_HANDLER_NAME = "console_handler"
@@ -106,7 +107,7 @@ class LoggingConfig(BaseModel):
     athena_table_name: str
     pipeline: str
     data_delivery_period: datetime
-    attempt_no: int
+    attempt_no: int = Field(strict=True)
     run_id: str
     batch_size: int = Field(strict=True)
 
@@ -120,19 +121,31 @@ class LoggingConfig(BaseModel):
         the location of the log store prefix. But the log store prefix must not be
         the same as, or nested inside, the Athena prefix.
         """
-        u.validate_s3_prefix(self.log_store_prefix, "log_store_prefix", self.bucket)
-        u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
-        u.validate_prefix_layout(self.log_store_prefix, self.athena_prefix)
+        errors = []
+        errors.append(
+            u.validate_s3_prefix(self.log_store_prefix, "log_store_prefix", self.bucket)
+        )
+        errors.append(
+            u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
+        )
+        errors.append(
+            u.validate_prefix_layout(self.log_store_prefix, self.athena_prefix)
+        )
+        errors = [e for e in errors if e]
+        if errors:
+            raise exc.InvalidPrefixError(
+                "Validating StructuredLogRecord: " + " ".join(errors)
+            )
         return self
 
     @field_validator("athena_database_name", "athena_table_name")
     @classmethod
     def validate_athena_db_and_table(cls, value: str, info: ValidationInfo) -> str:
         """Require Athena database and table names to be valid identifiers."""
-        identifier_error = is_valid_identifier(value)
+        identifier_error = v.is_valid_identifier(value)
         if identifier_error:
-            err = f"Validating StructuredLogRecord: {identifier_error}: '{info.field_name}.'"
-            raise ValueError(err)
+            err = f"Validating StructuredLogRecord: '{info.field_name}': {identifier_error}"
+            raise vexc.InvalidIdentifierError(err)
         return value
 
     @field_validator("pipeline", "run_id")
@@ -141,23 +154,21 @@ class LoggingConfig(BaseModel):
         """Require non-empty run context identifiers."""
         if not u.not_empty(value):
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be non-empty."
-            raise ValueError(err)
+            raise exc.InvalidRunIdentifierError(err)
         return value
 
     @field_validator("data_delivery_period")
     @classmethod
-    def validate_datetimes_are_timezone_aware(
-        cls, value: datetime, info: ValidationInfo
-    ) -> datetime:
+    def validate_datetimes(cls, value: datetime, info: ValidationInfo) -> datetime:
         """Require timezone-aware datetimes and normalize them to UTC."""
-        if not u.is_timezone_aware(value):
+        if not v.is_timezone_aware(value):
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be timezone-aware."
-            raise ValueError(err)
+            raise vexc.InvalidDatetimeError(err)
         return value.astimezone(UTC)
 
     @field_validator("attempt_no", "batch_size")
     @classmethod
-    def validate_attempt_no(cls, value: int, info: ValidationInfo) -> int:
+    def validate_attempt_and_batch(cls, value: int, info: ValidationInfo) -> int:
         """Require positive run attempt numbers and batch sizes."""
         if value < 1:
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be >=1."

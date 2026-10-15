@@ -1,12 +1,9 @@
 """Utility functions and constants for structured logging."""
 
-import datetime
 import json
 import logging
 from typing import Any
 from urllib.parse import quote
-
-from opg_pipeline_builder.logging import log_exceptions as exc
 
 ATHENA_COLUMN_TYPES: dict[str, str] = {
     "pipeline": "string",
@@ -42,18 +39,6 @@ def not_empty(value: object) -> bool:
     return bool(value.strip())
 
 
-def is_timezone_aware(value: datetime.datetime) -> bool:
-    """Return whether a datetime has a timezone and a defined UTC offset.
-
-    Args:
-        value: The datetime object to check.
-
-    Returns:
-        True if the datetime is timezone-aware, otherwise False.
-    """
-    return value.tzinfo is not None and value.utcoffset() is not None
-
-
 def truncate_text(value: str, max_length: int, *, keep_end: bool = False) -> str:
     """Cap text at max_length characters and report the number of removed characters.
 
@@ -76,7 +61,7 @@ def truncate_text(value: str, max_length: int, *, keep_end: bool = False) -> str
     return f"{value[:max_length]}{marker}"
 
 
-def validate_s3_prefix(prefix: str, name: str, bucket: str) -> None:
+def validate_s3_prefix(prefix: str, name: str, bucket: str) -> str:
     """Require a non-empty, bucket-relative S3 key prefix.
 
     The prefix cannot start with '/', contain the 's3://' scheme (case-insensitive), or have the
@@ -87,18 +72,18 @@ def validate_s3_prefix(prefix: str, name: str, bucket: str) -> None:
         name: Configuration field name used in validation errors.
         bucket: S3 bucket that the prefix must not include.
 
-    Raises:
-        InvalidPrefixError: If the prefix is empty, absolute, or includes the bucket or scheme.
+    Returns:
+        An error message if the prefix is invalid, otherwise an empty string.
     """
+    errors = []
     if not not_empty(prefix) or prefix.startswith("/"):
-        err = f"Validating StructuredLogRecord: '{name}' must be non-empty and not start with '/'."
-        raise exc.InvalidPrefixError(err)
+        errors.append(f"'{name}' must be non-empty and not start with '/'.")
     if "s3://" in prefix.lower() or prefix.split("/", 1)[0] == bucket:
-        err = f"Validating StructuredLogRecord: '{name}' must not include 's3://' or the bucket."
-        raise exc.InvalidPrefixError(err)
+        errors.append(f"'{name}' must not include 's3://' or the bucket.")
+    return " ".join(errors)
 
 
-def validate_prefix_layout(log_store_prefix: str, athena_prefix: str) -> None:
+def validate_prefix_layout(log_store_prefix: str, athena_prefix: str) -> str:
     """Require the raw JSONL prefix to be outside the Athena table prefix.
 
     Equal prefixes and raw prefixes nested beneath the Athena prefix are rejected.
@@ -107,17 +92,15 @@ def validate_prefix_layout(log_store_prefix: str, athena_prefix: str) -> None:
         log_store_prefix: Prefix used for raw JSONL log objects.
         athena_prefix: Prefix used for curated Athena data.
 
-    Raises:
-        InvalidPrefixError: If the raw prefix is equal to or nested beneath the Athena prefix.
+    Returns:
+        An error message if the raw prefix is equal to or nested beneath the Athena prefix, otherwise an empty string.
     """
     log_root = f"{log_store_prefix.rstrip('/')}/"
     athena_root = f"{athena_prefix.rstrip('/')}/"
+    err = ""
     if log_root.startswith(athena_root):
-        err = (
-            "Validating StructuredLogRecord: 'log_store_prefix' must not be the same as, or nested"
-            " inside 'athena_prefix'."
-        )
-        raise exc.InvalidPrefixError(err)
+        err = "'log_store_prefix' must not be the same as, or nested inside, the 'athena_prefix'."
+    return err
 
 
 def encode_partition_value(value: object) -> str:

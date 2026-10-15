@@ -1,4 +1,6 @@
-from opg_pipeline_builder.constants import ALLOWED_ENVS
+from datetime import datetime
+
+from opg_pipeline_builder.constants import ALLOWED_ENVS, MAX_IDENTIFIER_LENGTH
 
 
 def is_valid_identifier(identifier: str) -> str:
@@ -14,22 +16,23 @@ def is_valid_identifier(identifier: str) -> str:
 
     Returns an error message if invalid, or an empty string if valid.
     """
+    errors = []
     if not identifier:
-        return "Identifier cannot be empty"
+        return "Identifier cannot be empty."
     if any(char.isspace() for char in identifier):
-        return "Identifier cannot contain whitespace characters"
+        errors.append("Identifier cannot contain whitespace characters.")
     if not identifier.islower():
-        return "Identifier must be lowercase"
+        errors.append("Identifier must be lowercase.")
     if identifier[0].isdigit() or identifier[0] == "_":
-        return "Identifier cannot start with a number or underscore"
+        errors.append("Identifier cannot start with a number or underscore.")
     if not all(
         character.isascii() and (character.isalnum() or character == "_")
         for character in identifier
     ):
-        return "Identifier contains invalid characters"
-    if len(identifier) > 63:
-        return "Identifier must not exceed 63 characters"
-    return ""
+        errors.append("Identifier contains invalid characters.")
+    if len(identifier) > MAX_IDENTIFIER_LENGTH:
+        errors.append(f"Identifier must not exceed {MAX_IDENTIFIER_LENGTH} characters.")
+    return " ".join(errors)
 
 
 def is_valid_s3_path_template(filepath: str, field: str = "") -> str:
@@ -52,8 +55,8 @@ def is_valid_s3_path_template(filepath: str, field: str = "") -> str:
         return "S3 path must contain an environment variable placeholder '{{ env }}' as a subdirectory"
     if "/{{ db }}/" not in filepath:
         return "S3 path must contain a database name variable placeholder '{{ db }}' as a subdirectory"
-    if f"/{field.split('_')[0]}/" not in filepath:
-        return f"S3 path must contain the corresponding etl stage '{field.split('_')[0]}' as a subdirectory"
+    if f"/{field.split('_', maxsplit=1)[0]}/" not in filepath:
+        return f"S3 path must contain the corresponding etl stage '{field.split('_', maxsplit=1)[0]}' as a subdirectory"
     return ""
 
 
@@ -71,3 +74,15 @@ def is_valid_s3_path(filepath: str, db_name: str) -> str:
     if f"/{db_name}/" not in filepath:
         return f"S3 path must contain the database name '{db_name}' as a subdirectory"
     return ""
+
+
+def is_timezone_aware(value: datetime) -> bool:
+    """Return whether a datetime has a timezone and a defined UTC offset.
+
+    Args:
+        value: The datetime object to check.
+
+    Returns:
+        True if the datetime is timezone-aware, otherwise False.
+    """
+    return value.tzinfo is not None and value.utcoffset() is not None

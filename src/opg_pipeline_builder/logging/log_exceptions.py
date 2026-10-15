@@ -27,6 +27,19 @@ class InvalidProcessError(Exception):
         self.error = error
 
 
+class InvalidRunIdentifierError(Exception):
+    """Raised when an invalid run identifier is encountered."""
+
+    def __init__(self, error: str) -> None:
+        """Store the validation message on the exception.
+
+        Args:
+            error: Explanation of the invalid run identifier field.
+        """
+        super().__init__(error)
+        self.error = error
+
+
 class LoggingNotConfiguredError(RuntimeError):
     """Raised when logging is attempted before it is configured."""
 

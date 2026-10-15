@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+MAX_IDENTIFIER_LENGTH: int = 63
+
 ALLOWED_ENVS: tuple[str, ...] = ("test", "preprod", "prod")
 
 ALLOWED_SEMANTIC_TYPES: tuple[str, ...] = (

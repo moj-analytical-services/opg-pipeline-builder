@@ -3,6 +3,7 @@
 import json
 import logging
 from typing import Any
+from datetime import datetime
 from urllib.parse import quote
 
 ATHENA_COLUMN_TYPES: dict[str, str] = {
@@ -23,6 +24,11 @@ ATHENA_COLUMN_TYPES: dict[str, str] = {
     "message": "string",
     "exception": "string",
 }
+
+
+def format_datetime(value: datetime) -> str:
+    """Serialize a UTC datetime with six fractional digits and a Z suffix."""
+    return value.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def not_empty(value: object) -> bool:

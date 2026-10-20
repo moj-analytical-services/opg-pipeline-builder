@@ -129,6 +129,17 @@ class LoggingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    @property
+    def partitions(self) -> dict[str, str | int]:
+        """Construct the S3 partition path based on the current configuration."""
+        return {
+            "data_delivery_period": _DATETIME_JSON.dump_python(
+                self.data_delivery_period, mode="json"
+            ),
+            "attempt_no": self.attempt_no,
+            "run_id": self.run_id,
+        }
+
     @model_validator(mode="after")
     def validate_s3_prefixes(self) -> "LoggingConfig":
         """Validate that S3 prefixes are correctly formatted and don't clash.
@@ -315,11 +326,13 @@ class JsonlLogHandler(logging.Handler):
         notes and exception group members) is written to the 'exception' column. It is cached on
         record.exc_text, sothe console handler prints the same text without formatting it again.
         """
-        exception = ""
         if record.exc_info and record.exc_info[0] is not None:
-            if not record.exc_text:
-                record.exc_text = logging.Formatter().formatException(record.exc_info)
-            exception = record.exc_text
+            exception = record.exc_text or logging.Formatter().formatException(
+                record.exc_info
+            )
+            record.exc_text = exception
+        else:
+            exception = ""
 
         return self._build_row(
             logger_name=record.name,
@@ -339,16 +352,9 @@ class JsonlLogHandler(logging.Handler):
         Partition values are percent-encoded so characters such as ':', '+' and '/' cannot create
         extra path segments or ambiguous keys.
         """
-        partitions = {
-            "data_delivery_period": _DATETIME_JSON.dump_python(
-                self._config.data_delivery_period, mode="json"
-            ),
-            "attempt_no": self._config.attempt_no,
-            "run_id": self._config.run_id,
-        }
         return f"{prefix.rstrip('/')}/" + "".join(
             f"{name}={u.encode_partition_value(value)}/"
-            for name, value in partitions.items()
+            for name, value in self._config.partitions.items()
         )
 
     def _object_key(self, part_number: int) -> str:

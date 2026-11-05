@@ -151,7 +151,7 @@ class PandasTransformations(BaseTransformations):  # type: ignore
         df_columns = df.columns.tolist()
         for column_name in column_names:
             if column_name not in partitions and column_name not in df_columns:
-                df[column_name] = np.NaN
+                df[column_name] = np.nan
         return df
 
     def input_transform_methods(

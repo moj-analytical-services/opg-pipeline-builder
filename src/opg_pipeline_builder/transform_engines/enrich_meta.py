@@ -55,7 +55,8 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
         )
 
         if len(table_files) == 0:
-            NoFilesForTable(f"No files present for {table_name} in {raw_data_stage}")
+            print(f"No files found for table {table_name} in stage {raw_data_stage}")
+            return {}
 
         table_columns = self._get_column_names(table_files[0])
 
@@ -97,6 +98,9 @@ class EnrichMetaTransformEngine(BaseTransformEngine):
             jinja_kwargs = self._extract_jinja_values_from_column_names(
                 table_name=table_name, raw_data_stage=raw_data_stage
             )
+
+            if not jinja_kwargs:
+                return
 
             with open(table_meta_template_path, "r") as f:
                 raw_table_meta = f.read()

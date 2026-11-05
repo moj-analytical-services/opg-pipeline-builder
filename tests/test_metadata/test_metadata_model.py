@@ -614,7 +614,7 @@ def test_output_metadata_as_csv() -> None:
                 "email",
                 "phone",
             ],
-            "Description": [np.NaN] * 9,
+            "Description": [np.nan] * 9,
             "Data Type": ["string", "string", "date32"] * 3,
             "Nullable": [True] * 9,
         }

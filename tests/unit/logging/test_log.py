@@ -1,58 +1,73 @@
 # pyright: reportPrivateUsage=false
+# pylint: disable=protected-access
 """Tests for structured logging configuration, handlers, controllers and integration behavior."""
 
-import contextvars
 import inspect
-import io
 import json
 import logging
 import os
+import re
 import sys
 import time
-import weakref
-from collections.abc import Generator
+import traceback
+from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta, timezone
-from threading import Barrier, Event, Thread, current_thread
-from typing import Any
-from unittest.mock import patch
-from zoneinfo import ZoneInfo
+from threading import Barrier, Event, current_thread
+from typing import Any, Literal, cast
+from unittest.mock import call, patch
 
+import awswrangler as wr
 import boto3
 import pandas as pd
 import pytest
 from botocore.exceptions import BotoCoreError, ClientError
-from freezegun import freeze_time
 from pydantic import ValidationError
 
-from opg_pipeline_builder.logging import log, log_utils
+from opg_pipeline_builder.logging import log
 from opg_pipeline_builder.logging import log_exceptions as exc
+from opg_pipeline_builder.logging import log_utils as u
+from opg_pipeline_builder.validation import validation_exceptions as vexc
 
-RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
+DEFAULT_PIPELINE = "test_pipeline"
+DEFAULT_RUN_ID = "scheduled__2026-09-22T00:00:00+00:00"
 ENCODED_RUN_ID = "scheduled__2026-09-22T00%3A00%3A00%2B00%3A00"
-ENCODED_DELIVERY_PERIOD = "2024-01-02T00%3A00%3A00Z"
-DELIVERY_PERIOD = datetime(2024, 1, 2, tzinfo=UTC)
 DEFAULT_BUCKET = "log-bucket"
 DEFAULT_LOG_STORE_PREFIX = "prefix/to/log"
 DEFAULT_ATHENA_PREFIX = "prefix/to/log/curated/"
 DEFAULT_ATHENA_DATABASE = "opg_test_logging"
 DEFAULT_ATHENA_TABLE = "test_logging_curated"
-DEFAULT_PIPELINE = "test_pipeline"
-DEFAULT_BATCH_SIZE = 5  # Shared test default unless a specific threshold is under test.
-BUFFER_ROWS_AFTER_WARNING = 2
-FLUSH_THRESHOLD = 3
-FIRST_BATCH_RECORD_COUNT = 4
-EXPECTED_UPLOAD_PART_COUNT = 2
-MANUAL_FLUSH_AFTER_EVENT_INDEX = 4
-
+DEFAULT_BATCH_SIZE = 5
+DEFAULT_PROCESS = "Logging"
+DEFAULT_TABLE = "table_a"
+DEFAULT_FIELD = "field_a"
+DEFAULT_PROCESS_STAGE: Literal["Processing"] = "Processing"
+DEFAULT_LEVEL: Literal["INFO"] = "INFO"
+DEFAULT_LINE_NUMBER = 42
+DEFAULT_MESSAGE = "test log"
 
 ##################
 # LOG TEST UTILS #
 ##################
 
 
-def configuration_log_line_number(
+class DeliveryPeriod:
+    """Wrapper for the default delivery period to be used in tests."""
+
+    _DATETIME = datetime(2024, 1, 2, tzinfo=UTC)
+    _ENCODED = "2024-01-02T00%3A00%3A00.000000Z"
+    ISO = "2024-01-02T00:00:00.000000Z"
+
+
+class LogTimestamp:
+    """Wrapper for the default log timestamp to be used in tests."""
+
+    _TIMESTAMP = 1704363366.0
+    ISO = "2024-01-04T10:16:06.000000Z"
+
+
+def get_log_line_number(
     function: Any = log.JsonlLogHandler._write_configuration_log,
 ) -> int:
     """Return the source line of the internal record call inside the given handler method."""
@@ -62,13 +77,13 @@ def configuration_log_line_number(
     )
 
 
-def config_values(**overrides: Any) -> dict[str, Any]:
+def create_config(**overrides: Any) -> dict[str, Any]:
     """Return fresh configuration inputs shared by model, handler and integration tests."""
     return {
         "pipeline": DEFAULT_PIPELINE,
-        "data_delivery_period": DELIVERY_PERIOD,
+        "data_delivery_period": DeliveryPeriod._DATETIME,
         "attempt_no": 1,
-        "run_id": RUN_ID,
+        "run_id": DEFAULT_RUN_ID,
         "bucket": DEFAULT_BUCKET,
         "log_store_prefix": DEFAULT_LOG_STORE_PREFIX,
         "athena_prefix": DEFAULT_ATHENA_PREFIX,
@@ -79,11 +94,75 @@ def config_values(**overrides: Any) -> dict[str, Any]:
     }
 
 
+def create_custom_fields(**overrides: Any) -> dict[str, Any]:
+    """Return custom-field inputs with only scenario-specific values overridden."""
+    return {
+        "process": DEFAULT_PROCESS,
+        "table": DEFAULT_TABLE,
+        "field": DEFAULT_FIELD,
+        "process_stage": DEFAULT_PROCESS_STAGE,
+        **overrides,
+    }
+
+
+def create_log_record(
+    **overrides: Any,
+) -> logging.LogRecord:
+    """Create a representative logging record."""
+    return logging.makeLogRecord(
+        {
+            "name": "opg_pipeline_builder.test_module",
+            "module": "test_module",
+            "funcName": "test_func",
+            "lineno": DEFAULT_LINE_NUMBER,
+            "levelname": DEFAULT_LEVEL,
+            "levelno": logging.getLevelNamesMapping()[DEFAULT_LEVEL],
+            "msg": DEFAULT_MESSAGE,
+            "args": (),
+            "created": LogTimestamp._TIMESTAMP,
+            "custom_fields": create_custom_fields(),
+            **overrides,
+        }
+    )
+
+
+def create_structured_log(
+    config: dict[str, Any] | None = None,
+    custom_fields: dict[str, Any] | None = None,
+    log_record: logging.LogRecord | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
+    """Create a representative structured log record as a dictionary."""
+    config = create_config() if config is None else config
+    custom_fields = create_custom_fields() if custom_fields is None else custom_fields
+    log_record = log_record or create_log_record(custom_fields=custom_fields)
+
+    return {
+        "pipeline": config.get("pipeline"),
+        "run_id": config.get("run_id"),
+        "data_delivery_period": config.get("data_delivery_period"),
+        "attempt_no": config.get("attempt_no"),
+        "logger_name": log_record.name,
+        "module": log_record.module,
+        "function": log_record.funcName,
+        "line_number": log_record.lineno,
+        "log_level": log_record.levelname,
+        "log_timestamp": log_record.created,
+        "process": custom_fields.get("process"),
+        "table": custom_fields.get("table"),
+        "field": custom_fields.get("field"),
+        "process_stage": custom_fields.get("process_stage"),
+        "message": log_record.getMessage(),
+        "exception": log_record.exc_text or "",
+        **overrides,
+    }
+
+
 def create_handler(
     *, apply_patches: bool = True, **overrides: Any
 ) -> log.JsonlLogHandler:
     """Create a handler with a small test batch, optionally suppressing startup work."""
-    config = log.LoggingConfig.model_validate(config_values(**overrides))
+    config = log.LoggingConfig.model_validate(create_config(**overrides))
     with (
         (
             patch.object(log.JsonlLogHandler, "_validate_log_location")
@@ -99,95 +178,41 @@ def create_handler(
         return log.JsonlLogHandler(logging_config=config)
 
 
-def create_log_record(
-    *,
-    timestamp: datetime = datetime(2024, 1, 4, 10, 16, 6, tzinfo=UTC),
-    line_number: int = 42,
-    message: str = "test log",
-    args: tuple[object, ...] = (),
-    custom_fields: log.CustomLogFields | None = None,
-) -> logging.LogRecord:
-    """Create a representative logging record."""
-    custom_fields = custom_fields or log.CustomLogFields(
-        process="Logging",
-        table="table_a",
-        field="field_a",
-        process_stage="Processing",
-    )
-    return logging.makeLogRecord(
-        {
-            "name": "opg_pipeline_builder.test_module",
-            "module": "test_module",
-            "funcName": "test_func",
-            "lineno": line_number,
-            "levelname": "INFO",
-            "levelno": logging.INFO,
-            "msg": message,
-            "args": args,
-            "created": timestamp.timestamp(),
-            "custom_fields": custom_fields,
+def create_module_logger(**overrides: Any) -> log.ModuleLogger:
+    """Create a module logger with only scenario-specific context overridden."""
+    return log.ModuleLogger(
+        **{
+            "logger": logging.getLogger("opg_pipeline_builder.test"),
+            "process": DEFAULT_PROCESS,
+            **overrides,
         }
     )
 
 
-def mock_flush_locked(handler: log.JsonlLogHandler) -> None:
-    """Mock the _flush_locked method of a JsonlLogHandler."""
-    handler._buffer = []
-
-
-def read_jsonl_logs(
-    s3: boto3.client,
-    *,
-    bucket: str = DEFAULT_BUCKET,
-    prefix: str = DEFAULT_LOG_STORE_PREFIX,
-) -> dict[str, list[dict[str, Any]]]:
-    """Read all non-marker JSONL logs under a prefix."""
-    logs = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents", [])
-    output: dict[str, list[dict[str, Any]]] = {}
-    for item in logs:
-        key = item["Key"]
-        if key.endswith("logging-marker/marker.txt"):
-            continue
-        body = s3.get_object(Bucket=bucket, Key=key)["Body"].read().decode()
-        output[key] = [json.loads(line) for line in body.splitlines()]
-    return output
-
-
-def simulate_atexit_shutdown(controller: log.LoggingController) -> None:
-    """Run the interpreter's atexit `logging.shutdown()` against this controller's handlers only.
-
-    A bare `logging.shutdown()` closes every live handler in the process, including the
-    session-scoped handler from conftest, which would then reject later tests' records.
-    """
-    logging.shutdown(
-        handlerList=[weakref.ref(handler) for handler in controller._handlers]
-    )
-
-
 @pytest.fixture(autouse=True)
-def reset_root_logger() -> Generator[None]:
+def reset_root() -> Generator[None]:
     """Isolate test JSONL handlers while preserving host-owned root handlers."""
-    root_logger = logging.getLogger()
-    original_handlers = list(root_logger.handlers)
-    original_level = root_logger.level
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
     session_handlers = [
         handler
         for handler in original_handlers
         if handler.get_name() in {log._CONSOLE_HANDLER_NAME, log._JSONL_HANDLER_NAME}
     ]
     for handler in session_handlers:
-        root_logger.removeHandler(handler)
+        root.removeHandler(handler)
 
     yield
 
-    for handler in list(root_logger.handlers):
+    for handler in list(root.handlers):
         if handler not in original_handlers:
-            root_logger.removeHandler(handler)
+            root.removeHandler(handler)
             logging.Handler.close(handler)
     for handler in session_handlers:
-        if handler not in root_logger.handlers:
-            root_logger.addHandler(handler)
-    root_logger.setLevel(original_level)
+        if handler not in root.handlers:
+            root.addHandler(handler)
+    root.setLevel(original_level)
 
 
 @pytest.fixture(autouse=True)
@@ -216,26 +241,12 @@ def logging_configured() -> Generator[None]:
     """Satisfy ModuleLogger's configured check without building a real JSONL handler."""
     stand_in = logging.NullHandler()
     stand_in.set_name(log._JSONL_HANDLER_NAME)
-    root_logger = logging.getLogger()
-    root_logger.addHandler(stand_in)
+    root = logging.getLogger()
+    root.addHandler(stand_in)
     try:
         yield
     finally:
-        root_logger.removeHandler(stand_in)
-
-
-@pytest.fixture(autouse=True)
-def mock_athena_clients() -> Generator[None]:
-    """Keep handler lifecycle tests independent of external Athena and Glue calls."""
-    with (
-        patch("opg_pipeline_builder.logging.log.wr.catalog.create_database"),
-        patch(
-            "opg_pipeline_builder.logging.log.wr.s3.read_json",
-            side_effect=lambda **_: pd.DataFrame({"log_timestamp": []}),
-        ),
-        patch("opg_pipeline_builder.logging.log.wr.s3.to_parquet"),
-    ):
-        yield
+        root.removeHandler(stand_in)
 
 
 ##############
@@ -243,216 +254,375 @@ def mock_athena_clients() -> Generator[None]:
 ##############
 
 
+class TestStructuredLogRecord:
+    """Tests for the StructuredLogRecord model."""
+
+    @pytest.mark.parametrize(
+        ("period", "expected"),
+        [
+            (DeliveryPeriod._DATETIME, DeliveryPeriod.ISO),
+            (
+                datetime(2024, 1, 2, microsecond=999999, tzinfo=UTC),
+                "2024-01-02T00:00:00.999999Z",
+            ),
+        ],
+    )
+    def test_data_delivery_period(
+        self, period: datetime | str | None, expected: str | None
+    ) -> None:
+        """Preserve each aware delivery period and emit its expected ISO representation."""
+        data = create_structured_log(data_delivery_period=period)
+        record = log.StructuredLogRecord.model_validate(data)
+
+        assert record.data_delivery_period == period
+        assert isinstance(record.data_delivery_period, datetime)
+        assert record.model_dump()["data_delivery_period"] == period
+        assert record.model_dump(mode="json")["data_delivery_period"] == expected
+
+    @pytest.mark.parametrize(
+        ("timestamp", "expected"),
+        [
+            (LogTimestamp._TIMESTAMP, LogTimestamp.ISO),
+            (1704363366.000001, "2024-01-04T10:16:06.000001Z"),
+            (float("nan"), None),
+            (float("inf"), None),
+            (-float("inf"), None),
+        ],
+    )
+    def test_log_timestamp(self, timestamp: float, expected: str | None) -> None:
+        """Reject non-finite timestamps and serialize finite values as UTC strings."""
+        data = create_structured_log(log_timestamp=timestamp)
+        if expected is None:
+            with pytest.raises(ValidationError, match="finite"):
+                log.StructuredLogRecord.model_validate(data)
+            return
+
+        record = log.StructuredLogRecord.model_validate(data)
+
+        assert record.log_timestamp == timestamp
+        assert isinstance(record.log_timestamp, float)
+        assert record.model_dump()["log_timestamp"] == timestamp
+        assert record.model_dump(mode="json")["log_timestamp"] == expected
+
+    def test_valid_record(self) -> None:
+        """Accept a valid record and preserve its fields in Python and JSON output."""
+        data = create_structured_log()
+        record = log.StructuredLogRecord.model_validate(data)
+        output = record.model_dump()
+        assert output == data
+        assert record.model_dump(mode="json") == {
+            **data,
+            "data_delivery_period": "2024-01-02T00:00:00.000000Z",
+            "log_timestamp": LogTimestamp.ISO,
+        }
+
+    def test_is_frozen_and_forbids_extra(self) -> None:
+        """Reject field assignment and unknown fields on structured records."""
+        assert log.StructuredLogRecord.model_config["frozen"] is True
+        assert log.StructuredLogRecord.model_config["extra"] == "forbid"
+
+
 class TestCustomLogFields:
     """Tests for the CustomLogFields model."""
 
-    def test_accepts_valid_fields(self) -> None:
-        """Test that valid custom log fields are accepted."""
-        fields = log.CustomLogFields(
-            process="Logging", table="table_a", field="field_a", process_stage="Start"
-        )
-        assert fields.model_dump() == {
-            "process": "Logging",
-            "table": "table_a",
-            "field": "field_a",
-            "process_stage": "Start",
-        }
+    def test_valid_fields(self) -> None:
+        """Accept valid custom fields and preserve their supplied values."""
+        values = create_custom_fields()
+        fields = log.CustomLogFields.model_validate(values)
+        assert fields.model_dump() == values
 
-    @pytest.mark.parametrize(
-        "missing", [("process"), ("table"), ("field"), ("process_stage")]
-    )
-    def test_rejects_missing_fields(self, missing: str) -> None:
-        """Test that missing required custom log fields are rejected."""
-        values = {
-            "process": "Logging",
-            "table": "table_a",
-            "field": "field_a",
-            "process_stage": "Processing",
-        }
-        del values[missing]
-        with pytest.raises(ValidationError):
-            log.CustomLogFields.model_validate(values)
+    def test_is_frozen_and_forbids_extra(self) -> None:
+        """Reject field assignment and unknown fields on custom log fields."""
+        assert log.CustomLogFields.model_config["frozen"] is True
+        assert log.CustomLogFields.model_config["extra"] == "forbid"
 
-    def test_rejects_extra_fields(self) -> None:
-        """Test that extra custom log fields are rejected."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            log.CustomLogFields.model_validate(
-                {
-                    "process": "Logging",
-                    "table": "table_a",
-                    "field": "field_a",
-                    "process_stage": "Processing",
-                    "message": "reserved",
-                }
-            )
-
-    def test_rejects_invalid_process_stage(self) -> None:
-        """Test that an invalid process stage is rejected."""
-        with pytest.raises(ValidationError):
-            log.CustomLogFields(
-                process="Logging",
-                table="table_a",
-                field="field_a",
-                process_stage="Invalid",
-            )
+    def test_validate_process_valid(self) -> None:
+        """Accept a non-empty process name and preserve its trimmed value."""
+        fields = log.CustomLogFields.model_validate(create_custom_fields())
+        assert fields.process == "Logging"
 
     @pytest.mark.parametrize("invalid_process", ["", "   ", None])
-    def test_rejects_empty_process(self, invalid_process: Any) -> None:
-        """Test that empty, whitespace-only, and None 'process' values are rejected.
-
-        InvalidProcessError is not a ValueError, so Pydantic propagates it unwrapped.
-        """
+    def test_validate_process_empty(self, invalid_process: Any) -> None:
+        """Raise InvalidProcessError for empty, whitespace-only, or None process values."""
         with pytest.raises(
             exc.InvalidProcessError, match="field 'process' must be non-empty"
         ):
-            log.CustomLogFields(
-                process=invalid_process,
-                table="table_a",
-                field="field_a",
-                process_stage="Start",
+            log.CustomLogFields.model_validate(
+                create_custom_fields(process=invalid_process)
             )
 
     @pytest.mark.parametrize("padded_process", [" Load", "Load ", "  Load\t"])
     def test_strips_process_whitespace(self, padded_process: str) -> None:
-        """Test that surrounding whitespace is stripped from 'process', so Athena group-bys are not split."""
-        fields = log.CustomLogFields(
-            process=padded_process,
-            table="table_a",
-            field="field_a",
-            process_stage="Start",
+        """Strip surrounding whitespace before storing the process name."""
+        fields = log.CustomLogFields.model_validate(
+            create_custom_fields(process=padded_process)
         )
         assert fields.process == "Load"
-
-
-class TestStructuredLogRecord:
-    """Tests for the StructuredLogRecord model."""
-
-    @property
-    def valid_values(self) -> dict[str, Any]:
-        """Create a dictionary of valid structured log record values."""
-        return {
-            "pipeline": DEFAULT_PIPELINE,
-            "run_id": RUN_ID,
-            "data_delivery_period": DELIVERY_PERIOD,
-            "attempt_no": 1,
-            "logger_name": "opg_pipeline_builder.module",
-            "module": "module",
-            "function": "function",
-            "line_number": 42,
-            "log_level": "INFO",
-            "log_timestamp": datetime(2024, 1, 2, 12, tzinfo=UTC),
-            "process": "Logging",
-            "table": "table_a",
-            "field": "field_a",
-            "process_stage": "Processing",
-            "message": "event",
-            "exception": "",
-        }
-
-    def test_accepts_complete_record_and_json_dump(self) -> None:
-        """Retain the complete schema and JSON serialization contract."""
-        record = log.StructuredLogRecord.model_validate(self.valid_values)
-        output = record.model_dump()
-        assert output == self.valid_values
-        assert record.model_dump(mode="json") == {
-            **self.valid_values,
-            "data_delivery_period": "2024-01-02T00:00:00Z",
-            "log_timestamp": "2024-01-02T12:00:00Z",
-        }
-        with pytest.raises(ValidationError, match="frozen"):
-            record.message = "changed"  # type: ignore[misc]
-
-    def test_rejects_extra_field(self) -> None:
-        """Test that extra fields in a structured log record are rejected."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            log.StructuredLogRecord.model_validate(
-                {**self.valid_values, "extra_field": "not allowed"}
-            )
-
-    @pytest.mark.parametrize(
-        ("log_level", "expectation"),
-        [
-            ("DEBUG", nullcontext()),
-            ("INFO", nullcontext()),
-            ("WARNING", nullcontext()),
-            ("ERROR", nullcontext()),
-            ("CRITICAL", nullcontext()),
-            ("TRACE", pytest.raises(ValidationError)),
-            ("info", pytest.raises(ValidationError)),
-            ("", pytest.raises(ValidationError)),
-        ],
-    )
-    def test_validate_log_level(self, log_level: str, expectation: Any) -> None:
-        """Test that only standard upper-case logging level names are accepted."""
-        with expectation:
-            log.StructuredLogRecord.model_validate(
-                {**self.valid_values, "log_level": log_level}
-            )
-
-    @pytest.mark.parametrize("field", ["data_delivery_period", "log_timestamp"])
-    def test_generated_timestamps_serialize_as_utc(self, field: str) -> None:
-        """The row schema serializes the UTC timestamps supplied by its producers."""
-        record = log.StructuredLogRecord.model_validate(self.valid_values)
-        assert record.model_dump(mode="json")[field].endswith("Z")
 
 
 class TestLoggingConfig:
     """Validate run-level inputs once, separately from individual log rows."""
 
+    @pytest.mark.parametrize(
+        ("period", "expected_period", "attempt_no", "run_id"),
+        [
+            (DeliveryPeriod._DATETIME, DeliveryPeriod.ISO, 1, DEFAULT_RUN_ID),
+            (
+                datetime(2024, 1, 2, microsecond=123456, tzinfo=UTC),
+                "2024-01-02T00:00:00.123456Z",
+                2,
+                "manual/run 1",
+            ),
+            (
+                datetime(2024, 1, 2, 5, tzinfo=timezone(timedelta(hours=5))),
+                DeliveryPeriod.ISO,
+                3,
+                "manual=run+1",
+            ),
+        ],
+    )
+    def test_partitions(
+        self, period: datetime, expected_period: str, attempt_no: int, run_id: str
+    ) -> None:
+        """Build ordered partitions with the UTC period and supplied run identifiers."""
+        config = log.LoggingConfig.model_validate(
+            create_config(
+                data_delivery_period=period, attempt_no=attempt_no, run_id=run_id
+            )
+        )
+
+        assert list(config.partitions.items()) == [
+            ("data_delivery_period", expected_period),
+            ("attempt_no", attempt_no),
+            ("run_id", run_id),
+        ]
+
+    @pytest.mark.parametrize(
+        ("period", "expected"),
+        [
+            (DeliveryPeriod._DATETIME, DeliveryPeriod.ISO),
+            (
+                datetime(2024, 1, 2, microsecond=999999, tzinfo=UTC),
+                "2024-01-02T00:00:00.999999Z",
+            ),
+        ],
+    )
+    def test_data_delivery_period(
+        self, period: datetime | str | None, expected: str | None
+    ) -> None:
+        """Preserve the aware delivery datetime and emit its expected ISO representation."""
+        data = create_config(data_delivery_period=period)
+        record = log.LoggingConfig.model_validate(data)
+
+        assert record.data_delivery_period == period
+        assert isinstance(record.data_delivery_period, datetime)
+        assert record.model_dump()["data_delivery_period"] == period
+        assert record.model_dump(mode="json")["data_delivery_period"] == expected
+
+    def test_valid_config(self) -> None:
+        """Accept valid logging configuration and preserve all supplied fields."""
+        valid_config = create_config()
+        config = log.LoggingConfig.model_validate(valid_config)
+        assert config.model_dump() == valid_config
+
+    def test_is_frozen_and_forbids_extra(self) -> None:
+        """Reject field assignment and unknown fields on logging configuration."""
+        assert log.LoggingConfig.model_config["frozen"] is True
+        assert log.LoggingConfig.model_config["extra"] == "forbid"
+
+    @pytest.mark.parametrize(
+        ("log_store_prefix", "athena_prefix"),
+        [
+            ("prefix/to/logs", "prefix/to/logs/athena"),
+            ("prefix/to/logs", "prefix/to/athena"),
+        ],
+    )
+    def test_validate_s3_prefixes_valid(
+        self, log_store_prefix: str, athena_prefix: str
+    ) -> None:
+        """Accept bucket-relative raw and curated prefixes that do not overlap."""
+        valid_config = create_config(
+            log_store_prefix=log_store_prefix, athena_prefix=athena_prefix
+        )
+        config = log.LoggingConfig.model_validate(valid_config)
+        assert config.log_store_prefix == log_store_prefix
+        assert config.athena_prefix == athena_prefix
+
+    @pytest.mark.parametrize(
+        ("log_store_prefix", "athena_prefix", "exp_error"),
+        [
+            (
+                "",
+                "name",
+                "'log_store_prefix' must be non-empty and not start with '/'.",
+            ),
+            ("name", " ", "'athena_prefix' must be non-empty and not start with '/'."),
+            (
+                "/prefix/",
+                "name",
+                "'log_store_prefix' must be non-empty and not start with '/'.",
+            ),
+            (
+                "s3://prefix/",
+                "name",
+                "'log_store_prefix' must not include 's3://' or the bucket.",
+            ),
+            (
+                "name",
+                "log-bucket/prefix",
+                "'athena_prefix' must not include 's3://' or the bucket.",
+            ),
+            (
+                "prefix/to/logs",
+                "prefix/to/logs/",
+                "'log_store_prefix' must not be the same as, or nested inside, the 'athena_prefix'.",
+            ),
+            (
+                "prefix/to/athena/logs",
+                "prefix/to/athena",
+                "'log_store_prefix' must not be the same as, or nested inside, the 'athena_prefix'.",
+            ),
+            (
+                "/invalid/prefix/to/logs",
+                "s3://invalid/prefix/to/athena",
+                "'log_store_prefix' must be non-empty and not start with '/'. 'athena_prefix' must not include 's3://' or the bucket.",
+            ),
+            (
+                "/invalid/prefix/to/logs",
+                "/invalid/prefix/to/logs",
+                "'log_store_prefix' must be non-empty and not start with '/'. 'athena_prefix' must be non-empty and not start with '/'. 'log_store_prefix' must not be the same as, or nested inside, the 'athena_prefix'.",
+            ),
+        ],
+    )
+    def test_validate_s3_prefixes_invalid(
+        self, log_store_prefix: str, athena_prefix: str, exp_error: str
+    ) -> None:
+        """Raise InvalidPrefixError for malformed or overlapping S3 prefixes."""
+        with pytest.raises(exc.InvalidPrefixError, match=exp_error):
+            log.LoggingConfig.model_validate(
+                create_config(
+                    log_store_prefix=log_store_prefix, athena_prefix=athena_prefix
+                )
+            )
+
+    @pytest.mark.parametrize("field", ["athena_database_name", "athena_table_name"])
+    @pytest.mark.parametrize(
+        "value", ["name_of_object", "name", "has_1_number", "a" * 63]
+    )
+    def test_validate_athena_db_and_table_valid(self, field: str, value: str) -> None:
+        """Accept valid lowercase database and table identifiers."""
+        config = log.LoggingConfig.model_validate(create_config(**{field: value}))
+        assert getattr(config, field) == value
+
+    @pytest.mark.parametrize("field", ["athena_database_name", "athena_table_name"])
+    @pytest.mark.parametrize(
+        ("value", "exp_error"),
+        [
+            ("", "Identifier cannot be empty."),
+            ("has space", "Identifier cannot contain whitespace characters."),
+            ("Upper", "Identifier must be lowercase."),
+            ("UPPER", "Identifier must be lowercase."),
+            ("1number", "Identifier cannot start with a number or underscore."),
+            ("_underscore", "Identifier cannot start with a number or underscore."),
+            ("a-b", "Identifier contains invalid characters."),
+            ("é", "Identifier contains invalid characters."),
+            ("a" * 64, "Identifier must not exceed 63 characters."),
+            (
+                "_HAS SPACES-with-this-incorrect-character-é-and is way toooo long",
+                "Identifier cannot contain whitespace characters. Identifier must be lowercase. Identifier cannot start with a number or underscore. Identifier contains invalid characters. Identifier must not exceed 63 characters.",
+            ),
+        ],
+    )
+    def test_validate_athena_db_and_table_invalid(
+        self, field: str, value: str, exp_error: str
+    ) -> None:
+        """Raise InvalidIdentifierError for invalid database and table identifiers."""
+        with pytest.raises(
+            vexc.InvalidIdentifierError, match=f"'{field}': {exp_error}"
+        ):
+            log.LoggingConfig.model_validate(create_config(**{field: value}))
+
     @pytest.mark.parametrize("field", ["pipeline", "run_id"])
-    @pytest.mark.parametrize("value", ["", " ", "\t", None])
-    def test_rejects_empty_run_context(self, field: str, value: Any) -> None:
-        """Reject empty run identifiers and report the offending field."""
-        with pytest.raises(ValidationError) as raised:
-            log.LoggingConfig.model_validate(config_values(**{field: value}))
-        assert raised.value.errors()[0]["loc"] == (field,)
+    def test_validate_pipeline_and_run_id_valid(self, field: str) -> None:
+        """Accept a non-empty pipeline or run identifier and preserve its value."""
+        test_log = log.LoggingConfig.model_validate(
+            create_config(**{field: "valid_value"})
+        )
+        assert getattr(test_log, field) == "valid_value"
+
+    @pytest.mark.parametrize("field", ["pipeline", "run_id"])
+    @pytest.mark.parametrize("value", ["", " ", "\t"])
+    def test_validate_pipeline_and_run_id_invalid(self, field: str, value: Any) -> None:
+        """Raise InvalidRunIdentifierError for empty or whitespace-only identifiers."""
+        with pytest.raises(
+            exc.InvalidRunIdentifierError, match=f"'{field}' must be non-empty"
+        ):
+            log.LoggingConfig.model_validate(create_config(**{field: value}))
+
+    @pytest.mark.parametrize(
+        ("data_delivery_period", "expected"),
+        [
+            (
+                datetime(2024, 1, 1, 12, 0, tzinfo=UTC),
+                datetime(2024, 1, 1, 12, 0, tzinfo=UTC),
+            ),
+            (
+                datetime(2024, 1, 1, 12, 0, tzinfo=timezone(timedelta(hours=5))),
+                datetime(2024, 1, 1, 7, 0, tzinfo=UTC),
+            ),
+        ],
+    )
+    def test_validate_datetimes_valid(
+        self, data_delivery_period: datetime, expected: datetime
+    ) -> None:
+        """Accept aware delivery periods and normalize each one to its expected UTC value."""
+        test_log = log.LoggingConfig.model_validate(
+            create_config(data_delivery_period=data_delivery_period)
+        )
+        assert test_log.data_delivery_period == expected
+        assert test_log.data_delivery_period.tzinfo is UTC
+
+    def test_validate_datetimes_invalid(self) -> None:
+        """Raise InvalidDatetimeError when the delivery period is timezone-naive."""
+        with pytest.raises(
+            vexc.InvalidDatetimeError,
+            match="'data_delivery_period' must be timezone-aware",
+        ):
+            log.LoggingConfig.model_validate(
+                create_config(
+                    data_delivery_period=datetime(2024, 1, 1, 12, 0),  # noqa: DTZ001
+                )
+            )
 
     @pytest.mark.parametrize("field", ["attempt_no", "batch_size"])
     @pytest.mark.parametrize("value", [0, -1, 1, 99])
-    def test_positive_counts(self, field: str, value: int) -> None:
-        """Both run attempts and batch sizes must be positive."""
+    def test_validate_attempt_and_batch(self, field: str, value: int) -> None:
+        """Accept positive attempt and batch values and reject values below one."""
         expectation = (
-            pytest.raises(ValidationError, match="must be >=1")
+            pytest.raises(ValueError, match=f"'{field}' must be >=1")
             if value < 1
             else nullcontext()
         )
         with expectation:
-            config = log.LoggingConfig.model_validate(config_values(**{field: value}))
+            config = log.LoggingConfig.model_validate(create_config(**{field: value}))
             assert getattr(config, field) == value
 
+    @pytest.mark.parametrize("field", ["attempt_no", "batch_size"])
     @pytest.mark.parametrize("value", [True, False, 2.5, 10.0, "10", None])
-    def test_batch_size_is_strict(self, value: Any) -> None:
-        """Do not coerce booleans, floats or strings into batch sizes."""
-        with pytest.raises(ValidationError) as raised:
-            log.LoggingConfig.model_validate(config_values(batch_size=value))
-        assert raised.value.errors()[0]["loc"] == ("batch_size",)
+    def test_attempt_and_batch_is_strict(self, field: str, value: Any) -> None:
+        """Reject booleans, floats, strings, and None instead of coercing integers."""
+        with pytest.raises(ValidationError) as error:
+            log.LoggingConfig.model_validate(create_config(**{field: value}))
 
-    @pytest.mark.parametrize("field", ["athena_database_name", "athena_table_name"])
-    @pytest.mark.parametrize(
-        "value", ["", "has space", "Upper", "1name", "_name", "a-b", "é", "a" * 64]
-    )
-    def test_rejects_invalid_athena_identifiers(self, field: str, value: str) -> None:
-        """Database and table names share the project's identifier constraints."""
-        with pytest.raises(ValidationError) as raised:
-            log.LoggingConfig.model_validate(config_values(**{field: value}))
-        assert raised.value.errors()[0]["loc"] == (field,)
-
-    def test_complete_configuration_is_frozen_and_forbids_extra_fields(self) -> None:
-        """Validated inputs cannot be mutated and unexpected keys are rejected."""
-        values = config_values()
-        config = log.LoggingConfig.model_validate(values)
-        assert config.model_dump() == values
-        with pytest.raises(ValidationError, match="frozen"):
-            config.batch_size = 1  # type: ignore[misc]
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            log.LoggingConfig.model_validate({**values, "extra_field": "unexpected"})
+        assert "Input should be a valid integer" in str(error.value)
+        assert field in str(error.value)
 
 
 class TestJsonlLogHandler:
-    """Exercise JSONL buffering, S3 uploads, registration and handler lifecycle."""
+    """Test JSONL buffering, S3 uploads, registration and handler lifecycle."""
 
-    def test_init(self, s3: boto3.client) -> None:
-        """Test that the handler initializes correctly with default values."""
+    def test_init(self, s3: boto3.client) -> None:  # pylint: disable=unused-argument
+        """Initialize validated defaults, an empty buffer, and startup records."""
         with (
             patch.object(
                 log.JsonlLogHandler, "_validate_log_location"
@@ -460,2258 +630,1599 @@ class TestJsonlLogHandler:
             patch.object(log.JsonlLogHandler, "_write_configuration_log") as mock_write,
         ):
             handler = create_handler(apply_patches=False)
-            assert handler._config.model_dump() == config_values()
+            assert handler._config.model_dump() == create_config()
             assert handler._batch_size == DEFAULT_BATCH_SIZE
             assert handler._base_batch_size == DEFAULT_BATCH_SIZE
             assert handler._part_number == 0
             assert handler._writer_id
             assert handler._buffer == []
             assert handler._write_failures == 0
-            assert mock_location.call_count == 1
-            assert mock_write.call_count == 1
+            assert not handler._unmanaged_flush_warned
+            mock_location.assert_called_once()
+            mock_write.assert_called_once()
             logging.Handler.close(handler)
 
-    def test_validate_log_location_valid(self, s3: boto3.client) -> None:
-        """Test that the marker file is generated, and only one ever exists."""
+    def test_init_configures_s3_retries(self) -> None:
+        """Create the S3 client with standard retry mode and five attempts."""
+        with patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client:
+            handler = create_handler()
+
+        mock_client.assert_called_once_with("s3", config=log._S3_RETRY_CONFIG)
+        logging.Handler.close(handler)
+
+    def test_validate_log_location_valid(
+        self,
+        s3: boto3.client,  # pylint: disable=unused-argument
+    ) -> None:
+        """Write one marker object and reuse its key across handler initializations."""
+        path = f"s3://{DEFAULT_BUCKET}/{DEFAULT_LOG_STORE_PREFIX}/"
         create_handler(apply_patches=False)
+
+        assert wr.s3.list_objects(path) == [f"{path}logging-marker/marker.txt"]
+
         create_handler(
             pipeline="other-pipeline",
             attempt_no=2,
             run_id="other-run",
             apply_patches=False,
         )
-        create_handler(
-            pipeline="another-pipeline",
-            attempt_no=3,
-            run_id="another-run",
-            apply_patches=False,
-        )
 
-        keys = [
-            item["Key"]
-            for item in s3.list_objects_v2(
-                Bucket=DEFAULT_BUCKET, Prefix=DEFAULT_LOG_STORE_PREFIX
-            ).get("Contents", [])
-        ]
-        assert keys == [f"{DEFAULT_LOG_STORE_PREFIX}/logging-marker/marker.txt"]
+        assert wr.s3.list_objects(path) == [f"{path}logging-marker/marker.txt"]
 
     @pytest.mark.parametrize(
-        ("exception"),
+        ("exception", "exp_exc_msg"),
         [
-            (BotoCoreError),
+            (BotoCoreError, "An unspecified error occurred"),
             (
                 ClientError(
                     {"Error": {"Code": "AccessDenied", "Message": "denied"}},
                     "PutObject",
-                )
+                ),
+                "An error occurred (AccessDenied) when calling the PutObject operation: denied",
             ),
-            (OSError),
+            (OSError, ""),
         ],
     )
     def test_validate_log_location_invalid(
-        self, exception: Any, s3: boto3.client
+        self, exception: Any, exp_exc_msg: str, s3: boto3.client
     ) -> None:
-        """Test that an exception is raised when the log location is invalid or inaccessible."""
+        """Wrap marker-write failures in RuntimeError with the failing S3 location."""
         with (
             patch.object(s3, "put_object", side_effect=exception),
             patch(
                 "opg_pipeline_builder.logging.log.boto3.client",
                 return_value=s3,
             ),
-            pytest.raises(RuntimeError, match="Failed to write marker object"),
+            pytest.raises(
+                RuntimeError,
+                match=re.escape(
+                    f"Failed to write marker object to s3://{DEFAULT_BUCKET}/{DEFAULT_LOG_STORE_PREFIX}/logging-marker/marker.txt: {exp_exc_msg}"
+                ),
+            ),
         ):
             create_handler(apply_patches=False)
 
-    def test_init_configures_s3_retries(self) -> None:
-        """Test that the S3 client is created with explicit standard-mode retries."""
-        with patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client:
-            handler = create_handler()
-
-        mock_client.assert_called_once_with("s3", config=log._S3_RETRY_CONFIG)
-        # botocore normalises max_attempts=5 retries to 6 total attempts (initial call + 5 retries).
-        assert log._S3_RETRY_CONFIG.retries == {
-            "mode": "standard",
-            "total_max_attempts": 6,
-        }
-        logging.Handler.close(handler)
-
-    @pytest.mark.parametrize(
-        ("period", "expected_period", "expected_partition"),
-        [
-            (DELIVERY_PERIOD, DELIVERY_PERIOD, ENCODED_DELIVERY_PERIOD),
-            (
-                datetime(2024, 6, 1, tzinfo=ZoneInfo("Europe/London")),
-                datetime(2024, 5, 31, 23, tzinfo=UTC),
-                "2024-05-31T23%3A00%3A00Z",
-            ),
-            (
-                datetime(2024, 1, 1, 20, tzinfo=timezone(timedelta(hours=-5))),
-                datetime(2024, 1, 2, 1, tzinfo=UTC),
-                "2024-01-02T01%3A00%3A00Z",
-            ),
-        ],
-    )
-    def test_init_normalises_data_delivery_period_to_utc(
-        self, period: datetime, expected_period: datetime, expected_partition: str
-    ) -> None:
-        """Test that the path partition and the record value are the same ISO UTC timestamp."""
-        handler = create_handler(data_delivery_period=period)
-
-        assert handler._config.data_delivery_period == expected_period
-        assert handler._config.data_delivery_period.tzinfo is UTC
-        assert handler._create_key_directory("p").startswith(
-            f"p/data_delivery_period={expected_partition}/"
-        )
-        record = create_log_record()
-        row = handler._record_to_row(record, vars(record)["custom_fields"])
-        assert row["data_delivery_period"] == expected_period.strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        logging.Handler.close(handler)
-
-    def test_init_rejects_naive_data_delivery_period(self) -> None:
-        """Test that a naive data delivery period is rejected before any S3 call."""
-        with (
-            patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client,
-            pytest.raises(
-                ValidationError, match="'data_delivery_period' must be timezone-aware"
-            ),
-        ):
-            create_handler(
-                apply_patches=False,
-                data_delivery_period=datetime(2024, 1, 2),  # noqa: DTZ001
-            )
-        mock_client.assert_not_called()
-
-    @pytest.mark.parametrize(
-        ("logger_name", "custom_fields", "expectation", "written"),
-        [
-            # No custom fields: skipped (console only), whatever the namespace.
-            ("opg_pipeline_builder.models.x", "missing", nullcontext(), False),
-            ("consumer_repo.etl", "missing", nullcontext(), False),
-            ("urllib3.connectionpool", "missing", nullcontext(), False),
-            ("root", "missing", nullcontext(), False),
-            ("consumer_repo.etl", None, nullcontext(), False),
-            # Valid custom fields: written, whatever the namespace.
-            ("opg_pipeline_builder.models.x", "valid", nullcontext(), True),
-            ("third_party.module", "valid", nullcontext(), True),
-            # Present but not a CustomLogFields instance: rejected.
-            ("consumer_repo.etl", {"process": "x"}, pytest.raises(TypeError), False),
-            ("consumer_repo.etl", 1, pytest.raises(TypeError), False),
-            ("consumer_repo.etl", {}, nullcontext(), False),
-            ("consumer_repo.etl", False, nullcontext(), False),
-        ],
-    )
-    def test_emit_requires_custom_fields(
-        self,
-        logger_name: str,
-        custom_fields: Any,
-        expectation: Any,
-        written: bool,  # noqa: FBT001
-    ) -> None:
-        """Test that only records with valid custom fields are written; records without them are skipped."""
+    def test_write_configuration_log(self) -> None:
+        """Append one configuration-success record to the handler buffer."""
         handler = create_handler()
-        record_values: dict[str, Any] = {
-            "name": logger_name,
-            "module": "module",
-            "funcName": "func",
-            "lineno": 1,
-            "levelname": "WARNING",
-            "levelno": logging.WARNING,
-            "msg": "event",
-        }
-        if custom_fields == "valid":
-            record_values["custom_fields"] = log.CustomLogFields(
-                process="Logging", table="", field="", process_stage="Processing"
-            )
-        elif custom_fields != "missing":
-            record_values["custom_fields"] = custom_fields
-
-        with (
-            patch.object(
-                handler, "_record_to_row", wraps=handler._record_to_row
-            ) as convert,
-            expectation,
-        ):
-            handler.emit(logging.makeLogRecord(record_values))
-
-        assert convert.call_count == int(written)
-        assert len(handler._buffer) == int(written)
-        logging.Handler.close(handler)
-
-    def test_emit_after_close_raises(self) -> None:
-        """Test that records emitted after close raise rather than being silently lost."""
-        handler = create_handler()
-        handler.close()
-
-        with pytest.raises(RuntimeError, match="already been closed"):
-            handler.emit(create_log_record())
-        assert handler._buffer == []
-
-    def test_flush_warns_when_open_and_is_silent_when_closed(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Test that flush() never uploads or raises, and warns (stderr + one buffered record) only once."""
-        handler = create_handler()
-        handler._buffer = [{"message": "buffered"}]
-
-        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
-            handler.flush()
-            handler.flush()
-        mock_put.assert_not_called()
-        assert (
-            capsys.readouterr().err.count("flushed outside of LoggingController") == 1
-        )
-        assert len(handler._buffer) == BUFFER_ROWS_AFTER_WARNING
-        warning = handler._buffer[-1]
-        assert warning["log_level"] == "WARNING"
-        assert warning["function"] == "flush"
-        assert warning["process"] == "Logging"
-        assert warning["process_stage"] == "End"
-        assert warning["line_number"] == configuration_log_line_number(
-            log.JsonlLogHandler.flush
-        )
-        assert "flushed outside of LoggingController" in warning["message"]
-
-        handler._buffer = []
-        handler.close()
-        handler.flush()
-        assert capsys.readouterr().err == ""
-
-    def test_logging_shutdown_still_closes_and_uploads_after_flush_warning(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Test that the stdlib atexit path warns via flush() but still uploads via close()."""
-        handler = create_handler()
-        handler.emit(create_log_record(message="trailing log"))
-
-        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
-            logging.shutdown(handlerList=[weakref.ref(handler)])
-
-        mock_put.assert_called_once()
-        body = mock_put.call_args.args[1]
-        assert b"trailing log" in body
-        assert b"flushed outside of LoggingController" in body
-        assert handler._closed
-        assert "flushed outside of LoggingController" in capsys.readouterr().err
-
-    def test_write_configuration_log(self, s3: boto3.client) -> None:
-        """Test that the configuration log is written correctly."""
-        with freeze_time("2024-01-02T00:00:00Z"):
-            handler = create_handler()
-            handler._write_configuration_log()
-
-        assert handler._buffer == [
-            {
-                "pipeline": DEFAULT_PIPELINE,
-                "run_id": RUN_ID,
-                "data_delivery_period": DELIVERY_PERIOD.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "attempt_no": 1,
-                "logger_name": logging.getLogger().name,
-                "module": "logging.log",
-                "function": "_write_configuration_log",
-                "line_number": configuration_log_line_number(),
-                "log_level": "INFO",
-                "log_timestamp": "2024-01-02T00:00:00Z",
-                "process": "Configuration",
-                "table": "",
-                "field": "",
-                "process_stage": "End",
-                "message": "Logging configured successfully.",
-                "exception": "",
-            }
-        ]
-        logging.Handler.close(handler)
-
-    @pytest.mark.parametrize("count", [2, 3])
-    def test_emit_buffers_and_flushes_at_threshold(self, count: int) -> None:
-        """Below the threshold rows remain in order; at the threshold they are flushed."""
-        handler = create_handler(batch_size=FLUSH_THRESHOLD)
-        records = [
-            create_log_record(message=f"event {number}") for number in range(count)
-        ]
-        rows = [{"message": record.msg} for record in records]
-
-        with (
-            patch.object(
-                log.JsonlLogHandler, "_record_to_row", side_effect=rows
-            ) as mock_record,
-            patch.object(
-                log.JsonlLogHandler,
-                "_flush_locked",
-                side_effect=mock_flush_locked,
-                autospec=True,
-            ) as mock_flush,
-        ):
-            for record in records:
-                handler.emit(record)
-
-        assert [call.args for call in mock_record.call_args_list] == [
-            (record, vars(record)["custom_fields"]) for record in records
-        ]
-        assert mock_flush.call_count == int(count == FLUSH_THRESHOLD)
-        assert handler._buffer == ([] if count == FLUSH_THRESHOLD else rows)
-
-    @pytest.mark.parametrize("registration_fails", [False, True])
-    def test_close_after_successful_flush(
-        self,
-        registration_fails: bool,  # noqa: FBT001
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Close once and propagate registration failures without dumping uploaded records."""
-        handler = create_handler()
-        handler._buffer = [
-            {"message": "First application event"},
-            {"message": "Second application event"},
-        ]
-
-        with (
-            patch.object(
-                log.JsonlLogHandler,
-                "_flush_locked",
-                side_effect=mock_flush_locked,
-                autospec=True,
-            ) as mock_flush,
-            patch.object(
-                log.JsonlLogHandler,
-                "_register_logs_in_athena",
-                side_effect=(
-                    RuntimeError("Athena unavailable") if registration_fails else None
-                ),
-            ) as mock_register,
-        ):
-            with (
-                pytest.raises(RuntimeError, match="Athena unavailable")
-                if registration_fails
-                else nullcontext()
-            ):
-                handler.close()
-            handler.close()
-
-        mock_flush.assert_called_once()
-        mock_register.assert_called_once_with()
-        assert handler._buffer == []
-        assert handler._closed
-        assert capsys.readouterr().err == ""
-
-    def test_concurrent_close_registers_once(self) -> None:
-        """Test that a close() which starts while another close() holds the lock does not register again.
-
-        The second thread enters close() before the handler is closed, then waits for the lock. Once the
-        first close() finishes, the second must see the handler is closed and return without flushing or
-        registering the run's logs a second time.
-        """
-        handler = create_handler()
-        handler._buffer = [{"message": "event"}]
-        main_thread = current_thread()
-        second_waiting = Event()
-        original_acquire = handler.acquire
-
-        def acquire() -> None:
-            """Signal a contending thread before acquiring the original handler lock."""
-            if current_thread() is not main_thread:
-                second_waiting.set()
-            original_acquire()
-
-        handler.acquire = acquire  # type: ignore[method-assign]
-
-        with (
-            patch.object(
-                log.JsonlLogHandler,
-                "_flush_locked",
-                side_effect=mock_flush_locked,
-                autospec=True,
-            ) as mock_flush,
-            patch.object(
-                log.JsonlLogHandler, "_register_logs_in_athena"
-            ) as mock_register,
-        ):
-            original_acquire()
-            try:
-                second = Thread(target=handler.close)
-                second.start()
-                assert second_waiting.wait(timeout=5)
-                handler.close()
-            finally:
-                handler.release()
-            second.join(timeout=5)
-
-        assert not second.is_alive()
-        mock_flush.assert_called_once()
-        mock_register.assert_called_once_with()
-        assert handler._closed
-
-    @pytest.mark.parametrize(
-        ("flush_side_effect", "match"),
-        [
-            # Retry cap reached inside _flush_locked.
-            (RuntimeError("Failed to write logs after 3 attempts"), "after 3 attempts"),
-            # _flush_locked returns but leaves records behind (e.g. a failed write below the cap).
-            (None, "Failed to write 2 log records to S3"),
-        ],
-    )
-    def test_close_failure_dumps_unwritten_records_to_stderr(
-        self,
-        flush_side_effect: Exception | None,
-        match: str,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Test that a terminal close failure prints every unwritten record to stderr before raising."""
-        handler = create_handler()
-        rows = [{"message": "First application event"}, {"message": "Second, ü"}]
-        handler._buffer = list(rows)
-
-        with (
-            patch.object(
-                log.JsonlLogHandler, "_flush_locked", side_effect=flush_side_effect
-            ) as mock_flush,
-            patch.object(
-                log.JsonlLogHandler, "_register_logs_in_athena"
-            ) as mock_register,
-            pytest.raises(RuntimeError, match=match),
-        ):
-            handler.close()
-
-        mock_register.assert_not_called()
-        mock_flush.assert_called_once_with()
-        assert handler._buffer == rows
-        assert handler._closed
-        header, *dumped = capsys.readouterr().err.splitlines()
-        assert header == (
-            f"ERROR: 2 log records could not be written to s3://{DEFAULT_BUCKET}/"
-            f"{DEFAULT_LOG_STORE_PREFIX}. Dumping records:"
-        )
-        assert [json.loads(line) for line in dumped] == rows
-
-    def test_create_key_directory(self) -> None:
-        """Test that the object key is generated correctly."""
-        handler = create_handler()
-        key_directory = handler._create_key_directory(DEFAULT_LOG_STORE_PREFIX)
-        assert (
-            key_directory
-            == f"prefix/to/log/data_delivery_period={ENCODED_DELIVERY_PERIOD}/attempt_no=1/run_id={ENCODED_RUN_ID}/"
-        )
-
-    def test_registers_scoped_run_as_partitioned_dataset(self) -> None:
-        """Test that only this handler's written keys are registered, with explicit Athena types."""
-        log_store_prefix = "custom/log-store"
-        athena_prefix = "custom/logs/"
-        database_name = "custom_log_database"
-        table_name = "pipeline_events"
-
-        handler = create_handler(
-            log_store_prefix=log_store_prefix,
-            athena_prefix=athena_prefix,
-            athena_database_name=database_name,
-            athena_table_name=table_name,
-        )
-        handler._part_number = 2
-        raw_logs = pd.DataFrame(
-            {
-                "log_timestamp": [
-                    "2024-01-02T10:00:00.123456Z",
-                    "2024-01-02T11:00:00Z",
-                ],
-                "message": ["first", "second"],
-            }
-        )
-
-        with (
-            patch(
-                "opg_pipeline_builder.logging.log.wr.s3.read_json",
-                return_value=raw_logs,
-            ) as mock_read_json,
-            patch(
-                "opg_pipeline_builder.logging.log.wr.s3.to_parquet"
-            ) as mock_to_parquet,
-            patch(
-                "opg_pipeline_builder.logging.log.wr.catalog.create_database"
-            ) as mock_create_database,
-        ):
-            handler._register_logs_in_athena()
-
-        mock_read_json.assert_called_once_with(
-            path=[
-                f"s3://{DEFAULT_BUCKET}/custom/log-store/data_delivery_period={ENCODED_DELIVERY_PERIOD}"
-                f"/attempt_no=1/run_id={ENCODED_RUN_ID}/{os.getpid()}_{handler._writer_id}_{part}.jsonl"
-                for part in range(2)
-            ],
-            lines=True,
-            dtype=False,
-            convert_dates=False,
-        )
-        mock_create_database.assert_called_once_with(database_name, exist_ok=True)
-        kwargs = dict(mock_to_parquet.call_args.kwargs)
-        registered = kwargs.pop("df")
-        assert kwargs == {
-            "path": f"s3://{DEFAULT_BUCKET}/{athena_prefix}",
-            "dataset": True,
-            "mode": "append",
-            "database": database_name,
-            "table": table_name,
-            "partition_cols": ["data_delivery_period", "attempt_no", "run_id"],
-            "dtype": log_utils.ATHENA_COLUMN_TYPES,
-        }
-        assert isinstance(registered["log_timestamp"].dtype, pd.DatetimeTZDtype)
-        assert str(registered["log_timestamp"].dt.tz) == "UTC"
-        assert registered["log_timestamp"].tolist() == [
-            pd.Timestamp("2024-01-02T10:00:00.123456Z"),
-            pd.Timestamp("2024-01-02T11:00:00Z"),
-        ]
-
-    def test_athena_column_types_match_structured_log_record(self) -> None:
-        """Test that every StructuredLogRecord field has an explicit Athena type."""
-        assert list(log_utils.ATHENA_COLUMN_TYPES) == list(
-            log.StructuredLogRecord.model_fields
-        )
-
-    def test_put_object_success(self, s3: boto3.client) -> None:
-        """Test that the handler successfully puts an object to S3."""
-        handler = create_handler()
-
-        key = handler._object_key(handler._part_number)
-        bytes_data = b"some random data"
-
-        handler._put_object(key, bytes_data)
-
-        data = s3.get_object(Bucket="log-bucket", Key=key)
-        assert data["Body"].read() == bytes_data
-
-    def test_flush_locked_success(self, s3: boto3.client) -> None:
-        """Test that the handler successfully flushes the buffer to S3."""
-        handler = create_handler(apply_patches=False)
-
-        handler.emit(create_log_record(message="First application event"))
-        handler.emit(create_log_record(message="Second application event"))
-        handler.emit(create_log_record(message="Third application event"))
-
-        handler._flush_locked()
-
-        assert handler._buffer == []
-        assert handler._part_number == 1
-        assert handler._batch_size == DEFAULT_BATCH_SIZE
-
-        handler.emit(create_log_record(message="Fourth application event"))
-
-        handler._flush_locked()
-
-        assert handler._buffer == []
-        assert handler._part_number == EXPECTED_UPLOAD_PART_COUNT
-        assert handler._batch_size == DEFAULT_BATCH_SIZE
-
-        logs = read_jsonl_logs(s3)
-
-        log_1_key = f"prefix/to/log/data_delivery_period={ENCODED_DELIVERY_PERIOD}/attempt_no=1/run_id={ENCODED_RUN_ID}/{os.getpid()}_{handler._writer_id}_0.jsonl"
-
-        assert log_1_key in logs
-        log_1_records = logs[log_1_key]
-
-        assert len(log_1_records) == FIRST_BATCH_RECORD_COUNT
-        assert log_1_records[0]["message"] == "Logging configured successfully."
-        assert log_1_records[1]["message"] == "First application event"
-        assert log_1_records[2]["message"] == "Second application event"
-        assert log_1_records[3]["message"] == "Third application event"
-
-        log_2_key = f"prefix/to/log/data_delivery_period={ENCODED_DELIVERY_PERIOD}/attempt_no=1/run_id={ENCODED_RUN_ID}/{os.getpid()}_{handler._writer_id}_1.jsonl"
-        assert log_2_key in logs
-        log_2_records = logs[log_2_key]
-
-        assert len(log_2_records) == 1
-        assert log_2_records[0]["message"] == "Fourth application event"
-
-    def test_flush_locked_empty(self) -> None:
-        """Test that flushing an empty buffer does not raise an error."""
-        handler = create_handler()
-        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
-            handler._flush_locked()
-
-        mock_put.assert_not_called()
-        assert handler._buffer == []
-        assert handler._part_number == 0
-        assert handler._batch_size == DEFAULT_BATCH_SIZE
-
-    @pytest.mark.parametrize(
-        ("exception"),
-        [
-            (BotoCoreError()),
-            (ClientError({}, "operation")),
-            (OSError()),
-        ],
-    )
-    def test_flush_locked_fail_then_succeed(
-        self, exception: Any, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Test that the full buffer is correctly flushed after two failed attempts."""
-        handler = create_handler()
-
-        for iteration in range(1, 3):
-            handler.emit(create_log_record(message=f"application event: {iteration}"))
-            with patch.object(
-                log.JsonlLogHandler, "_put_object", side_effect=exception
-            ) as mock_put:
-                handler._flush_locked()
-            assert handler._write_failures == iteration
-            assert f"failure_count={iteration}" in capsys.readouterr().err
-            assert handler._batch_size == DEFAULT_BATCH_SIZE * (iteration + 1)
-            assert any(
-                "Failed to write JSONL" in log["message"] for log in handler._buffer
-            )
-            assert len(handler._buffer) == iteration * 2
-
-        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
-            handler._flush_locked()
-
-        mock_put.assert_called_once()
-        assert handler._buffer == []
-        assert handler._part_number == 1
-        assert handler._batch_size == DEFAULT_BATCH_SIZE
-        assert handler._write_failures == 0
-
-    @pytest.mark.parametrize(
-        "exception", [RuntimeError("bug"), ValueError("bug"), TypeError("bug")]
-    )
-    def test_flush_locked_non_sink_error_propagates(self, exception: Exception) -> None:
-        """Test that errors other than S3/network failures are treated as bugs, not sink failures.
-
-        They propagate immediately and leave the retry state untouched, so they are not reported as a
-        failed write and retried.
-        """
-        handler = create_handler()
-        handler.emit(create_log_record())
-        buffered = list(handler._buffer)
-
-        with (
-            patch.object(log.JsonlLogHandler, "_put_object", side_effect=exception),
-            pytest.raises(type(exception), match="bug"),
-        ):
-            handler._flush_locked()
-
-        assert handler._write_failures == 0
-        assert handler._batch_size == DEFAULT_BATCH_SIZE
-        assert handler._buffer == buffered
-        assert handler._part_number == 0
-
-    def test_flush_locked_failure_record(self) -> None:
-        """Test the internal failure record's attribution and empty table/field values."""
-        handler = create_handler()
-        handler.emit(create_log_record())
+        record = log.StructuredLogRecord(**create_structured_log())
 
         with patch.object(
-            log.JsonlLogHandler, "_put_object", side_effect=OSError("disk gone")
-        ):
-            handler._flush_locked()
+            handler, "_internal_record", return_value=record
+        ) as mock_record:
+            handler._write_configuration_log()
 
-        failure = handler._buffer[-1]
-        assert failure["exception"].startswith("Traceback (most recent call last):")
-        assert failure["exception"].rstrip().endswith("OSError: disk gone")
-        assert (
-            failure["message"] == "Failed to write JSONL log batch (failure_count=1)."
+        mock_record.assert_called_once_with(
+            log_level="INFO",
+            process="Configuration",
+            process_stage="End",
+            message="Logging configured successfully.",
         )
-        assert failure["function"] == "_flush_locked"
-        assert failure["line_number"] == configuration_log_line_number(
-            log.JsonlLogHandler._flush_locked
-        )
-        assert failure["module"] == "logging.log"
-        assert failure["log_level"] == "ERROR"
-        assert failure["table"] == ""
-        assert failure["field"] == ""
-        assert handler._part_number == 0
+        assert handler._buffer == [record.model_dump(mode="json")]
 
-    def test_registration_skipped_when_nothing_uploaded(self) -> None:
-        """Test that no Glue/S3 calls are made when this handler never uploaded an object."""
+    def test_locked(self) -> None:
+        """Hold the handler lock inside the context and release it on exit."""
         handler = create_handler()
-        with (
-            patch("opg_pipeline_builder.logging.log.wr.s3.read_json") as mock_read_json,
-            patch(
-                "opg_pipeline_builder.logging.log.wr.s3.to_parquet"
-            ) as mock_to_parquet,
-            patch(
-                "opg_pipeline_builder.logging.log.wr.catalog.create_database"
-            ) as mock_create_database,
-        ):
-            handler._register_logs_in_athena()
 
-        mock_read_json.assert_not_called()
-        mock_to_parquet.assert_not_called()
-        mock_create_database.assert_not_called()
-
-    def test_registration_reads_exactly_the_uploaded_keys(self) -> None:
-        """Verify registration uses exactly the successfully uploaded keys.
-
-        A failed upload must not consume a part number.
-        """
-        handler = create_handler()
-        uploaded: list[str] = []
-
-        handler.emit(create_log_record())
-        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
-            handler._flush_locked()
-        uploaded.append(mock_put.call_args.args[0])
-        handler.emit(create_log_record())
-        with patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError):
-            handler._flush_locked()
-        with patch.object(log.JsonlLogHandler, "_put_object") as mock_put:
-            handler._flush_locked()
-        uploaded.append(mock_put.call_args.args[0])
+        def can_acquire_lock() -> bool:
+            """Return whether another thread can acquire the lock immediately."""
+            assert handler.lock is not None
+            acquired = handler.lock.acquire(blocking=False)
+            if acquired:
+                handler.lock.release()
+            return acquired
 
         with (
-            patch(
-                "opg_pipeline_builder.logging.log.wr.s3.read_json",
-                return_value=pd.DataFrame({"log_timestamp": ["2024-01-02T00:00:00Z"]}),
-            ) as mock_read_json,
-            patch("opg_pipeline_builder.logging.log.wr.s3.to_parquet"),
-            patch("opg_pipeline_builder.logging.log.wr.catalog.create_database"),
+            ThreadPoolExecutor(max_workers=1) as executor,
+            patch.object(handler, "acquire", wraps=handler.acquire) as mock_acquire,
+            patch.object(handler, "release", wraps=handler.release) as mock_release,
         ):
-            handler._register_logs_in_athena()
+            with handler._locked():
+                mock_acquire.assert_called_once_with()
+                mock_release.assert_not_called()
+                assert not executor.submit(can_acquire_lock).result()
 
-        prefix = f"prefix/to/log/data_delivery_period={ENCODED_DELIVERY_PERIOD}/attempt_no=1/run_id={ENCODED_RUN_ID}/"
-        assert uploaded == [
-            f"{prefix}{os.getpid()}_{handler._writer_id}_{part}.jsonl"
-            for part in range(2)
-        ]
-        assert mock_read_json.call_args.kwargs["path"] == [
-            f"s3://{DEFAULT_BUCKET}/{key}" for key in uploaded
-        ]
+            mock_release.assert_called_once_with()
+            assert executor.submit(can_acquire_lock).result()
 
-    def test_flush_locked_fail_then_hit_threshold(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Test that the full buffer is correctly flushed after two failed attempts."""
+    def test_build_row(self) -> None:
+        """Build a structured row and truncate its message and exception fields."""
+        handler = create_handler()
+        structured_log = create_structured_log()
+        fields = {
+            name: value
+            for name, value in structured_log.items()
+            if name not in {"pipeline", "run_id", "data_delivery_period", "attempt_no"}
+        }
+
+        with patch(
+            "opg_pipeline_builder.logging.log.u.truncate_text",
+            wraps=u.truncate_text,
+        ) as mock_truncate:
+            row = handler._build_row(**fields)
+
+        assert row == log.StructuredLogRecord(**structured_log)
+        assert mock_truncate.call_count == 2
+        assert mock_truncate.call_args_list[0][0][0] == fields["message"]
+        assert mock_truncate.call_args_list[1][0][0] == fields["exception"]
+
+    @pytest.mark.parametrize("exception", ["", "internal exception"])
+    def test_internal_record(self, exception: str) -> None:
+        """Build an internal record with caller metadata and supplied exception text."""
         handler = create_handler()
 
-        for iteration in range(1, 4):
-            handler.emit(create_log_record(message=f"application event: {iteration}"))
-            with patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError):
-                handler._flush_locked()
-            assert handler._write_failures == iteration
-            assert f"failure_count={iteration}" in capsys.readouterr().err
-            assert handler._batch_size == DEFAULT_BATCH_SIZE * (iteration + 1)
-            assert len(handler._buffer) == iteration * 2
-
-        handler.emit(create_log_record(message=f"application event: {iteration}"))
-        with (
-            patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError),
-            pytest.raises(
-                RuntimeError,
-                match=r"Attempted to write logs 4 times\. Retries exceeded",
-            ),
-        ):
-            handler._flush_locked()
-
-    def test_record_to_row_success(self) -> None:
-        """Test that a log record is correctly converted to a row."""
-        handler = create_handler()
-
-        with freeze_time("2024-06-01 12:00:00"):
-            record = create_log_record(
-                timestamp=datetime.now(tz=UTC), message="application event: 1"
+        with patch.object(time, "time", return_value=LogTimestamp._TIMESTAMP):
+            line_number = sys._getframe().f_lineno + 1
+            row = handler._internal_record(
+                log_level=DEFAULT_LEVEL,
+                process=DEFAULT_PROCESS,
+                process_stage=DEFAULT_PROCESS_STAGE,
+                message=DEFAULT_MESSAGE,
+                **({"exception": exception} if exception else {}),
             )
-            row = handler._record_to_row(record, vars(record)["custom_fields"])
-            assert row == {
-                "pipeline": DEFAULT_PIPELINE,
-                "run_id": RUN_ID,
-                "data_delivery_period": DELIVERY_PERIOD.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "attempt_no": 1,
-                "logger_name": "opg_pipeline_builder.test_module",
-                "module": "test_module",
-                "function": "test_func",
-                "line_number": 42,
-                "log_level": "INFO",
-                "log_timestamp": "2024-06-01T12:00:00Z",
-                "process": "Logging",
-                "table": "table_a",
-                "field": "field_a",
-                "process_stage": "Processing",
-                "message": "application event: 1",
-                "exception": "",
-            }
 
-    def test_record_to_row_captures_exception(self) -> None:
-        """Test that the full traceback (cause, context, notes) is written to the exception column."""
+        expected = create_structured_log(
+            custom_fields=create_custom_fields(table="", field=""),
+            logger_name=logging.getLogger().name,
+            module="logging.log",
+            function="test_internal_record",
+            line_number=line_number,
+            exception=exception,
+        )
+
+        assert isinstance(row, log.StructuredLogRecord)
+        assert row.model_dump() == expected
+
+    @pytest.mark.parametrize(
+        "exception_case",
+        [
+            "no_exception",
+            "empty_exc_info",
+            "stale_text_without_exc_info",
+            "preformatted_exception",
+            "unformatted_exception",
+        ],
+    )
+    def test_record_to_row_passes_expected_fields(self, exception_case: str) -> None:
+        """Pass formatted messages and traceback text into the validated structured row."""
         handler = create_handler()
-        record = create_log_record(message="Load failed")
+        record = create_log_record(msg="application event: %s", args=(1,))
+        custom_fields = log.CustomLogFields.model_validate(
+            vars(record)["custom_fields"]
+        )
+        expected_exception = ""
 
-        try:
+        if exception_case in {"preformatted_exception", "unformatted_exception"}:
             try:
-                missing_column = "missing_column"
-                raise KeyError(missing_column)  # noqa: TRY301
-            except KeyError as cause:
-                error = ValueError("bad row")
-                error.add_note("while loading table_a")
-                raise error from cause
-        except ValueError:
-            record.exc_info = sys.exc_info()
+                try:
+                    err = "missing_column"
+                    raise KeyError(err)  # noqa: TRY301
+                except KeyError as cause:
+                    error = ValueError("bad row")
+                    error.add_note("while loading table_a")
+                    raise error from cause
+            except ValueError:
+                record.exc_info = sys.exc_info()
 
-        row = handler._record_to_row(record, vars(record)["custom_fields"])
+            expected_exception = logging.Formatter().formatException(record.exc_info)
+            if exception_case == "preformatted_exception":
+                record.exc_text = expected_exception
+            else:
+                assert "KeyError: 'missing_column'" in expected_exception
+                assert "The above exception was the direct cause" in expected_exception
+                assert "ValueError: bad row" in expected_exception
+                assert expected_exception.rstrip().endswith("while loading table_a")
+        elif exception_case == "empty_exc_info":
+            record.exc_info = (None, None, None)
+        elif exception_case == "stale_text_without_exc_info":
+            record.exc_text = "stale traceback text"
 
-        exception = row["exception"]
-        assert isinstance(exception, str)
-        assert row["message"] == "Load failed"
-        assert exception.startswith("Traceback (most recent call last):")
-        assert "KeyError: 'missing_column'" in exception
-        assert "The above exception was the direct cause" in exception
-        assert "ValueError: bad row" in exception
-        assert exception.rstrip().endswith("while loading table_a")
-        # Cached so the console handler prints the same text without formatting it again.
-        assert record.exc_text == exception
+        with patch.object(handler, "_build_row") as mock_build:
+            handler._record_to_row(record, custom_fields)
 
-    @pytest.mark.parametrize("exc_info", [None, (None, None, None)])
-    def test_record_to_row_without_exception(self, exc_info: Any) -> None:
-        """Test that the exception column is empty when there is no active exception.
+        mock_build.assert_called_once_with(
+            logger_name=record.name,
+            module=record.module,
+            function=record.funcName,
+            line_number=record.lineno,
+            log_level=record.levelname,
+            log_timestamp=record.created,
+            **custom_fields.model_dump(),
+            message="application event: 1",
+            exception=expected_exception,
+        )
+        if exception_case in {"preformatted_exception", "unformatted_exception"}:
+            assert record.exc_text == expected_exception
 
-        exc_info=True outside an 'except' block produces (None, None, None).
-        """
+    @pytest.mark.parametrize("prefix", ["raw/logs", "raw/logs/"])
+    def test_create_key_directory(self, prefix: str) -> None:
+        """Trim the prefix and percent-encode each partition as one path segment."""
         handler = create_handler()
-        record = create_log_record()
-        record.exc_info = exc_info
-
-        assert (
-            handler._record_to_row(record, vars(record)["custom_fields"])["exception"]
-            == ""
+        directory = handler._create_key_directory(prefix)
+        assert directory == (
+            f"raw/logs/data_delivery_period={DeliveryPeriod._ENCODED}/"
+            f"attempt_no=1/run_id={ENCODED_RUN_ID}/"
         )
 
-    def test_record_to_row_truncates_message_and_exception(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Test that long text is capped: the message keeps its start, the traceback keeps its end."""
-        monkeypatch.setattr(log, "_MAX_TEXT_LENGTH", 10)
+    def test_object_key(self) -> None:
+        """Include process, writer, and part identifiers in each JSONL object key."""
         handler = create_handler()
-        record = create_log_record(message="0123456789ABCDEF")
-        record.exc_info = (ValueError, ValueError("x"), None)
-        record.exc_text = "Traceback line\nValueError: x"
-
-        row = handler._record_to_row(record, vars(record)["custom_fields"])
-
-        assert row["message"] == "0123456789...[truncated 6 characters]..."
-        assert (
-            row["exception"]
-            == "...[truncated 18 characters]..." + "ValueError: x"[-10:]
-        )
-
-
-class TestLoggingController:
-    """Verify explicit flush and shutdown behavior for package-owned handlers."""
-
-    @pytest.fixture
-    def third_party_handler(self) -> Generator[logging.Handler]:
-        """A handler owned by someone else (e.g. Airflow or pytest) attached to the root logger."""
-        handler = logging.NullHandler()
-        logging.getLogger().addHandler(handler)
-        yield handler
-        logging.getLogger().removeHandler(handler)
-
-    def create_controller(self) -> log.LoggingController:
-        """Attach fresh test handlers and return a controller that owns both."""
-        logger = logging.getLogger()
-        handler = create_handler()
-        handler.set_name(log._JSONL_HANDLER_NAME)
-        console_handler = logging.StreamHandler()
-        console_handler.set_name(log._CONSOLE_HANDLER_NAME)
-        logger.addHandler(handler)
-        logger.addHandler(console_handler)
-        return log.LoggingController(logger, [handler, console_handler])
-
-    @staticmethod
-    def owned_handlers_removed(controller: log.LoggingController) -> bool:
-        """Return whether shutdown detached every handler owned by the controller."""
-        return all(
-            handler not in controller._logger.handlers
-            for handler in controller._handlers
-        )
-
-    def test_flush_success(self) -> None:
-        """Test that the flush method calls the handler's _flush_locked method."""
-        controller = self.create_controller()
-        with patch.object(log.JsonlLogHandler, "_flush_locked") as mock_flush_locked:
-            controller.flush()
-
-        mock_flush_locked.assert_called_once()
-
-    def test_flush_fails_when_shutdown(self) -> None:
-        """Test that the flush method raises an error if logging has been shut down."""
-        controller = self.create_controller()
-        controller._is_shutdown = True
-        with pytest.raises(RuntimeError, match=r"Logging has already been shut down\."):
-            controller.flush()
-
-    def test_shutdown_only_closes_owned_handlers(
-        self, third_party_handler: logging.Handler
-    ) -> None:
-        """Test that shutdown closes and removes its own handlers and leaves others untouched."""
-        controller = self.create_controller()
-        with (
-            patch.object(log.JsonlLogHandler, "close") as mock_jsonl_close,
-            patch.object(logging.StreamHandler, "close") as mock_console_close,
-            patch.object(third_party_handler, "close") as mock_third_party_close,
+        part_number = 1
+        with patch.object(
+            log.JsonlLogHandler,
+            "_create_key_directory",
+            return_value="mocked/directory/",
         ):
-            controller.shutdown()
-            controller.shutdown()
+            key = handler._object_key(part_number)
+        assert (
+            key == "mocked/directory/"
+            f"{os.getpid()}_{handler._writer_id}_{part_number}.jsonl"
+        )
+        assert key.endswith(f"{os.getpid()}_{handler._writer_id}_{part_number}.jsonl")
 
-        mock_jsonl_close.assert_called_once()
-        mock_console_close.assert_called_once()
-        mock_third_party_close.assert_not_called()
-        assert third_party_handler in logging.getLogger().handlers
-        assert controller._is_shutdown
-        assert self.owned_handlers_removed(controller)
+    @pytest.mark.parametrize("error", [None, OSError("upload failed")])
+    def test_put_object(self, error: Exception | None) -> None:
+        """Forward exact S3 upload arguments and propagate a supplied upload failure."""
+        handler = create_handler()
+        with (
+            pytest.raises(type(error)) if error else nullcontext(),
+            patch.object(handler._s3, "put_object", side_effect=error) as mock_put,
+        ):
+            handler._put_object("logs/part.jsonl", b'{"message":"event"}\n')
 
-    def test_shutdown_fails_when_already_shutdown(self) -> None:
-        """Test that the shutdown method does nothing if logging has already been shut down."""
-        controller = self.create_controller()
-        controller._is_shutdown = True
-        with patch.object(log.JsonlLogHandler, "close") as mock_close:
-            controller.shutdown()
+        mock_put.assert_called_once_with(
+            Bucket=DEFAULT_BUCKET,
+            Key="logs/part.jsonl",
+            Body=b'{"message":"event"}\n',
+            ContentType="application/x-ndjson",
+        )
 
-        assert mock_close.call_count == 0
+    @pytest.mark.parametrize("row_count", [1, 3])
+    def test_flush_locked_success(
+        self,
+        row_count: int,
+        capsys: pytest.CaptureFixture[str],  # pylint: disable=unused-argument
+    ) -> None:
+        """Serialize rows in order and reset retry state after successful upload."""
+        handler = create_handler()
+        rows = [
+            create_structured_log(
+                message=f"event {index}",
+                log_timestamp=f"original event time {index}",
+                data_delivery_period=DeliveryPeriod.ISO,
+            )
+            for index in range(row_count)
+        ]
+        handler._buffer = list(rows)
+        handler._write_failures = 1
+        handler._batch_size = DEFAULT_BATCH_SIZE * 2
+
+        with (
+            patch.object(handler, "_object_key", return_value="part.jsonl") as mock_key,
+            patch.object(handler, "_put_object") as mock_put,
+            patch.object(handler, "_internal_record") as mock_internal,
+            patch.object(u, "to_jsonl_line", wraps=u.to_jsonl_line) as serialize,
+        ):
+            handler._flush_locked()
+
+        assert serialize.call_args_list == [call(row) for row in rows]
+        mock_key.assert_called_once_with(0)
+
+        uploaded_key, body = mock_put.call_args.args
+        assert uploaded_key == "part.jsonl"
+        assert isinstance(body, bytes)
+        for index in range(row_count):
+            assert f"event {index}".encode() in body
+        assert body.endswith(b"\n")
+
+        mock_internal.assert_not_called()
+        assert handler._part_number == 1
+        assert handler._buffer == []
+        assert handler._write_failures == 0
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
+
+    def test_flush_locked_empty_buffer(self) -> None:
+        """Skip serialization, key creation, and upload when the buffer is empty."""
+        handler = create_handler()
+        with (
+            patch.object(handler, "_object_key", return_value="part.jsonl") as mock_key,
+            patch.object(handler, "_put_object") as mock_put,
+            patch.object(u, "to_jsonl_line", wraps=u.to_jsonl_line) as mock_serialize,
+        ):
+            handler._flush_locked()
+
+        assert handler._buffer == []
+        assert handler._part_number == 0
+        mock_key.assert_not_called()
+        mock_put.assert_not_called()
+        mock_serialize.assert_not_called()
 
     @pytest.mark.parametrize(
         "error",
         [
-            RuntimeError("flush failed"),
-            TypeError("bad type"),
-            ValueError("bad value"),
-            OSError("disk"),
-            KeyError("missing"),
-            ClientError({"Error": {"Code": "AccessDenied"}}, "GetObject"),
+            BotoCoreError(),
+            ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "denied"}}, "PutObject"
+            ),
+            OSError(),
         ],
     )
-    def test_shutdown_error_still_closes_remaining_handlers(
-        self, error: Exception
+    def test_flush_locked_sink_failure(
+        self,
+        error: Exception,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Test that any close error is re-raised after every handler is closed and removed."""
-        controller = self.create_controller()
+        """Retain rows, grow the threshold, and buffer a record after retryable sink failure."""
+        handler = create_handler()
+
+        initial_log = {"message": "original", "log_timestamp": LogTimestamp.ISO}
+        handler._buffer = [initial_log]
+        handler._part_number = 2
+        handler._write_failures = 1
+        handler._batch_size = DEFAULT_BATCH_SIZE * 2
+        failure = {"message": "failure record"}
+
         with (
-            patch.object(log.JsonlLogHandler, "close", side_effect=error),
-            patch.object(logging.StreamHandler, "close") as mock_console_close,
-            pytest.raises(type(error)) as raised,
+            patch.object(u, "to_jsonl_line", wraps=u.to_jsonl_line) as mock_serialize,
+            patch.object(handler, "_object_key", return_value="part.jsonl") as key,
+            patch.object(handler, "_put_object", side_effect=error) as put_object,
+            patch.object(handler, "_internal_record") as internal_record,
         ):
-            controller.shutdown()
+            internal_record.return_value.model_dump.return_value = failure
+            handler._flush_locked()
+
+        mock_serialize.assert_called_once_with(initial_log)
+        key.assert_called_once_with(2)
+        put_object.assert_called_once_with(
+            "part.jsonl", (u.to_jsonl_line(initial_log) + "\n").encode()
+        )
+        assert handler._write_failures == 2
+        assert handler._batch_size == DEFAULT_BATCH_SIZE * 3
+        assert handler._part_number == 2
+        assert handler._buffer[0] is initial_log
+        assert capsys.readouterr().err == (
+            f"Failed to write a batch of logs to s3://{DEFAULT_BUCKET}/part.jsonl "
+            f"(failure_count=2). Error: {error}\n"
+        )
+        internal_record.assert_called_once_with(
+            log_level="ERROR",
+            process="Logging",
+            process_stage="Processing",
+            message="Failed to write JSONL log batch (failure_count=2).",
+            exception="".join(traceback.format_exception(error)),
+        )
+        internal_record.return_value.model_dump.assert_called_once_with(mode="json")
+        assert handler._buffer == [initial_log, failure]
+
+    def test_flush_locked_final_retry(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Raise after the fourth sink failure and retain rows without a retry record."""
+        handler = create_handler()
+        initial_log = {"message": "original"}
+        handler._buffer = [initial_log]
+        handler._part_number = 2
+        handler._write_failures = 3
+        handler._batch_size = DEFAULT_BATCH_SIZE * 4
+        error = OSError("upload failed")
+
+        with (
+            patch.object(handler, "_object_key", return_value="part.jsonl") as key,
+            patch.object(handler, "_put_object", side_effect=error) as put_object,
+            patch.object(handler, "_internal_record") as internal_record,
+            pytest.raises(RuntimeError, match="Retries exceeded") as raised,
+        ):
+            handler._flush_locked()
+
+        key.assert_called_once_with(2)
+        put_object.assert_called_once()
+        assert raised.value.__cause__ is error
+        assert str(raised.value) == "Attempted to write logs 4 times. Retries exceeded"
+        internal_record.assert_not_called()
+        assert handler._buffer == [initial_log]
+        assert handler._buffer[0] is initial_log
+        assert handler._part_number == 2
+        assert handler._write_failures == 4
+        assert handler._batch_size == DEFAULT_BATCH_SIZE * 5
+        assert capsys.readouterr().err == (
+            f"Failed to write a batch of logs to s3://{DEFAULT_BUCKET}/part.jsonl "
+            f"(failure_count=4). Error: {error}\n"
+        )
+
+    @pytest.mark.parametrize(
+        "dependency", ["to_jsonl_line", "_object_key", "_put_object"]
+    )
+    @pytest.mark.parametrize("error_type", [ValueError, TypeError, RuntimeError])
+    def test_flush_locked_unexpected_failure(
+        self,
+        dependency: str,
+        error_type: type[Exception],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Propagate unexpected serialization or upload errors without changing buffer state."""
+        handler = create_handler()
+        initial_log = {"message": "original"}
+        handler._buffer = [initial_log]
+        error = error_type("bug")
+        target = u if dependency == "to_jsonl_line" else handler
+        with (
+            patch.object(handler, "_put_object") as put_object,
+            patch.object(handler, "_internal_record") as internal_record,
+            patch.object(target, dependency, side_effect=error),
+            pytest.raises(error_type) as raised,
+        ):
+            handler._flush_locked()
 
         assert raised.value is error
-        mock_console_close.assert_called_once()
-        assert controller._is_shutdown
-        assert self.owned_handlers_removed(controller)
+        internal_record.assert_not_called()
+        if dependency != "_put_object":
+            put_object.assert_not_called()
+        assert handler._buffer == [initial_log]
+        assert handler._part_number == 0
+        assert handler._batch_size == DEFAULT_BATCH_SIZE
+        assert handler._write_failures == 0
+        assert capsys.readouterr().err == ""
 
-    def test_shutdown_multiple_errors_raises_first_with_notes(self) -> None:
-        """Test that later close errors are attached as notes to the first one."""
-        controller = self.create_controller()
+    def test_register_logs_in_athena(self) -> None:
+        """Read owned JSONL objects and append typed rows to the partitioned dataset."""
+        handler = create_handler()
+        handler._part_number = 1
+
+        timestamps = [
+            "2024-01-04T10:16:06Z",
+            "2024-01-04T10:16:06.123456Z",
+            "2024-01-04T12:16:06.000001+02:00",
+        ]
+
+        rows = [
+            create_structured_log(
+                message=f"event {index}",
+                log_timestamp=timestamp,
+                data_delivery_period=DeliveryPeriod.ISO,
+            )
+            for index, timestamp in enumerate(timestamps)
+        ]
+
+        raw_logs = pd.DataFrame(rows)
+
+        expected = raw_logs.copy(deep=True)
+        expected["log_timestamp"] = pd.to_datetime(
+            timestamps, utc=True, format="ISO8601"
+        )
+
         with (
             patch.object(
-                log.JsonlLogHandler, "close", side_effect=RuntimeError("jsonl failed")
-            ),
-            patch.object(
-                logging.StreamHandler, "close", side_effect=ValueError("console failed")
-            ),
-            pytest.raises(RuntimeError, match="jsonl failed") as raised,
+                handler, "_object_key", side_effect=lambda part: f"part-{part}.jsonl"
+            ) as object_key,
+            patch.object(wr.s3, "read_json", return_value=raw_logs) as read_json,
+            patch.object(wr.catalog, "create_database") as create_database,
+            patch.object(wr.s3, "to_parquet") as to_parquet,
         ):
-            controller.shutdown()
+            handler._register_logs_in_athena()
 
-        assert raised.value.__notes__ == [
-            "Another logging handler also failed to close: ValueError: console failed"
+        assert handler._part_number == 1
+        assert object_key.call_args_list == [call(part) for part in range(1)]
+        read_json.assert_called_once_with(
+            path=[f"s3://{DEFAULT_BUCKET}/part-{part}.jsonl" for part in range(1)],
+            lines=True,
+            dtype=False,
+            convert_dates=False,
+        )
+        create_database.assert_called_once_with(DEFAULT_ATHENA_DATABASE, exist_ok=True)
+
+        actual_logs = to_parquet.call_args.kwargs["df"]
+        pd.testing.assert_frame_equal(actual_logs, expected)
+
+        remaining_kwargs = to_parquet.call_args.kwargs
+        remaining_kwargs = {
+            key: value for key, value in remaining_kwargs.items() if key != "df"
+        }
+        assert remaining_kwargs == {
+            "path": f"s3://{DEFAULT_BUCKET}/{DEFAULT_ATHENA_PREFIX}",
+            "dataset": True,
+            "mode": "append",
+            "database": DEFAULT_ATHENA_DATABASE,
+            "table": DEFAULT_ATHENA_TABLE,
+            "partition_cols": ["data_delivery_period", "attempt_no", "run_id"],
+            "dtype": u.ATHENA_COLUMN_TYPES,
+        }
+
+    @pytest.mark.parametrize(("part_no", "read_count"), [(0, 0), (1, 1)])
+    def test_register_logs_in_athena_empty(self, part_no: int, read_count: int) -> None:
+        """Skip Glue and Parquet writes when there are no uploaded log rows."""
+        handler = create_handler()
+        handler._part_number = part_no
+
+        with (
+            patch.object(
+                handler, "_object_key", side_effect=lambda part: f"part-{part}.jsonl"
+            ) as object_key,
+            patch.object(wr.s3, "read_json", return_value=pd.DataFrame()) as read_json,
+            patch.object(wr.catalog, "create_database") as create_database,
+            patch.object(wr.s3, "to_parquet") as to_parquet,
+        ):
+            handler._register_logs_in_athena()
+
+        assert object_key.call_args_list == [call(part) for part in range(part_no)]
+        assert read_json.call_count == read_count
+        create_database.assert_not_called()
+        to_parquet.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "failure_stage", ["read_json", "create_database", "to_parquet"]
+    )
+    def test_register_logs_in_athena_failure(self, failure_stage: str) -> None:
+        """Wrap read, database-create, and Parquet-write failures in RuntimeError."""
+        handler = create_handler()
+        handler._part_number = 1
+        error = OSError("registration failed")
+        with (
+            patch.object(handler, "_object_key", return_value="part.jsonl"),
+            patch.object(
+                wr.s3,
+                "read_json",
+                return_value=pd.DataFrame({"log_timestamp": [LogTimestamp.ISO]}),
+            ) as read_json,
+            patch.object(wr.catalog, "create_database") as create_database,
+            patch.object(wr.s3, "to_parquet") as to_parquet,
+        ):
+            dependencies = {
+                "read_json": read_json,
+                "create_database": create_database,
+                "to_parquet": to_parquet,
+            }
+            dependencies[failure_stage].side_effect = error
+            with pytest.raises(
+                RuntimeError, match="Failed to register logs in Athena"
+            ) as raised:
+                handler._register_logs_in_athena()
+        assert raised.value.__cause__ is error
+        read_json.assert_called_once()
+        assert create_database.call_count == int(failure_stage != "read_json")
+        assert to_parquet.call_count == int(failure_stage == "to_parquet")
+        assert handler._part_number == 1
+
+    def test_dump_unwritten_records(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Write unwritten rows to stderr and leave the handler buffer unchanged."""
+        handler = create_handler()
+        rows = [
+            {"message": f"event {index}", "log_timestamp": LogTimestamp.ISO}
+            for index in range(3)
         ]
-        assert controller._is_shutdown
-        assert self.owned_handlers_removed(controller)
+        handler._buffer = rows
+        with (
+            patch.object(u, "to_jsonl_line", wraps=u.to_jsonl_line) as jsonl,
+            patch.object(sys.stderr, "flush", wraps=sys.stderr.flush) as flush,
+        ):
+            handler._dump_unwritten_records()
+        assert capsys.readouterr().err == (
+            f"ERROR: 3 log records could not be written to "
+            f"s3://{DEFAULT_BUCKET}/{DEFAULT_LOG_STORE_PREFIX}. Dumping records:\n"
+            + "".join(
+                f'{{"message":"event {index}","log_timestamp":"{LogTimestamp.ISO}"}}\n'
+                for index in range(3)
+            )
+        )
+        assert jsonl.call_args_list == [call(row) for row in rows]
+        flush.assert_called_once_with()
+        assert handler._buffer == rows
+
+    def test_emit_buffers_and_flushes(self) -> None:
+        """Buffer rows in order and trigger one flush when the threshold is reached."""
+        handler = create_handler(batch_size=3)
+
+        fields = log.CustomLogFields.model_validate(create_custom_fields())
+        records = [
+            create_log_record(msg=f"event {index}", custom_fields=fields)
+            for index in range(3)
+        ]
+
+        with (
+            patch.object(
+                handler,
+                "_record_to_row",
+                side_effect=[{"A": "0"}, {"B": "1"}, {"C": "2"}],
+            ) as row,
+            patch.object(handler, "_locked", wraps=handler._locked) as locked,
+            patch.object(handler, "_flush_locked") as flush,
+        ):
+            for record in records:
+                handler.emit(record)
+
+        assert row.call_count == 3
+        assert row.call_args_list == [call(records[i], fields) for i in range(3)]
+        assert locked.call_count == 3
+        flush.assert_called_once()
+        assert handler._buffer == [{"A": "0"}, {"B": "1"}, {"C": "2"}]
+
+    @pytest.mark.parametrize(
+        ("custom_fields", "exception"),
+        [
+            ("missing", nullcontext()),
+            (None, nullcontext()),
+            ({}, nullcontext()),
+            (False, nullcontext()),
+            ({"A": "B"}, pytest.raises(TypeError, match="instance of CustomLogFields")),
+            (1, pytest.raises(TypeError, match="instance of CustomLogFields")),
+        ],
+    )
+    def test_emit_invalid_custom_fields(
+        self,
+        custom_fields: Any,
+        exception: Any,
+    ) -> None:
+        """Skip missing context and reject invalid supplied values before buffering."""
+        handler = create_handler()
+        record = create_log_record()
+
+        if custom_fields == "missing":
+            del vars(record)["custom_fields"]
+        else:
+            vars(record)["custom_fields"] = custom_fields
+
+        with (
+            exception,
+            patch.object(handler, "_record_to_row", return_value={}) as row,
+            patch.object(handler, "_locked", wraps=handler._locked) as locked,
+            patch.object(handler, "_flush_locked") as flush,
+        ):
+            handler.emit(record)
+
+        row.assert_not_called()
+        locked.assert_not_called()
+        flush.assert_not_called()
+
+    def test_emit_invalid_closed(
+        self,
+    ) -> None:
+        """Raise RuntimeError without writing when the handler is already closed."""
+        handler = create_handler()
+        handler._closed = True
+        record = create_log_record()
+
+        with pytest.raises(RuntimeError, match="already been closed"):
+            handler.emit(record)
+
+    @pytest.mark.parametrize("closed", [False, True])
+    def test_close(self, closed: bool) -> None:  # noqa: FBT001
+        """Close open handlers once and leave already closed handlers untouched."""
+        handler = create_handler()
+        handler._closed = closed
+
+        with (
+            patch.object(handler, "_locked") as locked,
+            patch.object(handler, "_flush_locked") as flush,
+            patch.object(handler, "_register_logs_in_athena") as register,
+            patch.object(logging.Handler, "close", autospec=True) as base_close,
+        ):
+            handler.close()
+
+        locked.assert_called_once()
+        if closed:
+            flush.assert_not_called()
+            register.assert_not_called()
+            base_close.assert_not_called()
+        else:
+            flush.assert_called_once()
+            register.assert_called_once()
+            base_close.assert_called_once_with(handler)
+
+    def test_close_buffer_remains(self) -> None:
+        """Dump remaining rows and raise without registration when the final flush fails."""
+        handler = create_handler()
+        handler._buffer = [{"A": "B"}]
+
+        with (  # noqa: PT012
+            patch.object(handler, "_locked") as locked,
+            patch.object(handler, "_flush_locked") as flush,
+            patch.object(handler, "_dump_unwritten_records") as dump,
+            patch.object(handler, "_register_logs_in_athena") as register,
+            patch.object(logging.Handler, "close", autospec=True) as base_close,
+            pytest.raises(
+                RuntimeError, match=re.escape("Failed to write 1 log records to S3.")
+            ),
+        ):
+            assert handler._buffer == [{"A": "B"}]
+            handler.close()
+
+        locked.assert_called_once()
+        flush.assert_called_once()
+        dump.assert_called_once()
+        register.assert_not_called()
+        base_close.assert_called_once_with(handler)
+
+    def test_concurrent_close(self) -> None:
+        """Serialize concurrent closes so upload and registration each happen once."""
+        handler = create_handler()
+        waiting = Event()
+        acquire_lock = handler.acquire
+        main_thread = current_thread()
+
+        def acquire() -> None:
+            """Signal the worker and acquire the handler lock."""
+            if current_thread() is not main_thread:
+                waiting.set()
+            acquire_lock()
+
+        with (
+            patch.object(handler, "acquire", side_effect=acquire),
+            patch.object(handler, "_flush_locked") as flush,
+            patch.object(handler, "_register_logs_in_athena") as register,
+            ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+            acquire_lock()
+            try:
+                pending = executor.submit(handler.close)
+                assert waiting.wait(timeout=5)
+                handler.close()
+            finally:
+                handler.release()
+            pending.result(timeout=5)
+        flush.assert_called_once_with()
+        register.assert_called_once_with()
+        assert handler._closed
+
+    def test_flush_runs(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Warn and buffer once on unmanaged flush without uploading records."""
+        handler = create_handler()
+
+        warning = {"message": log._UNMANAGED_FLUSH_WARNING}
+
+        with (
+            patch.object(handler, "_locked", wraps=handler._locked) as locked,
+            patch.object(handler, "_internal_record") as internal_record,
+            patch.object(handler, "_flush_locked") as upload,
+        ):
+            internal_record.return_value.model_dump.return_value = warning
+            handler.flush()
+
+        locked.assert_called_once()
+        assert handler._unmanaged_flush_warned is True
+        assert capsys.readouterr().err == log._UNMANAGED_FLUSH_WARNING + "\n"
+        assert handler._buffer == [warning]
+        upload.assert_not_called()
+        internal_record.assert_called_once_with(
+            log_level="WARNING",
+            process="Logging",
+            process_stage="End",
+            message=log._UNMANAGED_FLUSH_WARNING,
+        )
+
+    @pytest.mark.parametrize(
+        ("closed", "warned"),
+        [(True, True), (True, False), (False, True)],
+    )
+    def test_flush_closed_repeated(
+        self,
+        closed: bool,  # noqa: FBT001
+        warned: bool,  # noqa: FBT001
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Skip warning and buffering for a closed or previously warned handler."""
+        handler = create_handler()
+        handler._closed = closed
+        handler._unmanaged_flush_warned = warned
+
+        with (
+            patch.object(handler, "_locked", wraps=handler._locked) as locked,
+            patch.object(handler, "_internal_record") as internal_record,
+            patch.object(handler, "_flush_locked") as upload,
+        ):
+            handler.flush()
+
+        locked.assert_called_once()
+        assert not capsys.readouterr().err
+        assert handler._buffer == []
+        upload.assert_not_called()
+        internal_record.assert_not_called()
+
+
+class TestLoggingController:
+    """Test controller delegation, ownership and deterministic shutdown."""
+
+    @pytest.fixture
+    def controller(self) -> log.LoggingController:
+        """Attach owned handlers and leave host handlers outside the controller."""
+        root = logging.getLogger()
+        handlers = [create_handler(), logging.StreamHandler()]
+        for handler in handlers:
+            root.addHandler(handler)
+        return log.LoggingController(root, handlers)
+
+    def test_init(self, controller: log.LoggingController) -> None:
+        """Retain the logger and copy the owned handler sequence with an open initial state."""
+        assert controller._logger is logging.getLogger()
+        assert [h.__class__ for h in controller._handlers] == [
+            log.JsonlLogHandler,
+            logging.StreamHandler,
+        ]
+        assert not controller._is_shutdown
+
+    def test_enter(self, controller: log.LoggingController) -> None:
+        """Entering returns the same controller without flushing or shutting it down."""
+        with controller:
+            assert not controller._is_shutdown
+
+    def test_exit_success(self, controller: log.LoggingController) -> None:
+        """Exiting without errors calls shutdown and does not raise."""
+        with patch.object(controller, "shutdown") as shutdown:
+            controller.__exit__(None, None, None)
+        shutdown.assert_called_once_with()
 
     @pytest.mark.parametrize("body_fails", [False, True])
     @pytest.mark.parametrize("shutdown_fails", [False, True])
-    def test_context_manager_preserves_primary_error(
+    def test_exit(
         self,
+        controller: log.LoggingController,
         body_fails: bool,  # noqa: FBT001
         shutdown_fails: bool,  # noqa: FBT001
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Exercise all four outcomes, preserving error identity, notes, diagnostics and cleanup."""
-        controller = self.create_controller()
-        body_error = ValueError("pipeline failed") if body_fails else None
-        shutdown_error = RuntimeError("flush failed") if shutdown_fails else None
-        primary_error = body_error if body_fails else shutdown_error
-        expectation = (
-            pytest.raises(type(primary_error))
-            if primary_error is not None
-            else nullcontext()
-        )
+        """Preserve a body exception and annotate it if shutdown also fails."""
+        body_error = ValueError("body failed") if body_fails else None
+        shutdown_err = RuntimeError("shutdown failed") if shutdown_fails else None
+        primary_err = body_error or shutdown_err
+        expectation = pytest.raises(type(primary_err)) if primary_err else nullcontext()
+
         with (
-            patch.object(
-                log.JsonlLogHandler, "close", side_effect=shutdown_error
-            ) as mock_close,
             expectation as raised,
-            controller as entered,
+            patch.object(controller, "shutdown", side_effect=shutdown_err) as shutdown,
+            controller as _,
         ):
-            assert entered is controller
-            if body_error is not None:
+            if body_error:
                 raise body_error
 
-        mock_close.assert_called_once_with()
-        if primary_error is not None:
-            assert raised is not None
-            assert raised.value is primary_error
-            assert getattr(raised.value, "__notes__", []) == (
-                ["Logging shutdown also failed: RuntimeError: flush failed"]
+        shutdown.assert_called_once_with()
+        if primary_err and raised:
+            assert raised.value is primary_err
+            assert getattr(primary_err, "__notes__", []) == (
+                ["Logging shutdown also failed: RuntimeError: shutdown failed"]
                 if body_fails and shutdown_fails
                 else []
             )
         stderr = capsys.readouterr().err
         if body_fails and shutdown_fails:
-            assert "Traceback (most recent call last):" in stderr
-            assert "RuntimeError: flush failed" in stderr
+            assert stderr.startswith("Traceback (most recent call last):")
+            assert stderr.rstrip().endswith("RuntimeError: shutdown failed")
         else:
             assert stderr == ""
+
+    def test_flush_success(
+        self,
+        controller: log.LoggingController,
+    ) -> None:
+        """Flush each owned JSONL handler once and leave console handlers untouched."""
+        jsonl = controller._handlers[0]
+        console = controller._handlers[1]
+        assert isinstance(jsonl, log.JsonlLogHandler)
+
+        with (
+            patch.object(jsonl, "_locked", wraps=jsonl._locked) as locked,
+            patch.object(jsonl, "_flush_locked") as flush,
+            patch.object(console, "flush") as console_flush,
+            patch.object(console, "close") as console_close,
+        ):
+            controller.flush()
+
+        assert locked.call_args_list == [call()]
+        assert flush.call_args_list == [call()]
+        console_flush.assert_not_called()
+        console_close.assert_not_called()
+
+    def test_flush_failure(
+        self,
+        controller: log.LoggingController,
+    ) -> None:
+        """Wrap the first JSONL flush failure and skip remaining and console handlers."""
+        jsonl = controller._handlers[0]
+        console = controller._handlers[1]
+        assert isinstance(jsonl, log.JsonlLogHandler)
+        error = RuntimeError("flush failed")
+
+        with (
+            patch.object(jsonl, "_locked", wraps=jsonl._locked) as locked,
+            patch.object(jsonl, "_flush_locked", side_effect=error) as flush,
+            patch.object(console, "flush") as console_flush,
+            patch.object(console, "close") as console_close,
+            pytest.raises(RuntimeError, match="Failed to flush handler") as raised,
+        ):
+            controller.flush()
+
+        assert locked.call_args_list == [call()]
+        assert flush.call_args_list == [call()]
+        console_flush.assert_not_called()
+        console_close.assert_not_called()
+        assert "Failed to flush handler" in str(raised.value)
+        assert raised.value.__cause__ is error
+
+    def test_flush_is_shutdown(self, controller: log.LoggingController) -> None:
+        """Raise RuntimeError if flush is called after shutdown."""
+        controller._is_shutdown = True
+        with (
+            pytest.raises(
+                RuntimeError, match=re.escape("Logging has already been shut down.")
+            ),
+            patch.object(controller._handlers[0], "_locked") as locked,
+        ):
+            controller.flush()
+
+        locked.assert_not_called()
+
+    def test_shutdown_success(
+        self,
+        controller: log.LoggingController,
+    ) -> None:
+        """Close and detach each owned handler once while preserving host handlers."""
+        jsonl, console = controller._handlers
+
+        # Add a host handler to the root logger to test that it is preserved during shutdown.
+        root = controller._logger
+        host = logging.NullHandler()
+        root.addHandler(host)
+        host_handlers = [
+            handler for handler in root.handlers if handler not in controller._handlers
+        ]
+
+        with (
+            patch.object(host, "close") as host_close,
+            patch.object(jsonl, "close") as jsonl_close,
+            patch.object(console, "close") as console_close,
+            patch.object(root, "removeHandler", wraps=root.removeHandler) as remove,
+        ):
+            controller.shutdown()
+
+        jsonl_close.assert_called_once()
+        console_close.assert_called_once()
+        host_close.assert_not_called()
+        remove.assert_has_calls([call(jsonl), call(console)])
         assert controller._is_shutdown
-        assert self.owned_handlers_removed(controller)
+        assert root.handlers == host_handlers
+
+    def test_shutdown_failure(
+        self,
+        controller: log.LoggingController,
+    ) -> None:
+        """Close and detach all owned handlers, then raise the first error with later failures noted."""
+        jsonl, console = controller._handlers
+
+        # Add a host handler to the root logger to test that it is preserved during shutdown.
+        root = controller._logger
+        host = logging.NullHandler()
+        root.addHandler(host)
+        hosts = [
+            handler for handler in root.handlers if handler not in controller._handlers
+        ]
+
+        errors = [RuntimeError("JSONL failed"), ValueError("console failed")]
+
+        with (
+            patch.object(host, "close") as host_close,
+            patch.object(jsonl, "close", side_effect=errors[0]) as jsonl_close,
+            patch.object(console, "close", side_effect=errors[1]) as console_close,
+            patch.object(root, "removeHandler", wraps=root.removeHandler) as remove,
+            pytest.raises(type(errors[0])) as raised,
+        ):
+            controller.shutdown()
+
+        jsonl_close.assert_called_once()
+        console_close.assert_called_once()
+        host_close.assert_not_called()
+        remove.assert_has_calls([call(jsonl), call(console)])
+        assert controller._is_shutdown
+        assert root.handlers == (hosts)
+        assert raised.value is errors[0]
+        assert getattr(raised.value, "__notes__", []) == [
+            "Another logging handler also failed to close: ValueError: console failed"
+        ]
+
+    def test_shutdown_is_shutdown(self, controller: log.LoggingController) -> None:
+        """Skip handler closes when the controller has already been shut down."""
+        controller._is_shutdown = True
+        with patch.object(controller._handlers[0], "close") as close:
+            controller.shutdown()
+        assert controller._is_shutdown
+        close.assert_not_called()
 
 
 class TestConfigureLogging:
-    """Tests for the configure_logging function."""
+    """Test configuration wiring and fail-fast behavior independently of handler methods."""
 
-    def configure_logging_wrapper(self, **overrides: Any) -> log.LoggingController:
-        """Wrapper for the configure_logging function to simplify test calls."""
-        return log.configure_logging(**config_values(**overrides))
+    def test_configure_logging_success(self) -> None:
+        """Validate config once, configure both handlers, and return their owning controller."""
+        arguments = create_config()
+        controller = log.configure_logging(**arguments)
 
-    def test_configure_returns_success(self, s3: boto3.client) -> None:
-        """Test that configure_logging returns a LoggingController and sets up handlers correctly."""
-        controller = self.configure_logging_wrapper(
-            log_store_prefix="custom/log-store",
-            athena_prefix="custom/logs/",
-            athena_database_name="custom_log_database",
-            athena_table_name="pipeline_events",
-        )
-        root_logger = logging.getLogger()
-        assert controller._logger is root_logger
-        assert root_logger.level == logging.INFO
-        handlers_by_name = {
-            handler.get_name(): handler for handler in root_logger.handlers
-        }
-        assert log._JSONL_HANDLER_NAME in handlers_by_name
-        assert log._CONSOLE_HANDLER_NAME in handlers_by_name
-        assert handlers_by_name[log._CONSOLE_HANDLER_NAME].formatter._fmt == (  # type: ignore[union-attr]
-            "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
-        )
-        jsonl_handler = handlers_by_name[log._JSONL_HANDLER_NAME]
+        jsonl_handler = controller._handlers[0]
         assert isinstance(jsonl_handler, log.JsonlLogHandler)
-        assert jsonl_handler._config.log_store_prefix == "custom/log-store"
-        assert jsonl_handler._config.athena_prefix == "custom/logs/"
-        assert jsonl_handler._config.athena_database_name == "custom_log_database"
-        assert jsonl_handler._config.athena_table_name == "pipeline_events"
-        assert isinstance(controller, log.LoggingController)
-        console_handler = handlers_by_name[log._CONSOLE_HANDLER_NAME]
-        assert controller._handlers == [jsonl_handler, console_handler]
-        assert isinstance(console_handler, logging.StreamHandler)
-        assert root_logger.handlers.index(jsonl_handler) < root_logger.handlers.index(
-            console_handler
-        )
-        assert jsonl_handler._config.batch_size == DEFAULT_BATCH_SIZE
+        assert jsonl_handler.name == log._JSONL_HANDLER_NAME
 
-    @pytest.mark.parametrize(
-        ("prefix_name", "invalid_prefix"),
-        [
-            ("log_store_prefix", "s3://log-bucket/custom/logs/"),
-            ("log_store_prefix", "log-bucket/custom/logs/"),
-            ("athena_prefix", "s3://log-bucket/custom/logs/"),
-            ("athena_prefix", "log-bucket/custom/logs/"),
-        ],
-    )
-    def test_configure_rejects_bucket_or_scheme_in_prefix(
-        self, prefix_name: str, invalid_prefix: str
-    ) -> None:
-        """Reject full S3 URIs where bucket-relative prefixes are required."""
+        stream_handler = controller._handlers[1]
+        assert isinstance(stream_handler, logging.StreamHandler)
+        assert stream_handler.name == log._CONSOLE_HANDLER_NAME
+
+        assert jsonl_handler._config.model_dump() == arguments
+        assert controller._logger.level == logging.INFO
+
+    def test_configure_logging_already_attached(self) -> None:
+        """Reject duplicate configuration without creating or attaching new handlers."""
         with (
-            patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client,
-            pytest.raises(
-                exc.InvalidPrefixError,
-                match=f"'{prefix_name}' must not include 's3://' or the bucket",
-            ),
+            patch.object(u, "is_handler_attached", return_value=True) as attached,
+            pytest.raises(RuntimeError, match="Logger has already been configured"),
         ):
-            self.configure_logging_wrapper(**{prefix_name: invalid_prefix})
+            log.configure_logging(**create_config())
 
-        mock_client.assert_not_called()
+        attached.assert_called_once_with(log._JSONL_HANDLER_NAME)
 
-    @pytest.mark.parametrize("batch_size", [0, -1, True, False, 2.5, "10", None])
-    def test_configure_invalid_batch_size(self, batch_size: int) -> None:
-        """Test that configure_logging raises a ValueError for invalid batch sizes."""
-        with pytest.raises(ValidationError):
-            self.configure_logging_wrapper(batch_size=batch_size)
-
-    def test_duplicate_configuration_raises(self, s3: boto3.client) -> None:
-        """Test that configuring logging twice raises a RuntimeError."""
-        self.configure_logging_wrapper()
-        with pytest.raises(RuntimeError, match="Logger has already been configured"):
-            self.configure_logging_wrapper()
-
-    def test_concurrent_configuration_attaches_one_handler(
-        self, s3: boto3.client
-    ) -> None:
-        """Test that concurrent configure_logging calls cannot both pass the 'already configured' check.
-
-        The slow preflight widens the window between the check and addHandler; without the module lock
-        both threads would configure and two JSONL handlers would be attached to root.
-        """
+    def test_concurrent_configuration(self) -> None:
+        """Allow one concurrent configuration and reject the other without duplicate attachment."""
+        handler = create_handler()
         barrier = Barrier(2)
-        outcomes: list[str] = []
 
-        def worker() -> None:
-            """Compete with the other thread to configure root logging."""
+        def configure() -> log.LoggingController | RuntimeError:
+            """Synchronize a configure attempt and return its controller or duplicate error."""
             barrier.wait(timeout=5)
             try:
-                self.configure_logging_wrapper()
-                outcomes.append("configured")
+                return log.configure_logging(**create_config())
             except RuntimeError as error:
-                outcomes.append(str(error))
+                return error
 
-        with patch.object(
-            log.JsonlLogHandler,
-            "_validate_log_location",
-            side_effect=lambda: time.sleep(0.2),
-        ):
-            threads = [Thread(target=worker) for _ in range(2)]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join(timeout=10)
-
-        assert sorted(outcomes) == [
-            "Logger has already been configured.",
-            "configured",
-        ]
-        assert [handler.get_name() for handler in logging.getLogger().handlers].count(
-            log._JSONL_HANDLER_NAME
-        ) == 1
-
-    def test_duplicate_configuration_ignores_third_party_handlers(
-        self, s3: boto3.client
-    ) -> None:
-        """Test that configuring logging ignores third-party handlers."""
-        root_logger = logging.getLogger()
-        third_party_handler = logging.StreamHandler()
-        root_logger.addHandler(third_party_handler)
-
-        self.configure_logging_wrapper()
-
-        assert third_party_handler in root_logger.handlers
-
-    def test_fails_when_bucket_missing(self, s3: boto3.client) -> None:
-        """Test that configure_logging raises immediately if S3 is unreachable, attaching no handlers."""
-        with pytest.raises(RuntimeError, match="Failed to write marker object"):
-            self.configure_logging_wrapper(bucket="does-not-exist")
-
-        handler_names = [handler.get_name() for handler in logging.getLogger().handlers]
-        assert log._JSONL_HANDLER_NAME not in handler_names
-        assert log._CONSOLE_HANDLER_NAME not in handler_names
-
-    @pytest.mark.parametrize(
-        ("log_store_prefix", "athena_prefix"),
-        [("logs", "logs"), ("curated/raw", "curated/")],
-    )
-    def test_configure_rejects_overlapping_prefixes(
-        self, log_store_prefix: str, athena_prefix: str
-    ) -> None:
-        """Test that raw logs cannot be written inside the curated Athena location."""
         with (
-            patch("opg_pipeline_builder.logging.log.boto3.client") as mock_client,
-            pytest.raises(
-                exc.InvalidPrefixError,
-                match="must not be the same as, or nested inside",
-            ),
+            patch.object(log, "LoggingConfig", wraps=log.LoggingConfig) as config,
+            patch.object(log, "JsonlLogHandler", return_value=handler) as handler_class,
+            patch.object(log.LoggingController, "shutdown") as shutdown,
+            ThreadPoolExecutor(max_workers=2) as executor,
         ):
-            self.configure_logging_wrapper(
-                log_store_prefix=log_store_prefix, athena_prefix=athena_prefix
-            )
-        mock_client.assert_not_called()
-
-    def test_configure_rejects_naive_data_delivery_period(self) -> None:
-        """Test that a naive delivery period fails configuration and attaches no handlers."""
-        with pytest.raises(ValueError, match="must be timezone-aware"):
-            self.configure_logging_wrapper(
-                data_delivery_period=datetime(2024, 1, 2)  # noqa: DTZ001
-            )
-
-        handler_names = [handler.get_name() for handler in logging.getLogger().handlers]
-        assert log._JSONL_HANDLER_NAME not in handler_names
-        assert log._CONSOLE_HANDLER_NAME not in handler_names
+            futures = [executor.submit(configure) for _ in range(2)]
+            outcomes = [future.result(timeout=5) for future in futures]
+        controllers = [
+            result for result in outcomes if isinstance(result, log.LoggingController)
+        ]
+        errors = [result for result in outcomes if isinstance(result, RuntimeError)]
+        assert len(controllers) == 1
+        assert len(errors) == 1
+        assert str(errors[0]) == "Logger has already been configured."
+        config.assert_called_once_with(**create_config())
+        handler_class.assert_called_once_with(logging_config=handler._config)
+        shutdown.assert_not_called()
+        assert logging.getLogger().handlers.count(handler) == 1
 
 
 class TestModuleLogger:
-    """Test field validation, logging calls and scoped table context."""
+    """Test structured call arguments and scoped table context without emitting real records."""
 
-    def test_rejects_extra_model_fields(self) -> None:
-        """Reject unknown model fields instead of silently accepting them."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            log.ModuleLogger.model_validate(
-                {
-                    "logger": logging.getLogger("opg_pipeline_builder.test"),
-                    "process": "Logging",
-                    "table": "Logger",
-                    "extra_field": "not allowed",
-                }
+    def test_model_config(self) -> None:
+        """Reject extra fields and validate attribute assignments while allowing Logger instances."""
+        assert log.ModuleLogger.model_config == {
+            "extra": "forbid",
+            "arbitrary_types_allowed": True,
+            "validate_assignment": True,
+        }
+        logger = logging.getLogger("opg_pipeline_builder.test")
+        module_logger = log.ModuleLogger(logger=logger)
+        assert module_logger.logger is logger
+        assert module_logger.process is None
+        assert module_logger.table == ""
+        assert module_logger._table_override.get() is None
+        assert (
+            create_module_logger()._table_override is not module_logger._table_override
+        )
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"unexpected": "value"},
+            {"logger": "not a logger"},
+            {"process": 1},
+            {"table": None},
+        ],
+    )
+    def test_invalid_fields(self, fields: dict[str, Any]) -> None:
+        """Raise validation errors for invalid model construction and field assignment."""
+        with pytest.raises(ValidationError):
+            create_module_logger(**fields)
+        module_logger = create_module_logger()
+        name, value = next(iter(fields.items()))
+        with pytest.raises((ValidationError, ValueError)):
+            setattr(module_logger, name, value)
+
+    def test_with_table_success(self) -> None:
+        """Restore nested table overrides on normal exit without changing the logger default."""
+        module_logger = create_module_logger(table="default")
+
+        with module_logger.with_table("outer"):
+            assert module_logger._table_override.get() == "outer"
+            with module_logger.with_table(""):
+                assert module_logger._table_override.get() == ""
+                assert module_logger.table == "default"
+            assert module_logger._table_override.get() == "outer"
+            assert module_logger.table == "default"
+        assert module_logger._table_override.get() is None
+        assert module_logger.table == "default"
+
+    def test_with_table_failure(self) -> None:
+        """Restore the parent table after an exception without changing the default."""
+        module_logger = create_module_logger(table="default")
+        error = ValueError("body failed")
+
+        def raise_inside_table() -> None:
+            """Raise the expected body error while the inner table override is active."""
+            with module_logger.with_table(""):
+                assert module_logger._table_override.get() == ""
+                assert module_logger.table == "default"
+                raise error
+
+        with module_logger.with_table("outer"):
+            assert module_logger._table_override.get() == "outer"
+            with pytest.raises(ValueError, match="body failed") as raised:
+                raise_inside_table()
+            assert raised.value is error
+            assert module_logger._table_override.get() == "outer"
+            assert module_logger.table == "default"
+        assert module_logger._table_override.get() is None
+        assert module_logger.table == "default"
+
+    @pytest.mark.parametrize(
+        ("configured", "exception"),
+        [
+            (False, pytest.raises(exc.LoggingNotConfiguredError)),
+            (True, nullcontext()),
+        ],
+    )
+    def test_require_logging_configured(
+        self,
+        configured: bool,  # noqa: FBT001
+        exception: Any,
+    ) -> None:
+        """Only the package JSONL handler satisfies the configured guard."""
+        module_logger = create_module_logger()
+        with (
+            exception as raised,
+            patch.object(u, "is_handler_attached", return_value=configured) as attached,
+        ):
+            module_logger._require_logging_configured()
+        attached.assert_called_once_with(log._JSONL_HANDLER_NAME)
+        if not configured:
+            assert str(raised.value) == (
+                "Logging is not configured. Call configure_logging() before logging"
             )
 
-    @pytest.mark.usefixtures("logging_configured")
-    @pytest.mark.parametrize("method", ["error", "info"])
     @pytest.mark.parametrize(
-        ("init", "ctx", "call", "expected"),
+        ("default", "override", "explicit", "expected"),
         [
-            ("", None, None, ""),  # Not set - use default
-            ("Log", None, None, "Log"),  # Set in logger
-            ("", None, "Log_call", "Log_call"),  # Set in func
-            ("Log", None, "Log_call", "Log_call"),  # Set in logger, override in func
-            ("Log", None, "", ""),  # Set in logger, explicitly cleared in func
-            ("Log", "Log_ctx", "  ", "  "),  # An explicit value is not normalised
-            ("", "Log_ctx", None, "Log_ctx"),  # Set in ctx mgr
-            ("", "Log_ctx", "Log_call", "Log_call"),  # Set in ctx mgr, override in func
-            ("Log", "Log_ctx", None, "Log_ctx"),  # Set in logger, override in ctx mgr
-            ("Log", "", None, ""),  # Set in logger, cleared by ctx mgr
-            ("Log", "  ", None, "  "),  # Preserve explicit whitespace in a context
-            ("Log", "Log_ctx", "", ""),  # Set in logger & ctx mgr, cleared in func
-            (
-                "Log",
-                "Log_ctx",
-                "Log_call",
-                "Log_call",
-            ),  # Set in logger, override by ctx mgr & func
+            ("", None, None, ""),
+            ("default", None, None, "default"),
+            ("default", "context", None, "context"),
+            ("default", "", None, ""),
+            ("default", "  ", None, "  "),
+            ("default", None, "call", "call"),
+            ("default", "context", "call", "call"),
+            ("default", "context", "", ""),
+            ("default", "context", "  ", "  "),
         ],
     )
-    def test_module_logger_table_precedence(
-        self,
-        method: str,
-        init: str,
-        ctx: str | None,
-        call: str | None,
-        expected: str,
+    def test_get_table_value(
+        self, default: str, override: str | None, explicit: str | None, expected: str
     ) -> None:
-        """Test table precedence across ModuleLogger init, with_table context manager, and log call."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"),
-            process="Logging",
-            table=init,
-        )
+        """Resolve explicit, contextual, and default table values in precedence order."""
+        module_logger = create_module_logger(table=default)
+        module_logger._table_override.set(override)
+        assert module_logger.get_table_value(explicit) == expected
+        assert module_logger.table == default
+        assert module_logger._table_override.get() == override
 
-        cm = module_logger.with_table(ctx) if ctx is not None else nullcontext()
-        with patch.object(logging.Logger, method) as mock_log, cm:
-            log_fn = getattr(module_logger, method)
-            log_fn("Test message 1", table=call)
-            log_fn("Test message 2", table=call, field="field", stage="Start")
+    def test_error(self) -> None:
+        """Forward three error calls with default, explicit, and contextual fields."""
+        module_logger = create_module_logger(process="Transform", table="default")
+        error = ValueError("bad record")
 
-        assert [c.args for c in mock_log.call_args_list] == [
-            ("Test message 1",),
-            ("Test message 2",),
-        ]
-        assert [
-            c.kwargs["extra"]["custom_fields"] for c in mock_log.call_args_list
-        ] == [
-            log.CustomLogFields(
-                process="Logging", table=expected, field="", process_stage="Processing"
-            ),
-            log.CustomLogFields(
-                process="Logging", table=expected, field="field", process_stage="Start"
-            ),
-        ]
-
-    @pytest.mark.usefixtures("logging_configured")
-    @pytest.mark.parametrize("method", ["error", "info"])
-    @pytest.mark.parametrize(
-        ("init", "call", "expected"),
-        [
-            ("Logging", None, "Logging"),  # Set on logger
-            (None, "Logging_call", "Logging_call"),  # Set in func
-            ("Logging", "Changed", "Changed"),  # Set on logger, override in func
-        ],
-    )
-    def test_module_logger_process_override(
-        self, method: str, init: str | None, call: str | None, expected: str
-    ) -> None:
-        """Test process precedence across ModuleLogger init and log call."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"),
-            process=init,
-        )
-        with patch.object(logging.Logger, method) as mock_log:
-            log_fn = getattr(module_logger, method)
-            log_fn("Msg 1", process=call)
-            log_fn("Msg 2", process=call, field="field", stage="Start")
-
-        assert [c.args for c in mock_log.call_args_list] == [("Msg 1",), ("Msg 2",)]
-        assert [
-            c.kwargs["extra"]["custom_fields"].process for c in mock_log.call_args_list
-        ] == [expected, expected]
-
-    @pytest.mark.usefixtures("logging_configured")
-    @pytest.mark.parametrize(
-        ("kwargs", "expected"),
-        [
-            ({}, False),  # Default: no traceback
-            ({"exc_info": True}, True),
-            ({"exc_info": ValueError("given")}, "exception instance"),
-        ],
-    )
-    def test_error_passes_exc_info(self, kwargs: dict[str, Any], expected: Any) -> None:
-        """Test that error() forwards exc_info to the logger, so the traceback reaches the handlers."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"), process="Logging"
-        )
-        with patch.object(logging.Logger, "error") as mock_log:
-            module_logger.error("Failed", **kwargs)
-
-        exc_info = mock_log.call_args.kwargs["exc_info"]
-        if expected == "exception instance":
-            assert exc_info is kwargs["exc_info"]
-        else:
-            assert exc_info is expected
-
-    @pytest.mark.usefixtures("logging_configured")
-    @pytest.mark.parametrize("method", ["error", "info"])
-    @pytest.mark.parametrize("invalid_process", ["", "   ", None])
-    def test_module_logger_rejects_empty_process(
-        self, method: str, invalid_process: Any
-    ) -> None:
-        """Test that ModuleLogger rejects logging when process is empty, whitespace, or None without fallback."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"),
-            process=invalid_process,
-        )
-        log_fn = getattr(module_logger, method)
-        with pytest.raises(exc.InvalidProcessError):
-            log_fn("Test message", process=invalid_process)
-
-    @pytest.mark.usefixtures("logging_configured")
-    @pytest.mark.parametrize(
-        ("method", "level"), [("error", logging.ERROR), ("info", logging.INFO)]
-    )
-    def test_log_attributes_record_to_caller(self, method: str, level: int) -> None:
-        """Test that records are attributed to the code calling info()/error(), not to ModuleLogger."""
-        records: list[logging.LogRecord] = []
-        logger = logging.getLogger("opg_pipeline_builder.test.attribution")
-
-        class Capture(logging.Handler):
-            """Retain emitted records for assertions about caller attribution."""
-
-            def emit(self, record: logging.LogRecord) -> None:
-                """Append a record to the surrounding test's capture list."""
-                records.append(record)
-
-        capture = Capture()
-        logger.addHandler(capture)
-        logger.propagate = False
-        module_logger = log.ModuleLogger(logger=logger, process="Logging")
-
-        try:
-            expected_line = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-            getattr(module_logger, method)("value %s", "x", table="t", field="f")
-        finally:
-            logger.removeHandler(capture)
-            logger.propagate = True
-
-        [record] = records
-        assert record.levelno == level
-        assert record.getMessage() == "value x"
-        assert record.funcName == "test_log_attributes_record_to_caller"
-        assert record.lineno == expected_line
-        assert record.pathname == __file__
-        assert record.custom_fields == log.CustomLogFields(  # type: ignore[attr-defined]
-            process="Logging", table="t", field="f", process_stage="Processing"
-        )
-
-    @pytest.mark.usefixtures("logging_configured")
-    def test_with_table_is_scoped_and_nests(self) -> None:
-        """Test with_table never mutates self.table, nests, and restores the previous override on exit."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"),
-            process="Logging",
-            table="Original",
-        )
-        with patch.object(logging.Logger, "info") as mock_info:
-            with module_logger.with_table("Outer"):
-                assert module_logger.table == "Original"
-                module_logger.info("outer 1")
-                with module_logger.with_table("Inner"):
-                    module_logger.info("inner")
-                    with module_logger.with_table(""):
-                        module_logger.info("explicit empty")
-                module_logger.info("outer 2")
-            module_logger.info("after")
-
-        assert [
-            c.kwargs["extra"]["custom_fields"].table for c in mock_info.call_args_list
-        ] == ["Outer", "Inner", "", "Outer", "Original"]
-        assert module_logger.table == "Original"
-
-    @pytest.mark.usefixtures("logging_configured")
-    def test_with_table_restores_after_exception(self) -> None:
-        """Test the override is reset even when the block raises."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"),
-            process="Logging",
-            table="Original",
-        )
-        error_message = "boom"
         with (
-            pytest.raises(ValueError, match=error_message),
-            module_logger.with_table("Temp"),
+            patch.object(module_logger.logger, "error") as emit,
+            patch.object(module_logger, "_require_logging_configured") as configured,
         ):
-            raise ValueError(error_message)
+            module_logger.error("failed to process %s", "table_a", exc_info=error)
+            module_logger.error(
+                "Also failed to process %s",
+                "table_b",
+                process="Second transform",
+                table="table_b",
+                field="identifier",
+                stage="End",
+                exc_info=error,
+            )
+            with module_logger.with_table("table_c"):
+                module_logger.error("Failed to process %s", "table_c", exc_info=error)
 
-        with patch.object(logging.Logger, "info") as mock_info:
-            module_logger.info("after")
-        assert mock_info.call_args.kwargs["extra"]["custom_fields"].table == "Original"
-
-    @pytest.mark.usefixtures("logging_configured")
-    @pytest.mark.parametrize("method", ["info", "error"])
-    @pytest.mark.parametrize("table", [1, ["t"]])
-    def test_with_table_rejects_non_str_at_log_call(
-        self, method: str, table: Any
-    ) -> None:
-        """Table values are validated by CustomLogFields when a log is emitted."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"), process="Logging"
+        emit.assert_has_calls(
+            [
+                call(
+                    "failed to process %s",
+                    "table_a",
+                    exc_info=error,
+                    stacklevel=2,
+                    extra={
+                        "custom_fields": log.CustomLogFields(
+                            process="Transform",
+                            table="default",
+                            field="",
+                            process_stage="Processing",
+                        )
+                    },
+                ),
+                call(
+                    "Also failed to process %s",
+                    "table_b",
+                    exc_info=error,
+                    stacklevel=2,
+                    extra={
+                        "custom_fields": log.CustomLogFields(
+                            process="Second transform",
+                            table="table_b",
+                            field="identifier",
+                            process_stage="End",
+                        )
+                    },
+                ),
+                call(
+                    "Failed to process %s",
+                    "table_c",
+                    exc_info=error,
+                    stacklevel=2,
+                    extra={
+                        "custom_fields": log.CustomLogFields(
+                            process="Transform",
+                            table="table_c",
+                            field="",
+                            process_stage="Processing",
+                        )
+                    },
+                ),
+            ]
         )
+        assert configured.call_count == 3
+
+    def test_info(self) -> None:
+        """Forward three info calls with default, explicit, and contextual table values."""
+        module_logger = create_module_logger(process="Extract", table="default")
+
         with (
-            pytest.raises(ValidationError),
-            patch.object(logging.Logger, method) as mock_log,
-            module_logger.with_table(table),
+            patch.object(module_logger.logger, "info") as emit,
+            patch.object(module_logger, "_require_logging_configured") as configured,
         ):
-            getattr(module_logger, method)("invalid table")
-        mock_log.assert_not_called()
+            module_logger.info("loaded %s rows", 3)
+            module_logger.info(
+                "Also loaded %s rows",
+                4,
+                process="Second extract",
+                table="table_b",
+                field="row_count",
+                stage="End",
+            )
+            with module_logger.with_table("table_c"):
+                module_logger.info("Loaded %s rows", 5, field="row_count")
 
-    @staticmethod
-    def capture_tables(module_logger: log.ModuleLogger) -> list[tuple[str, str]]:
-        """Attach a handler to the ModuleLogger's logger recording (thread name, table) per record."""
-        captured: list[tuple[str, str]] = []
-
-        class _Capture(logging.Handler):
-            """Record each emitted thread name and effective table."""
-
-            def emit(self, record: logging.LogRecord) -> None:
-                """Capture the context-specific table field from a log record."""
-                fields = vars(record)["custom_fields"]
-                assert isinstance(fields, log.CustomLogFields)
-                captured.append((record.threadName or "", fields.table))
-
-        module_logger.logger.addHandler(_Capture())
-        return captured
-
-    @pytest.fixture
-    def threaded_logger(self) -> Generator[log.ModuleLogger]:
-        """ModuleLogger on a dedicated logger whose handlers are removed after the test."""
-        logger = logging.getLogger("opg_pipeline_builder.test.threads")
-        yield log.ModuleLogger(logger=logger, process="Logging", table="Default")
-        logger.handlers.clear()
-
-    @pytest.mark.usefixtures("logging_configured")
-    def test_with_table_is_isolated_between_threads(
-        self, threaded_logger: log.ModuleLogger
-    ) -> None:
-        """Test concurrent with_table blocks on a shared ModuleLogger do not leak into each other.
-
-        Each thread enters its block, waits until every thread is inside, then logs. With a shared
-        mutable self.table, all threads would see the last value written.
-        """
-        captured = self.capture_tables(threaded_logger)
-        tables = ["A", "B", "C", "D", None]
-        barrier = Barrier(len(tables))
-
-        def worker(table: str | None) -> None:
-            """Log once while holding the requested table context."""
-            cm = threaded_logger.with_table(table) if table else nullcontext()
-            with cm:
-                barrier.wait(timeout=5)
-                threaded_logger.info("m")
-
-        threads = [Thread(target=worker, args=(t,), name=f"t-{t}") for t in tables]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-
-        assert sorted(captured) == [
-            ("t-A", "A"),
-            ("t-B", "B"),
-            ("t-C", "C"),
-            ("t-D", "D"),
-            ("t-None", "Default"),
-        ]
-
-    @pytest.mark.usefixtures("logging_configured")
-    def test_with_table_thread_propagation(
-        self, threaded_logger: log.ModuleLogger
-    ) -> None:
-        """Test new threads/executor workers do not inherit with_table, unless run in a copied context."""
-        captured = self.capture_tables(threaded_logger)
-
-        with threaded_logger.with_table("Caller"):
-            thread = Thread(target=threaded_logger.info, args=("m",), name="plain")
-            thread.start()
-            thread.join(timeout=5)
-            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="pool") as pool:
-                pool.submit(threaded_logger.info, "m").result(timeout=5)
-                ctx = contextvars.copy_context()
-                pool.submit(ctx.run, threaded_logger.info, "m").result(timeout=5)
-
-        assert [table for _, table in captured] == ["Default", "Default", "Caller"]
-
-    @pytest.mark.parametrize("method", ["error", "info"])
-    def test_raises_when_logging_not_configured(self, method: str) -> None:
-        """Test logging through ModuleLogger before configure_logging() raises instead of being dropped."""
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"), process="Logging"
+        emit.assert_has_calls(
+            [
+                call(
+                    "loaded %s rows",
+                    3,
+                    stacklevel=2,
+                    extra={
+                        "custom_fields": log.CustomLogFields(
+                            process="Extract",
+                            table="default",
+                            field="",
+                            process_stage="Processing",
+                        )
+                    },
+                ),
+                call(
+                    "Also loaded %s rows",
+                    4,
+                    stacklevel=2,
+                    extra={
+                        "custom_fields": log.CustomLogFields(
+                            process="Second extract",
+                            table="table_b",
+                            field="row_count",
+                            process_stage="End",
+                        )
+                    },
+                ),
+                call(
+                    "Loaded %s rows",
+                    5,
+                    stacklevel=2,
+                    extra={
+                        "custom_fields": log.CustomLogFields(
+                            process="Extract",
+                            table="table_c",
+                            field="row_count",
+                            process_stage="Processing",
+                        )
+                    },
+                ),
+            ]
         )
-        with (
-            patch.object(logging.Logger, method) as mock_log,
-            pytest.raises(exc.LoggingNotConfiguredError, match="not configured"),
-        ):
-            getattr(module_logger, method)("message")
-        mock_log.assert_not_called()
-
-    @pytest.mark.parametrize("method", ["error", "info"])
-    def test_raises_after_logging_shut_down(
-        self, s3: boto3.client, method: str
-    ) -> None:
-        """Test logging through ModuleLogger after shutdown raises instead of being silently lost."""
-        controller = log.configure_logging(**config_values())
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("opg_pipeline_builder.test"), process="Logging"
-        )
-        getattr(module_logger, method)("before shutdown")
-        controller.shutdown()
-
-        with pytest.raises(exc.LoggingNotConfiguredError):
-            getattr(module_logger, method)("after shutdown")
-
-    def test_lazy_formatting_is_applied(self, s3: boto3.client) -> None:
-        """Test that %s-style args passed through are lazily interpolated into the final message."""
-        log.configure_logging(**config_values(batch_size=FLUSH_THRESHOLD))
-
-        module_logger = log.ModuleLogger(
-            logger=logging.getLogger("third_party.test"), process="Lazy formatting"
-        )
-        module_logger.info("Processed %s rows in %s seconds", 42, 1.5, table="table_a")
-        module_logger.info("Processed %s rows in %s seconds", 42, 2.5, table="table_b")
-
-        jsonl_handler = next(
-            handler
-            for handler in logging.getLogger().handlers
-            if isinstance(handler, log.JsonlLogHandler)
-        )
-
-        key = jsonl_handler._object_key(0)
-
-        all_logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
-        )
-        test_log = all_logs[key]
-
-        assert test_log[1]["logger_name"] == "third_party.test"
-        assert test_log[2]["logger_name"] == "third_party.test"
-        assert "Processed 42 rows in 1.5 seconds" in test_log[1]["message"]
-        assert "Processed 42 rows in 2.5 seconds" in test_log[2]["message"]
+        assert configured.call_count == 3
 
 
 class TestLoggingEndToEnd:
-    """Exercise real logging and JSONL uploads against moto S3.
+    """Exercise configured logging from application calls through S3 and Parquet."""
 
-    Glue and Parquet writes are mocked; registration tests read the real uploaded objects.
-    """
-
-    def configure(
-        self, **overrides: Any
-    ) -> tuple[log.LoggingController, log.JsonlLogHandler]:
-        """Configure a small test batch and return the controller and JSONL handler."""
-        controller = log.configure_logging(**config_values(**overrides))
-        jsonl_handler = next(
-            handler
-            for handler in controller._logger.handlers
-            if isinstance(handler, log.JsonlLogHandler)
-        )
-        return controller, jsonl_handler
-
-    def expected_object_key(
-        self, jsonl_handler: log.JsonlLogHandler, part_number: int
-    ) -> str:
-        """Build the expected S3 key for a given part number."""
-        return (
-            f"{jsonl_handler._create_key_directory(jsonl_handler._config.log_store_prefix)}"
-            f"{os.getpid()}_{jsonl_handler._writer_id}_{part_number}.jsonl"
+    def configure_logging(
+        self, scenario: str, *, batch_size: int
+    ) -> log.LoggingController:
+        """Configure real S3-backed logging with isolated raw and curated prefixes."""
+        return log.configure_logging(
+            bucket=DEFAULT_BUCKET,
+            log_store_prefix=f"e2e/{scenario}/raw",
+            athena_prefix=f"e2e/{scenario}/curated",
+            athena_database_name=DEFAULT_ATHENA_DATABASE,
+            athena_table_name=f"e2e_{scenario}",
+            pipeline=DEFAULT_PIPELINE,
+            data_delivery_period=DeliveryPeriod._DATETIME,
+            attempt_no=1,
+            run_id=f"e2e-{scenario}",
+            batch_size=batch_size,
         )
 
-    def base_row(  # noqa: PLR0913
+    def run_lifecycle(
         self,
-        *,
-        logger_name: str = logging.getLogger().name,
-        module: str = "logging.log",
-        function: str,
-        line_number: int,
-        log_level: str,
-        process: str = "",
-        table: str = "",
-        field: str = "",
-        process_stage: str = "Processing",
-        message: str,
+        mode: str,
+        controller: log.LoggingController,
+        handler: log.JsonlLogHandler,
+        write_logs: Callable[[], None],
+    ) -> None:
+        """Run the shared events through the selected flush and shutdown mode."""
+        if mode in {"context_manager", "manual_flush"}:
+            with controller:
+                write_logs()
+                if mode == "manual_flush":
+                    controller.flush()
+                    assert handler._part_number == 1
+                    assert not handler._closed
+            return
+
+        write_logs()
+        if mode == "automatic_flush":
+            assert handler._part_number == 1
+        controller.shutdown()
+
+    def expected_e2e_event(  # noqa: PLR0913
+        self,
+        error_type: str,
+        process: str,
         exception: str = "",
-        pipeline: str = DEFAULT_PIPELINE,
-        attempt_no: int = 1,
-        run_id: str = RUN_ID,
-        log_timestamp: str = "2024-01-02T00:00:00Z",
+        process_stage: log.ProcessStage = "Processing",
+        *,
+        message: str | None = None,
+        table: str = "table",
+        field: str | None = None,
     ) -> dict[str, Any]:
-        """Build the expected structured row for a real logged record."""
+        """Build one expected structured event for an isolated E2E logging run."""
         return {
-            "pipeline": pipeline,
-            "run_id": run_id,
-            "data_delivery_period": "2024-01-02T00:00:00Z",
-            "attempt_no": attempt_no,
-            "logger_name": logger_name,
-            "module": module,
-            "function": function,
-            "line_number": line_number,
-            "log_level": log_level,
-            "log_timestamp": log_timestamp,
+            "log_timestamp": LogTimestamp.ISO,
+            "log_level": error_type.upper(),
             "process": process,
             "table": table,
-            "field": field,
+            "field": error_type if field is None else field,
             "process_stage": process_stage,
-            "message": message,
+            "message": f"This is {error_type}" if message is None else message,
             "exception": exception,
         }
 
-    def configuration_row(self, **overrides: Any) -> dict[str, Any]:
-        """Expected startup record, independent of the production row builder."""
-        return self.base_row(
-            function="_write_configuration_log",
-            line_number=configuration_log_line_number(),
-            log_level="INFO",
-            process="Configuration",
-            process_stage="End",
-            message="Logging configured successfully.",
-            **overrides,
+    def read_jsonl_rows(self, s3: boto3.client, prefix: str) -> list[dict[str, Any]]:
+        """Read JSONL objects written under a raw-log prefix from the mocked S3 bucket."""
+        objects = s3.list_objects_v2(Bucket=DEFAULT_BUCKET, Prefix=prefix).get(
+            "Contents", []
         )
+        rows: list[dict[str, Any]] = []
+        for obj in objects:
+            if not obj["Key"].endswith(".jsonl"):
+                continue
+            body = s3.get_object(Bucket=DEFAULT_BUCKET, Key=obj["Key"])["Body"].read()
+            rows.extend(json.loads(line) for line in body.decode("utf-8").splitlines())
+        return rows
 
-    def test_pipeline_multiple_flushes_and_deliberate_shutdown(
-        self, s3: boto3.client
+    def read_curated_rows(self, prefix: str) -> list[dict[str, Any]]:
+        """Read curated parquet rows written under an E2E test prefix."""
+        frame = wr.s3.read_parquet(path=f"s3://{DEFAULT_BUCKET}/{prefix}", dataset=True)
+        return cast("list[dict[str, Any]]", frame.to_dict(orient="records"))
+
+    def assert_e2e_events_match(
+        self,
+        actual_events: list[dict[str, Any]],
+        expected_events: list[dict[str, Any]],
     ) -> None:
-        """Test a full pipeline run: an automatic batch flush, a manual flush, then a deliberate shutdown."""
-        expected_rows = []
-        with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure(batch_size=4)
-            loggers = {
-                name: log.ModuleLogger(
-                    logger=logging.getLogger(f"root.{name}"),
-                    process="E2E test",
-                    table="E2E table",
-                )
-                for name in ("extract", "load")
-            }
-            events = [
-                ("extract", "info", "Extract started", "Start", ""),
-                ("extract", "info", "Extract row", "Processing", "col_a"),
-                ("load", "info", "Load started", "Start", ""),
-                ("load", "info", "Loading field", "Processing", "col_a"),
-                ("load", "error", "Load validation failed", "Processing", "col_a"),
-                ("load", "info", "Load finished", "End", ""),
-            ]
-            for index, (name, method, message, stage, field) in enumerate(events):
-                frame = inspect.currentframe()
-                assert frame is not None
-                line_number = frame.f_lineno + 1
-                getattr(loggers[name], method)(message, stage=stage, field=field)
-                expected_rows.append(
-                    self.base_row(
-                        logger_name=f"root.{name}",
-                        module="test_log",
-                        function=frame.f_code.co_name,
-                        line_number=line_number,
-                        log_level=method.upper(),
-                        process="E2E test",
-                        table="E2E table",
-                        process_stage=stage,
-                        field=field,
-                        message=message,
-                    )
-                )
-                if index == MANUAL_FLUSH_AFTER_EVENT_INDEX:
-                    controller.flush()
-            controller.shutdown()
+        """Match each expected event to one actual row and check all expected fields."""
+        expected_processes = {event["process"] for event in expected_events}
+        actual_events = [
+            row for row in actual_events if row["process"] in expected_processes
+        ]
+        for row in actual_events:
+            row["log_timestamp"] = u.format_datetime(
+                pd.to_datetime(row["log_timestamp"], utc=True).to_pydatetime()
+            )
+            row["exception"] = row["exception"].removesuffix("\n")
 
-        root_logger = logging.getLogger()
-        assert all(
-            handler.get_name()
-            not in (log._CONSOLE_HANDLER_NAME, log._JSONL_HANDLER_NAME)
-            for handler in root_logger.handlers
-        )
-        assert controller._is_shutdown is True
-        assert jsonl_handler._buffer == []
+        actual_by_message = {row["message"]: row for row in actual_events}
+        expected_by_message = {row["message"]: row for row in expected_events}
 
-        assert read_jsonl_logs(s3) == {
-            self.expected_object_key(jsonl_handler, 0): [
-                self.configuration_row(),
-                *expected_rows[:3],
-            ],
-            self.expected_object_key(jsonl_handler, 1): expected_rows[3:5],
-            self.expected_object_key(jsonl_handler, 2): expected_rows[5:],
-        }
+        assert len(actual_by_message) == len(actual_events)
+        assert set(actual_by_message) == set(expected_by_message)
+        for message, expected in expected_by_message.items():
+            actual = actual_by_message[message]
+            assert {field: actual[field] for field in expected} == expected
 
     @pytest.mark.parametrize(
-        ("trigger", "expect_shutdown_recorded", "expect_handler_removed"),
+        ("scenario", "batch_size"),
         [
-            ("context_manager", True, True),
-            ("logging_shutdown", False, False),
+            ("context_manager", 10),
+            ("manual_flush", 10),
+            ("automatic_flush", 3),
+            ("explicit_shutdown", 10),
         ],
     )
-    def test_shutdown_trigger_flushes_pending_logs(
+    def test_logging_e2e_context_manager(
         self,
+        scenario: str,
+        batch_size: int,
         s3: boto3.client,
-        trigger: str,
-        expect_shutdown_recorded: bool,  # noqa: FBT001
-        expect_handler_removed: bool,  # noqa: FBT001
     ) -> None:
-        """Verify both shutdown triggers flush pending logs.
+        """Persist expected INFO and ERROR rows through each lifecycle mode to raw and curated stores."""
+        controller = self.configure_logging(scenario, batch_size=batch_size)
 
-        `with controller:` calls `LoggingController.shutdown()` on exit and removes its handlers.
-        The interpreter's atexit-registered `logging.shutdown()` closes the handler but does not
-        remove it or update the controller.
-        """
-        function_name = inspect.currentframe().f_code.co_name  # type: ignore[union-attr]
-
-        with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure()
-            console_handler = next(
-                handler
-                for handler in controller._logger.handlers
-                if handler.get_name() == log._CONSOLE_HANDLER_NAME
-            )
-            pipeline_logger = log.ModuleLogger(
-                logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
-            )
-
-            if trigger == "context_manager":
-                with controller as entered:
-                    assert entered is controller
-                    line_1 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-                    pipeline_logger.info(
-                        "Pipeline started",
-                        process="E2E test",
-                        table="table_a",
-                        stage="Start",
-                    )
-            else:
-                line_1 = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
-                pipeline_logger.info(
-                    "Pipeline started",
-                    process="E2E test",
-                    table="table_a",
-                    stage="Start",
-                )
-                simulate_atexit_shutdown(controller)
-
-        root_logger = logging.getLogger()
-        assert jsonl_handler._buffer == []
-        assert controller._is_shutdown is expect_shutdown_recorded
-        assert (jsonl_handler not in root_logger.handlers) is expect_handler_removed
-        assert (console_handler not in root_logger.handlers) is expect_handler_removed
-
-        logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger(f"opg_pipeline_builder.e2e.{scenario}"),
+            process="CtxMgr",
+            table="table",
         )
-        key = self.expected_object_key(jsonl_handler, 0)
-        assert list(logs) == [key]
-        assert logs[key] == [
-            self.configuration_row(),
-            self.base_row(
-                logger_name=f"{logging.getLogger().name}.pipeline",
-                module="test_log",
-                function=function_name,
-                line_number=line_1,
-                log_level="INFO",
-                process="E2E test",
-                process_stage="Start",
-                table="table_a",
-                field="",
-                message="Pipeline started",
-            ),
-            *(
-                []
-                if expect_shutdown_recorded
-                else [
-                    self.base_row(
-                        function="flush",
-                        line_number=configuration_log_line_number(
-                            log.JsonlLogHandler.flush
-                        ),
-                        log_level="WARNING",
-                        process="Logging",
-                        process_stage="End",
-                        message=log._UNMANAGED_FLUSH_WARNING,
-                    )
-                ]
-            ),
-        ]
 
-    @pytest.mark.parametrize("trigger", ["context_manager", "logging_shutdown"])
-    def test_shutdown_trigger_raises_on_failed_final_flush(
-        self, s3: boto3.client, trigger: str, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Ensure shutdown never silently discards a failed final flush.
+        jsonl_handler = controller._handlers[0]
+        assert isinstance(jsonl_handler, log.JsonlLogHandler)
 
-        Via the context manager this fails the task itself (the recommended, fatal path); via
-        the atexit-triggered logging.shutdown() fallback it's only reported to stderr, not fatal
-        to the process, since shutdown() runs from atexit and Python only prints "Exception
-        ignored in atexit callback" for errors it doesn't recognise. Either way the RuntimeError
-        propagates out of the trigger itself, and nothing partial reaches S3.
-        """
-        with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure()
-            pipeline_logger = log.ModuleLogger(
-                logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
-            )
-            pipeline_logger.info(
-                "Pipeline started", process="E2E test", table="table_a", stage="Start"
+        def write_logs() -> None:
+            """Emit the shared INFO and ERROR events for the selected lifecycle mode."""
+            module_logger.info("This is info", field="info")
+            module_logger.error(
+                "This is error", field="error", exc_info=ValueError("Error")
             )
 
-            def shut_down() -> None:
-                """Trigger the selected shutdown path while the upload is failing."""
-                if trigger == "context_manager":
-                    with controller:
-                        pass
-                else:
-                    simulate_atexit_shutdown(controller)
-
-            with (
-                patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError()),
-                pytest.raises(RuntimeError, match="Failed to write"),
-            ):
-                shut_down()
-
-        assert len(jsonl_handler._buffer) > 0
-        logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
-        )
-        assert logs == {}
-        stderr = capsys.readouterr().err
-        assert "could not be written" in stderr
-        dumped = [
-            json.loads(line) for line in stderr.splitlines() if line.startswith("{")
-        ]
-        assert [row["message"] for row in dumped] == [
-            row["message"] for row in jsonl_handler._buffer
-        ]
-        assert "Pipeline started" in [row["message"] for row in dumped]
-
-    def test_flush_delegates_retry_and_threshold_behaviour_to_handler(
-        self, s3: boto3.client
-    ) -> None:
-        """Test that controller.flush() correctly delegates to the handler's retry/threshold logic.
-
-        The retry and threshold mechanics themselves are already exhaustively unit tested via
-        JsonlLogHandler._flush_locked directly (test_flush_locked_fail_then_succeed and
-        test_flush_locked_fail_then_hit_threshold); this just proves the E2E process wired
-        through controller.flush() handles the same failures and recovery correctly, without
-        re-asserting every detail already covered there.
-        """
-        controller, jsonl_handler = self.configure()
-        pipeline_logger = log.ModuleLogger(
-            logger=logging.getLogger(f"{logging.getLogger().name}.pipeline")
-        )
-        pipeline_logger.info(
-            "Started processing", process="E2E test", table="table_a", stage="Start"
-        )
-
-        with patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError()):
-            # A transient failure is recoverable - controller.flush() just records it.
-            controller.flush()
-            assert jsonl_handler._write_failures == 1
-
-            # Repeated failures eventually exceed the retry threshold and raise through flush().
-            def exhaust_retries() -> None:
-                """Flush until the handler's retry threshold is exceeded."""
-                for _ in range(3):
-                    controller.flush()
-
-            with pytest.raises(
-                RuntimeError,
-                match=r"Attempted to write logs 4 times\. Retries exceeded",
-            ):
-                exhaust_retries()
-
-        # Recovery: once S3 is reachable again, the next flush succeeds and writes everything
-        # buffered, including the synthetic failure notices recorded along the way.
-        controller.flush()
-
-        logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
-        )
-        key = self.expected_object_key(jsonl_handler, 0)
-        assert list(logs) == [key]
-        assert [record["message"] for record in logs[key]] == [
-            "Logging configured successfully.",
-            "Started processing",
-            "Failed to write JSONL log batch (failure_count=1).",
-            "Failed to write JSONL log batch (failure_count=2).",
-            "Failed to write JSONL log batch (failure_count=3).",
-        ]
-        assert jsonl_handler._write_failures == 0
-        assert jsonl_handler._buffer == []
-
-        controller.shutdown()
-
-    def test_multithreaded_logging(self, s3: boto3.client) -> None:
-        """Verify threaded writes produce every expected record exactly once.
-
-        Records must retain unique contents and sequential, gap-free part numbers.
-        """
-        worker_count = 3
-        messages_per_worker = 5
-
-        with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure(batch_size=4)
-
-            def worker(worker_number: int) -> None:
-                """Emit a complete sequence of records through this worker's logger."""
-                worker_logger = log.ModuleLogger(
-                    logger=logging.getLogger(
-                        f"{logging.getLogger().name}.worker_{worker_number}"
-                    ),
-                    process="E2E test",
-                )
-                for message_number in range(messages_per_worker):
-                    worker_logger.info(
-                        "worker-%s-%s",
-                        worker_number,
-                        message_number,
-                        table="table_a",
-                        stage="Processing",
-                    )
-
-            threads = [
-                Thread(target=worker, args=(number,)) for number in range(worker_count)
-            ]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join(timeout=30)
-
-            controller.shutdown()
-
-        assert all(not thread.is_alive() for thread in threads)
-
-        logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
-        )
-        all_records = [record for records in logs.values() for record in records]
-        worker_records = [
-            record
-            for record in all_records
-            if record["message"] != "Logging configured successfully."
-        ]
-
-        # Exactly one config record, and every worker message present exactly once - proves the
-        # shared lock in emit()/_flush_locked() prevents both lost and duplicated records.
-        assert len(all_records) - len(worker_records) == 1
-        expected_pairs = {
-            (
-                f"root.worker_{worker_number}",
-                f"worker-{worker_number}-{message_number}",
-            )
-            for worker_number in range(worker_count)
-            for message_number in range(messages_per_worker)
-        }
-        actual_pairs = {
-            (record["logger_name"], record["message"]) for record in worker_records
-        }
-        assert actual_pairs == expected_pairs
-
-        # Spot-check one record's full structure; per-field conversion correctness is already
-        # covered by test_record_to_row_success, so this just confirms it holds under threads too.
-        assert (
-            self.base_row(
-                logger_name="root.worker_0",
-                module="test_log",
-                function="worker",
-                line_number=next(
-                    record["line_number"]
-                    for record in worker_records
-                    if record["message"] == "worker-0-0"
-                ),
-                log_level="INFO",
-                process="E2E test",
-                process_stage="Processing",
-                table="table_a",
-                message="worker-0-0",
-            )
-            in worker_records
-        )
-
-        # Concurrent flushes still assign sequential, gap-free part numbers under the lock.
-        expected_prefix = self.expected_object_key(jsonl_handler, 0).rsplit("_", 1)[0]
-        assert all(key.startswith(expected_prefix) for key in logs)
-        part_numbers = sorted(
-            int(key.rsplit("_", 1)[1].removesuffix(".jsonl")) for key in logs
-        )
-        assert part_numbers == list(range(len(part_numbers)))
-
-    @staticmethod
-    def read_json_via_moto(s3: boto3.client) -> Any:
-        """Build a wr.s3.read_json replacement that reads the exact requested objects from moto."""
-
-        def read_json(path: list[str], **kwargs: Any) -> pd.DataFrame:
-            """Read the exact S3 JSONL objects requested by the registration call."""
-            assert isinstance(path, list), (
-                "Registration must read an explicit list of keys"
-            )
-            frames = []
-            for uri in path:
-                bucket, key = uri.removeprefix("s3://").split("/", 1)
-                body = s3.get_object(Bucket=bucket, Key=key)["Body"].read().decode()
-                frames.append(pd.read_json(io.StringIO(body), **kwargs))
-            return pd.concat(frames, ignore_index=True)
-
-        return read_json
-
-    @pytest.mark.usefixtures("logging_configured")
-    def test_concurrent_writers_in_same_run_register_only_their_own_records(
-        self, s3: boto3.client
-    ) -> None:
-        """Verify concurrent writers register only their own uploaded objects.
-
-        Writers are attached to non-propagating named loggers to simulate separate processes, so the
-        root-level configured check is satisfied with a stand-in.
-        """
-        threads_per_writer = 3
-        messages_per_thread = 5
-        writers = [create_handler(apply_patches=False, batch_size=4) for _ in range(2)]
-        loggers = []
-        for number, writer in enumerate(writers):
-            logger = logging.getLogger(f"opg_pipeline_builder.e2e.writer_{number}")
-            logger.propagate = False
-            logger.setLevel(logging.INFO)
-            logger.addHandler(writer)
-            loggers.append(log.ModuleLogger(logger=logger, process="E2E test"))
-
-        def worker(writer_number: int, thread_number: int) -> None:
-            """Emit the assigned writer/thread message sequence."""
-            for message_number in range(messages_per_thread):
-                loggers[writer_number].info(
-                    "writer-%s-thread-%s-%s",
-                    writer_number,
-                    thread_number,
-                    message_number,
-                )
-
-        threads = [
-            Thread(target=worker, args=(writer_number, thread_number))
-            for writer_number in range(len(writers))
-            for thread_number in range(threads_per_writer)
-        ]
-        registered: list[pd.DataFrame] = []
         try:
             with (
-                patch(
-                    "opg_pipeline_builder.logging.log.wr.s3.read_json",
-                    side_effect=self.read_json_via_moto(s3),
-                ),
-                patch(
-                    "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
-                    side_effect=lambda df, **_: registered.append(df),
+                patch.object(time, "time", return_value=LogTimestamp._TIMESTAMP),
+                patch.object(
+                    time,
+                    "time_ns",
+                    return_value=int(LogTimestamp._TIMESTAMP) * 1_000_000_000,
                 ),
             ):
-                for thread in threads:
-                    thread.start()
-                for thread in threads:
-                    thread.join(timeout=30)
-                # Writer 0 closes while writer 1's objects already exist under the same run prefix.
-                writers[0].close()
-                writers[1].close()
+                self.run_lifecycle(scenario, controller, jsonl_handler, write_logs)
         finally:
-            for module_logger, writer in zip(loggers, writers, strict=True):
-                module_logger.logger.removeHandler(writer)
-                module_logger.logger.propagate = True
+            if not controller._is_shutdown:
+                controller.shutdown()
 
-        assert all(not thread.is_alive() for thread in threads)
-        all_s3_messages = sorted(
-            record["message"]
-            for records in read_jsonl_logs(s3).values()
-            for record in records
-        )
-        assert len(registered) == len(writers)
-        for writer_number, frame in enumerate(registered):
-            application_messages = {
-                message
-                for message in frame["message"]
-                if message != "Logging configured successfully."
-            }
-            assert application_messages == {
-                f"writer-{writer_number}-thread-{thread_number}-{message_number}"
-                for thread_number in range(threads_per_writer)
-                for message_number in range(messages_per_thread)
-            }
-            assert set(frame["logger_name"]) == {
-                f"opg_pipeline_builder.e2e.writer_{writer_number}",
-                logging.getLogger().name,
-            }
-        registered_messages = sorted(
-            message for frame in registered for message in frame["message"]
-        )
-        assert registered_messages == all_s3_messages
-        assert len(registered_messages) == len(set(registered_messages)) + 1
-
-    def test_shutdown_during_threaded_logging(self, s3: boto3.client) -> None:
-        """Test shutting down while worker threads are still logging.
-
-        Records logged before shutdown are all uploaded and registered exactly once. Records logged
-        after shutdown are not written: once the handlers are detached ModuleLogger raises
-        LoggingNotConfiguredError, a record racing the close raises RuntimeError rather than being
-        silently buffered, and nothing is registered twice.
-        """
-        worker_count = 4
-        pre_shutdown_messages = 6
-        ready = [Event() for _ in range(worker_count)]
-        stop = Event()
-        unexpected_errors: list[BaseException] = []
-        registered: list[pd.DataFrame] = []
-
-        controller, jsonl_handler = self.configure()
-
-        def worker(worker_number: int) -> None:
-            """Emit pre-shutdown records and race subsequent writes with shutdown."""
-            worker_logger = log.ModuleLogger(
-                logger=logging.getLogger(
-                    f"opg_pipeline_builder.e2e.worker_{worker_number}"
-                ),
-                process="E2E test",
-            )
-            try:
-                for message_number in range(pre_shutdown_messages):
-                    worker_logger.info("pre-%s-%s", worker_number, message_number)
-                ready[worker_number].set()
-                message_number = 0
-                while not stop.is_set():
-                    try:
-                        worker_logger.info("post-%s-%s", worker_number, message_number)
-                    except exc.LoggingNotConfiguredError:
-                        pass  # Handlers already detached from root.
-                    except RuntimeError as error:
-                        assert "already been closed" in str(error)  # noqa: PT017
-                    message_number += 1
-            except BaseException as error:  # noqa: BLE001
-                unexpected_errors.append(error)
-                ready[worker_number].set()
-
-        threads = [
-            Thread(target=worker, args=(number,)) for number in range(worker_count)
-        ]
-        with (
-            patch(
-                "opg_pipeline_builder.logging.log.wr.s3.read_json",
-                side_effect=self.read_json_via_moto(s3),
-            ),
-            patch(
-                "opg_pipeline_builder.logging.log.wr.s3.to_parquet",
-                side_effect=lambda df, **_: registered.append(df),
-            ),
-        ):
-            for thread in threads:
-                thread.start()
-            for event in ready:
-                assert event.wait(timeout=30)
-            controller.shutdown()
-            stop.set()
-            for thread in threads:
-                thread.join(timeout=30)
-
-        assert unexpected_errors == []
-        assert all(not thread.is_alive() for thread in threads)
         assert controller._is_shutdown
         assert jsonl_handler._closed
-        assert jsonl_handler not in logging.getLogger().handlers
 
-        s3_messages = sorted(
-            record["message"]
-            for records in read_jsonl_logs(s3).values()
-            for record in records
+        expected_events = [
+            self.expected_e2e_event(error_type="info", process="CtxMgr"),
+            self.expected_e2e_event(
+                error_type="error", process="CtxMgr", exception="ValueError: Error"
+            ),
+        ]
+
+        raw_events = self.read_jsonl_rows(s3, f"e2e/{scenario}/raw/")
+        self.assert_e2e_events_match(raw_events, expected_events)
+
+        curated_events = self.read_curated_rows(f"e2e/{scenario}/curated")
+        self.assert_e2e_events_match(curated_events, expected_events)
+
+    def test_threaded_logging(self, s3: boto3.client) -> None:
+        """Persist concurrent default, scoped, and explicit-table events in raw and curated stores."""
+        worker_count = 4
+
+        controller = self.configure_logging("threaded", batch_size=4)
+        handler = controller._handlers[0]
+        assert isinstance(handler, log.JsonlLogHandler)
+
+        module_logger = log.ModuleLogger(
+            logger=logging.getLogger("opg_pipeline_builder.e2e.threaded"),
+            process="Threaded",
+            table="fallback_table",
         )
-        [frame] = registered
-        assert sorted(frame["message"]) == s3_messages
-        assert len(s3_messages) == len(set(s3_messages))
-        assert {
-            f"pre-{worker_number}-{message_number}"
-            for worker_number in range(worker_count)
-            for message_number in range(pre_shutdown_messages)
-        } <= set(s3_messages)
+        barrier = Barrier(worker_count)
 
-    def test_pipeline_with_no_application_logs_still_flushes_config_record(
-        self, s3: boto3.client
-    ) -> None:
-        """Test that shutting down immediately after configure_logging still flushes the config record."""
-        with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure()
-            with controller:
-                pass
+        def log_from_worker(worker: int) -> None:
+            """Emit fallback, scoped, and explicit-table events for one worker."""
+            barrier.wait(timeout=5)
+            module_logger.info("default-%s", worker, field="default_field")
+            with module_logger.with_table(f"scoped_{worker}"):
+                module_logger.info("scoped-%s", worker, field="scoped_field")
+                module_logger.error(
+                    "explicit-%s",
+                    worker,
+                    table=f"explicit_{worker}",
+                    field="explicit_field",
+                    exc_info=ValueError(f"thread failure {worker}"),
+                )
 
-        logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
-        )
-        key = self.expected_object_key(jsonl_handler, 0)
-        assert list(logs) == [key]
-        assert logs[key] == [self.configuration_row()]
+        def write_logs() -> None:
+            """Run all workers concurrently and propagate any worker exception."""
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = [
+                    executor.submit(log_from_worker, worker)
+                    for worker in range(worker_count)
+                ]
+                for future in futures:
+                    future.result(timeout=10)
 
-    def test_error_with_exception_written_to_jsonl_and_console(
-        self, s3: boto3.client, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Test that error(exc_info=True) writes the full traceback to JSONL and prints it to the console."""
-        with freeze_time("2024-01-02T00:00:00Z"):
-            controller, jsonl_handler = self.configure()
-            module_logger = log.ModuleLogger(
-                logger=logging.getLogger(f"{logging.getLogger().name}.load"),
-                process="E2E test",
-                table="E2E table",
+        try:
+            with (
+                patch.object(time, "time", return_value=LogTimestamp._TIMESTAMP),
+                patch.object(
+                    time,
+                    "time_ns",
+                    return_value=int(LogTimestamp._TIMESTAMP) * 1_000_000_000,
+                ),
+            ):
+                self.run_lifecycle("explicit_shutdown", controller, handler, write_logs)
+        finally:
+            if not controller._is_shutdown:
+                controller.shutdown()
+
+        expected_events = []
+        for worker in range(worker_count):
+            expected_events.extend(
+                [
+                    self.expected_e2e_event(
+                        "info",
+                        "Threaded",
+                        message=f"default-{worker}",
+                        table="fallback_table",
+                        field="default_field",
+                    ),
+                    self.expected_e2e_event(
+                        "info",
+                        "Threaded",
+                        message=f"scoped-{worker}",
+                        table=f"scoped_{worker}",
+                        field="scoped_field",
+                    ),
+                    self.expected_e2e_event(
+                        "error",
+                        "Threaded",
+                        exception=f"ValueError: thread failure {worker}",
+                        message=f"explicit-{worker}",
+                        table=f"explicit_{worker}",
+                        field="explicit_field",
+                    ),
+                ]
             )
-            with controller:
-                try:
-                    try:
-                        missing_column = "missing_column"
-                        raise KeyError(missing_column)  # noqa: TRY301
-                    except KeyError as cause:
-                        error_message = "bad row"
-                        raise ValueError(error_message) from cause
-                except ValueError:
-                    module_logger.error("Load failed", exc_info=True)  # noqa: G201
-                module_logger.info("Load finished", stage="End")
 
-        logs = read_jsonl_logs(
-            s3, bucket=DEFAULT_BUCKET, prefix=DEFAULT_LOG_STORE_PREFIX
-        )
-        _, error_row, info_row = logs[self.expected_object_key(jsonl_handler, 0)]
+        raw_events = self.read_jsonl_rows(s3, "e2e/threaded/raw/")
+        self.assert_e2e_events_match(raw_events, expected_events)
 
-        exception = error_row["exception"]
-        assert error_row["message"] == "Load failed"
-        assert exception.startswith("Traceback (most recent call last):")
-        assert "KeyError: 'missing_column'" in exception
-        assert "The above exception was the direct cause" in exception
-        assert exception.rstrip().endswith("ValueError: bad row")
-        assert info_row["exception"] == ""
-        assert exception in capsys.readouterr().err
-
-    def test_two_pipeline_runs_with_different_attempt_numbers_do_not_collide(
-        self, s3: boto3.client
-    ) -> None:
-        """Keep logs for separate attempts in distinct S3 partitions.
-
-        Runs sharing a pipeline and data delivery period must not collide or mix records.
-        """
-        expected = {}
-        with freeze_time("2024-01-02T00:00:00Z"):
-            for attempt, message in [
-                (1, "First attempt processing"),
-                (2, "Second attempt processing"),
-            ]:
-                controller, handler = self.configure(attempt_no=attempt)
-                with controller:
-                    log.ModuleLogger(logger=logging.getLogger("root.attempt")).info(
-                        message,
-                        process="E2E test",
-                        table="table_a",
-                        stage="Start",
-                    )
-                expected[self.expected_object_key(handler, 0)] = (attempt, message)
-
-        logs = read_jsonl_logs(s3)
-        assert set(logs) == set(expected)
-        for key, (attempt, message) in expected.items():
-            assert [record["message"] for record in logs[key]] == [
-                "Logging configured successfully.",
-                message,
-            ]
-            assert all(record["attempt_no"] == attempt for record in logs[key])
+        curated_events = self.read_curated_rows("e2e/threaded/curated")
+        self.assert_e2e_events_match(curated_events, expected_events)

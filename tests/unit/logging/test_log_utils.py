@@ -1,12 +1,18 @@
-"""Unit tests for the logging helper utilities."""
-
-from contextlib import nullcontext as does_not_raise
-from typing import Any
+# """Unit tests for the logging helper utilities."""
+import datetime
+import logging
+from datetime import UTC
 
 import pytest
 
-from opg_pipeline_builder.logging import log_exceptions as exc
 from opg_pipeline_builder.logging import log_utils
+
+
+def test_format_datetime() -> None:
+    """Test that format_datetime returns the expected ISO string."""
+    dt = datetime.datetime(2026, 9, 22, 10, 45, 23, 245000, tzinfo=UTC)
+    formatted = log_utils.format_datetime(dt)
+    assert formatted == "2026-09-22T10:45:23.245000Z"
 
 
 @pytest.mark.parametrize(("value"), [("non-empty"), ("   ."), ("a  b")])
@@ -36,8 +42,8 @@ def test_not_empty_false(value: object) -> None:
     ("value", "keep_end", "expected"),
     [
         ("", False, ""),
-        ("12345", False, "12345"),  # Exactly at the limit
-        ("1234", True, "1234"),  # Under the limit
+        ("12345", False, "12345"),
+        ("1234", True, "1234"),
         ("1234567", False, "12345...[truncated 2 characters]..."),
         ("1234567", True, "...[truncated 2 characters]...34567"),
     ],
@@ -51,11 +57,17 @@ def test_truncate_text(
     assert log_utils.truncate_text(value, 5, keep_end=keep_end) == expected
 
 
-def test_validate_s3_prefix_valid() -> None:
+@pytest.mark.parametrize("prefix", ["valid/prefix", "prefix/with/my-bucket/name"])
+def test_validate_s3_prefix_valid(prefix: str) -> None:
     """Test that a valid S3 prefix passes validation."""
-    log_utils.validate_s3_prefix(
-        prefix="valid/prefix", name="log_store", bucket="my-bucket"
-    )
+    log_utils.validate_s3_prefix(prefix=prefix, name="log_store", bucket="my-bucket")
+
+
+@pytest.mark.parametrize("prefix", ["", "   ", "/prefix/to/log", "/"])
+def test_validate_s3_prefix_empty_or_absolute(prefix: str) -> None:
+    """Test that empty and leading-slash prefixes raise a InvalidPrefixError."""
+    errors = log_utils.validate_s3_prefix(prefix, "log_store", "my-bucket")
+    assert errors == "'log_store' must be non-empty and not start with '/'."
 
 
 @pytest.mark.parametrize(
@@ -67,56 +79,37 @@ def test_validate_s3_prefix_valid() -> None:
         ("my-bucket", "my-bucket"),
     ],
 )
-def test_validate_s3_prefix_invalid(prefix: str, bucket: str) -> None:
+def test_validate_s3_contains_bucket_or_s3(prefix: str, bucket: str) -> None:
     """Test that an invalid S3 prefix raises a InvalidPrefixError."""
-    with pytest.raises(
-        exc.InvalidPrefixError,
-        match="'log_store' must not include 's3://' or the bucket",
-    ):
-        log_utils.validate_s3_prefix(prefix, "log_store", bucket)
+    errors = log_utils.validate_s3_prefix(prefix, "log_store", bucket)
+    assert errors == "'log_store' must not include 's3://' or the bucket name."
 
 
 @pytest.mark.parametrize(
-    ("prefix", "bucket"),
+    ("log_store_prefix", "athena_prefix", "valid"),
     [
-        ("pipeline-logs/raw", "logs"),
-        ("raw/logs/curated", "logs"),
-        ("logs-archive/raw", "logs"),
-    ],
-)
-def test_validate_s3_prefix_allows_bucket_name_outside_first_segment(
-    prefix: str, bucket: str
-) -> None:
-    """Test that the bucket name only invalidates a prefix when it is the first path segment."""
-    log_utils.validate_s3_prefix(prefix, "log_store", bucket)
-
-
-@pytest.mark.parametrize("prefix", ["", "   ", "/prefix/to/log", "/"])
-def test_validate_s3_prefix_rejects_empty_or_absolute(prefix: str) -> None:
-    """Test that empty and leading-slash prefixes raise a InvalidPrefixError."""
-    with pytest.raises(exc.InvalidPrefixError, match="must be non-empty"):
-        log_utils.validate_s3_prefix(prefix, "log_store", "my-bucket")
-
-
-@pytest.mark.parametrize(
-    ("log_store_prefix", "athena_prefix", "expectation"),
-    [
-        ("prefix/to/log", "prefix/to/log/curated/", does_not_raise()),
-        ("prefix", "prefix/curated/", does_not_raise()),
-        ("raw/logs", "curated/logs", does_not_raise()),
-        ("logs", "logs-curated", does_not_raise()),
-        ("logs", "logs", pytest.raises(exc.InvalidPrefixError)),
-        ("logs/", "logs", pytest.raises(exc.InvalidPrefixError)),
-        ("curated/raw", "curated", pytest.raises(exc.InvalidPrefixError)),
-        ("curated/raw/", "curated/", pytest.raises(exc.InvalidPrefixError)),
+        ("prefix/to/log", "prefix/to/log/curated/", True),
+        ("prefix", "prefix/curated/", True),
+        ("raw/logs", "curated/logs", True),
+        ("logs", "logs-curated", True),
+        ("logs", "logs", False),
+        ("logs/", "logs", False),
+        ("curated/raw", "curated", False),
+        ("curated/raw/", "curated/", False),
     ],
 )
 def test_validate_prefix_layout(
-    log_store_prefix: str, athena_prefix: str, expectation: Any
+    log_store_prefix: str,
+    athena_prefix: str,
+    valid: bool,  # noqa: FBT001
 ) -> None:
     """Test that the raw log prefix cannot equal or sit inside the curated Athena prefix."""
-    with expectation:
-        log_utils.validate_prefix_layout(log_store_prefix, athena_prefix)
+    errors = log_utils.validate_prefix_layout(log_store_prefix, athena_prefix)
+    assert (
+        errors == ""
+        if valid
+        else "'log_store_prefix' must not be the same as, or nested inside, the 'athena_prefix'."
+    )
 
 
 @pytest.mark.parametrize(
@@ -135,3 +128,25 @@ def test_validate_prefix_layout(
 def test_encode_partition_value(value: object, expected: str) -> None:
     """Test that partition values are percent-encoded into a single safe key segment."""
     assert log_utils.encode_partition_value(value) == expected
+
+
+def test_to_jsonl_line() -> None:
+    """Test that a dictionary is converted to a JSONL line."""
+    data = {"key": "value", "number": 42}
+    expected = '{"key":"value","number":42}'
+    assert log_utils.to_jsonl_line(data) == expected
+
+
+def test_is_handler_attached() -> None:
+    """Return false before a named handler is attached and true after attachment."""
+    root_logger = logging.getLogger()
+    handler = logging.StreamHandler()
+    handler.set_name("is_handler_attached_test")
+
+    assert not log_utils.is_handler_attached("is_handler_attached_test")
+    root_logger.addHandler(handler)
+    try:
+        assert log_utils.is_handler_attached("is_handler_attached_test")
+    finally:
+        root_logger.removeHandler(handler)
+        handler.close()

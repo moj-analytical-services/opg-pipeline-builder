@@ -2,8 +2,8 @@
 
 import json
 import logging
-from typing import Any
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote
 
 ATHENA_COLUMN_TYPES: dict[str, str] = {
@@ -85,7 +85,7 @@ def validate_s3_prefix(prefix: str, name: str, bucket: str) -> str:
     if not not_empty(prefix) or prefix.startswith("/"):
         errors.append(f"'{name}' must be non-empty and not start with '/'.")
     if "s3://" in prefix.lower() or prefix.split("/", 1)[0] == bucket:
-        errors.append(f"'{name}' must not include 's3://' or the bucket.")
+        errors.append(f"'{name}' must not include 's3://' or the bucket name.")
     return " ".join(errors)
 
 

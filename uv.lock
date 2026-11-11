@@ -666,16 +666,18 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "duckdb" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "ruff" },
-]
 test = [
+    { name = "duckdb" },
     { name = "moto" },
     { name = "pytest" },
     { name = "pytest-cov" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -683,17 +685,21 @@ requires-dist = [
     { name = "aiobotocore", specifier = "==3.7.0" },
     { name = "awswrangler", specifier = "==3.17.0" },
     { name = "boto3", specifier = "==1.43.0" },
-    { name = "duckdb", marker = "extra == 'dev'", specifier = "==1.5.4" },
+    { name = "duckdb", marker = "extra == 'test'", specifier = "==1.5.4" },
     { name = "moto", marker = "extra == 'test'", specifier = "==5.2.2" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = "==2.3.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.6.0" },
     { name = "pyarrow", specifier = "==24.0.0" },
     { name = "pydantic", specifier = "==2.13.4" },
     { name = "pytest", marker = "extra == 'test'", specifier = "==9.1.1" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = "==7.1.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.17.4" },
 ]
-provides-extras = ["dev", "test"]
+provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = "==2.3.0" },
+    { name = "pre-commit", specifier = ">=4.6.0" },
+    { name = "ruff", specifier = ">=0.17.4" },
+]
 
 [[package]]
 name = "packaging"

@@ -19,14 +19,16 @@ dependencies = [
 [tool.uv]
 package = true
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "duckdb==1.5.4",
     "mypy==2.3.0",
+    "ruff>=0.17.4",
     "pre-commit>=4.6.0",
 ]
+
+[project.optional-dependencies]
 test = [
-    "freezegun>=1.5.5",
+    "duckdb==1.5.4",
     "moto==5.2.2",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",

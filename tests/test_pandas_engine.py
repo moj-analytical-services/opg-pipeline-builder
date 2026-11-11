@@ -195,7 +195,7 @@ def test_remove_null_columns(
 ) -> None:
     default_metadata.update_column({"name": "dummy_column", "type": "null"})
     updated_df = default_df.copy()
-    updated_df["dummy_column"] = np.NaN
+    updated_df["dummy_column"] = np.nan
     df = pandas_engine.transforms.remove_null_columns(updated_df, default_metadata)  # type: ignore[union-attr]
     assert df.equals(default_df)
 
@@ -207,7 +207,7 @@ def test_create_null_columns_for_columns_in_meta_not_in_data(
 ) -> None:
     default_metadata.update_column({"name": "dummy_column", "type": "string"})
     expected_df = default_df.copy()
-    expected_df["dummy_column"] = np.NaN
+    expected_df["dummy_column"] = np.nan
     df = pandas_engine.transforms.create_null_columns_for_columns_in_meta_not_in_data(  # type: ignore[union-attr]
         default_df,
         default_metadata,
@@ -223,7 +223,7 @@ def test_input_transform_methods(
     default_metadata.update_column({"name": "dummy_column", "type": "null"})
 
     updated_df = default_df.copy()
-    updated_df["dummy_column"] = np.NaN
+    updated_df["dummy_column"] = np.nan
     updated_df.columns = [x.upper() for x in updated_df.columns]
 
     df = pandas_engine.transforms.input_transform_methods(  # type: ignore[union-attr]
@@ -320,7 +320,7 @@ def test_output_transform_methods(
     input_df["madeup_column"] = "madeup_value"
 
     expected_df = default_df.copy()
-    expected_df["string_column"] = np.NaN
+    expected_df["string_column"] = np.nan
     expected_df["testdb_etl_version"] = "testing"
 
     if add_partition_column:

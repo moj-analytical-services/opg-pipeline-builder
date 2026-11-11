@@ -439,34 +439,41 @@ class JsonlLogHandler(logging.Handler):
         upload (a failed upload retries under the same part number), so parts 0..n-1 are exactly
         the objects written.
         """
-        if self._part_number == 0:
-            return
+        try:
+            if self._part_number == 0:
+                return
 
-        logs = wr.s3.read_json(
-            path=[
-                f"s3://{self._config.bucket}/{self._object_key(part)}"
-                for part in range(self._part_number)
-            ],
-            lines=True,
-            dtype=False,
-            convert_dates=False,
-        )
-        # Convert to a typed timestamp only at the Parquet boundary.
-        logs["log_timestamp"] = pd.to_datetime(
-            logs["log_timestamp"], utc=True, format="ISO8601"
-        )
-        wr.catalog.create_database(self._config.athena_database_name, exist_ok=True)
+            logs = wr.s3.read_json(
+                path=[
+                    f"s3://{self._config.bucket}/{self._object_key(part)}"
+                    for part in range(self._part_number)
+                ],
+                lines=True,
+                dtype=False,
+                convert_dates=False,
+            )
 
-        wr.s3.to_parquet(
-            df=logs,
-            path=f"s3://{self._config.bucket}/{self._config.athena_prefix}",
-            dataset=True,
-            mode="append",
-            database=self._config.athena_database_name,
-            table=self._config.athena_table_name,
-            partition_cols=["data_delivery_period", "attempt_no", "run_id"],
-            dtype=u.ATHENA_COLUMN_TYPES,
-        )
+            if logs.empty:
+                return
+
+            logs["log_timestamp"] = pd.to_datetime(
+                logs["log_timestamp"], utc=True, format="ISO8601"
+            )
+            wr.catalog.create_database(self._config.athena_database_name, exist_ok=True)
+
+            wr.s3.to_parquet(
+                df=logs,
+                path=f"s3://{self._config.bucket}/{self._config.athena_prefix}",
+                dataset=True,
+                mode="append",
+                database=self._config.athena_database_name,
+                table=self._config.athena_table_name,
+                partition_cols=["data_delivery_period", "attempt_no", "run_id"],
+                dtype=u.ATHENA_COLUMN_TYPES,
+            )
+        except (ClientError, BotoCoreError, OSError, ValueError) as e:
+            err = "Failed to register logs in Athena."
+            raise RuntimeError(err) from e
 
     def _dump_unwritten_records(self) -> None:
         """Print records that could not be uploaded to stderr, so the task log still holds them."""
@@ -486,6 +493,10 @@ class JsonlLogHandler(logging.Handler):
             TypeError: If 'custom_fields' is truthy but is not a CustomLogFields instance.
             RuntimeError: If handler has already been closed, so records are never silently lost.
         """
+        if self._closed:
+            err = "Cannot write log record: the JSONL log handler has already been closed."
+            raise RuntimeError(err)
+
         # Skips logging calls without custom_fields which are required for the JSONL log format.
         custom_fields = getattr(record, "custom_fields", None)
         if not custom_fields:
@@ -497,9 +508,6 @@ class JsonlLogHandler(logging.Handler):
         row = self._record_to_row(record, custom_fields)
 
         with self._locked():
-            if self._closed:
-                err = "Cannot write log record: the JSONL log handler has already been closed."
-                raise RuntimeError(err)
             self._buffer.append(row)
             if len(self._buffer) >= self._batch_size:
                 self._flush_locked()
@@ -592,7 +600,7 @@ class LoggingController:
         try:
             self.shutdown()
         except Exception as shutdown_error:  # pylint: disable=W0718
-            if exc_value is None:
+            if not exc_value:
                 raise
             traceback.print_exception(shutdown_error, file=sys.stderr)
             exc_value.add_note(
@@ -614,8 +622,12 @@ class LoggingController:
             raise RuntimeError(err)
         for handler in self._handlers:
             if isinstance(handler, JsonlLogHandler):
-                with handler._locked():  # noqa: SLF001  # pylint: disable=W0212
-                    handler._flush_locked()  # noqa: SLF001  # pylint: disable=W0212
+                try:
+                    with handler._locked():  # noqa: SLF001  # pylint: disable=W0212
+                        handler._flush_locked()  # noqa: SLF001  # pylint: disable=W0212
+                except Exception as flush_error:  # pylint: disable=W0718
+                    err = f"Failed to flush handler {handler}: {flush_error}"
+                    raise RuntimeError(err) from flush_error
 
     def shutdown(self) -> None:
         """Flush, close, and remove the handlers created by configure_logging.

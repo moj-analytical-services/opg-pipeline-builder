@@ -24,6 +24,7 @@ dev = [
     "duckdb==1.5.4",
     "mypy==2.3.0",
     "pre-commit>=4.6.0",
+    "ruff>=0.17.4",
 ]
 test = [
     "moto==5.2.2",

@@ -57,7 +57,10 @@ def test_render_s3_path_missing_args() -> None:
             ),
         ),
     ):
-        u.render_s3_path("s3://bucket-name/{{ env }}/{{ db }}/land", env="dev")  # type: ignore[call-arg]
+        u.render_s3_path(  # pylint: disable=E1120
+            "s3://bucket-name/{{ env }}/{{ db }}/land",
+            env="dev",  # type: ignore[call-arg]
+        )
     assert mock_valid.call_count == 0
 
 

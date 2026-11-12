@@ -11,6 +11,8 @@ logger = getLogger(__name__)
 
 
 class DataDeliveryTracker(BaseModel):
+    """Model representing the tracking of data delivery."""
+
     data_delivery_period: datetime
     pipeline_name: str
     received_datetime: datetime
@@ -31,6 +33,8 @@ class DataDeliveryTracker(BaseModel):
 
 
 class TableTracker(BaseModel):
+    """Model representing the tracking of a table."""
+
     pipeline_name: str
     table_name: str
     current_pipeline_stage: str
@@ -52,6 +56,8 @@ class TableTracker(BaseModel):
 
 
 class FileTracker(BaseModel):
+    """Model representing the tracking of a file."""
+
     pipeline_name: str
     data_delivery_period: datetime
     filename: str
@@ -79,6 +85,8 @@ class FileTracker(BaseModel):
 
 
 class RunSourceFileTracker(BaseModel):
+    """Model representing the tracking of a source file within a run."""
+
     pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
@@ -106,6 +114,8 @@ class RunSourceFileTracker(BaseModel):
 
 
 class RunTracker(BaseModel):
+    """Model representing the tracking of a run."""
+
     pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
@@ -133,7 +143,7 @@ class RunTracker(BaseModel):
         return value
 
 
-def create_run_tracker(
+def create_run_tracker(  # noqa: PLR0913, PLR0917
     pipeline_name: str,
     data_delivery_period: datetime,
     attempt_no: int,
@@ -150,6 +160,7 @@ def create_run_tracker(
     lease_expires_at: datetime,
     log_location: str,
 ) -> RunTracker:
+    """Create a new RunTracker instance."""
     return RunTracker(
         pipeline_name=pipeline_name,
         data_delivery_period=data_delivery_period,
@@ -165,6 +176,8 @@ def create_run_tracker(
 
 
 class PipelineRunTracker(BaseModel):
+    """Model representing the tracking of a pipeline run."""
+
     pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
@@ -178,6 +191,8 @@ class PipelineRunTracker(BaseModel):
 
 
 class MaintenanceRunTracker(BaseModel):
+    """Model representing the tracking of a maintenance run."""
+
     pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int

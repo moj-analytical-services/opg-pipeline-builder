@@ -1,7 +1,7 @@
 from opg_pipeline_builder.constants import ALLOWED_ENVS
 
 
-def is_valid_identifier(identifier: str) -> str:
+def is_valid_identifier(identifier: str) -> str:  # noqa: PLR0911
     """Validate that the provided identifier is a valid.
 
     Checks:

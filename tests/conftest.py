@@ -14,7 +14,7 @@ from opg_pipeline_builder.logging.log import (
 )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(name="monkeypatch")
 def monkeypatch_session() -> Generator[MonkeyPatch]:
     """Create MonkeyPatch for setting environment variables."""
     m = MonkeyPatch()
@@ -23,7 +23,7 @@ def monkeypatch_session() -> Generator[MonkeyPatch]:
 
 
 @pytest.fixture(autouse=True)
-def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
+def set_env_vars(monkeypatch: MonkeyPatch) -> None:
     """Run before all tests to create environment variables."""
     test_env_vars = {
         "AWS_ACCESS_KEY_ID": "test_key_id",
@@ -37,7 +37,7 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
     }
 
     for key, value in test_env_vars.items():
-        monkeypatch_session.setenv(key, value)
+        monkeypatch.setenv(key, value)
 
 
 @pytest.fixture(name="_suppress_aws_logs", autouse=True, scope="session")
@@ -56,14 +56,14 @@ def suppress_aws_logs() -> Generator[None]:
 
 @pytest.fixture(name="s3", scope="session")
 def mock_s3(_suppress_aws_logs: None) -> Generator[boto3.client]:
-    "Return a mocked S3 client."
+    """Return a mocked S3 client."""
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
 
 
 @pytest.fixture(name="glue", scope="session")
 def mock_glue(_suppress_aws_logs: None) -> Generator[boto3.client]:
-    "Return a mocked glue client."
+    """Return a mocked glue client."""
     with mock_aws():
         yield boto3.client("glue", region_name="eu-west-2")
 
@@ -86,7 +86,9 @@ def setup_log_bucket(s3: boto3.client) -> Generator[None]:
 
 
 @pytest.fixture(autouse=True, scope="session")
-def setup_logging(s3: boto3.client) -> Generator[None]:
+def setup_logging(
+    s3: boto3.client,  # pylint: disable=unused-argument
+) -> Generator[None]:
     """Configure package logging for the test session."""
     configure_logging(
         pipeline="pipeline_name",
@@ -110,7 +112,7 @@ def setup_logging(s3: boto3.client) -> Generator[None]:
     root_logger.setLevel(logging.NOTSET)
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def clear_log_bucket(s3: boto3.client) -> None:
     """Clear the contents of the log bucket."""
     objects = s3.list_objects_v2(Bucket="log-bucket").get("Contents", [])
@@ -118,7 +120,7 @@ def clear_log_bucket(s3: boto3.client) -> None:
         s3.delete_object(Bucket="log-bucket", Key=obj["Key"])
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def configure_caplog(
     caplog: pytest.LogCaptureFixture,
 ) -> Generator[pytest.LogCaptureFixture]:

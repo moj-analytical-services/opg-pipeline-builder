@@ -1,4 +1,6 @@
-import datetime
+"""Logging utility functions for the OPG pipeline builder."""
+
+import datetime as dt
 import json
 import logging
 from typing import Any
@@ -42,7 +44,7 @@ def not_empty(value: str | None) -> bool:
     return bool(value.strip())
 
 
-def is_timezone_aware(value: datetime.datetime) -> bool:
+def is_timezone_aware(value: dt.datetime) -> bool:
     """Check if a datetime object is timezone-aware.
 
     Args:
@@ -99,8 +101,24 @@ def encode_partition_value(value: object) -> str:
 
 
 def to_jsonl_line(row: dict[str, Any]) -> str:
+    """Convert a dictionary to a JSONL line.
+
+    Args:
+        row: The dictionary representing a row.
+
+    Returns:
+        str: The JSONL-formatted string.
+    """
     return json.dumps(row, separators=(",", ":"))
 
 
 def is_handler_attached(handler: str) -> bool:
+    """Check if a logging handler with the given name is attached to the root logger.
+
+    Args:
+        handler: The name of the logging handler to check.
+
+    Returns:
+        bool: True if the handler is attached, False otherwise.
+    """
     return any(h.get_name() == handler for h in logging.getLogger().handlers)

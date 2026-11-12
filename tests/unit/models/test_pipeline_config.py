@@ -99,7 +99,8 @@ class TestPipelineConfig:
         reference_table = config.create_reference_table()
         assert reference_table.shape[0] == 1
         assert reference_table.shape[1] == 4
-        assert reference_table["pipeline_name"][0] == config.name
-        assert reference_table["description"][0] == config.description
-        assert reference_table["github_repo"][0] == config.github_repo
-        assert reference_table["data_cadence"][0] == config.data_cadence
+        row = reference_table.row(0, named=True)
+        assert row["pipeline_name"] == config.name
+        assert row["description"] == config.description
+        assert row["github_repo"] == config.github_repo
+        assert row["data_cadence"] == config.data_cadence

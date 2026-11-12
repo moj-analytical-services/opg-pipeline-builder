@@ -14,7 +14,7 @@ def test_settings_config_env_valid(env: str) -> None:
     os.environ["ENV"] = env
     os.environ["PIPELINE_NAME"] = "test_pipeline"
     config = SettingsConfig()
-    assert config.ENV == env
+    assert env == config.ENV
 
 
 @pytest.mark.parametrize(("env"), [("invalid_env"), ("staging")])

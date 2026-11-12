@@ -11,6 +11,8 @@ log = ModuleLogger(logger=getLogger(__name__), process="Run validation")
 
 
 class RunConfig(BaseModel):
+    """Model representing the configuration for a run."""
+
     env: str
     name: str
     land_path: str
@@ -21,7 +23,7 @@ class RunConfig(BaseModel):
 
 
 def create_run_config(pipeline: PipelineConfig, settings: SettingsConfig) -> RunConfig:
-    """Create a run config from the pipeline and settings config"""
+    """Create a run config from the pipeline and settings config."""
     log.info("Creating run config", table="run_config", stage="Start")
 
     if pipeline.name != settings.PIPELINE_NAME:

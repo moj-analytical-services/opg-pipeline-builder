@@ -15,7 +15,7 @@ from opg_pipeline_builder.validation import validators as v
     ],
 )
 def test_valid_identifier_valid(column_name: str) -> None:
-    """Test that a valid identifier returns an empty string"""
+    """Test that a valid identifier returns an empty string."""
     assert v.is_valid_identifier(column_name) == ""
 
 
@@ -42,12 +42,12 @@ def test_valid_identifier_valid(column_name: str) -> None:
     ],
 )
 def test_valid_identifier_invalid(column_name: str, exc_msg: str) -> None:
-    """Test that an invalid identifier returns the correct error message"""
+    """Test that an invalid identifier returns the correct error message."""
     assert v.is_valid_identifier(column_name) == exc_msg
 
 
 def test_s3_path_template_valid() -> None:
-    """Test that a valid S3 path template returns an empty string"""
+    """Test that a valid S3 path template returns an empty string."""
     valid_template = "s3://bucket/{{ env }}/{{ db }}/land/"
     assert v.is_valid_s3_path_template(valid_template, "land_path") == ""
 
@@ -96,13 +96,13 @@ def test_s3_path_template_valid() -> None:
 def test_s3_path_template_invalid(
     filepath: str, path_field: str, exp_error: str
 ) -> None:
-    """Test that an invalid S3 path template returns the correct error message"""
+    """Test that an invalid S3 path template returns the correct error message."""
     err = v.is_valid_s3_path_template(filepath, path_field)
     assert err == exp_error
 
 
 def test_s3_path_valid() -> None:
-    """Test that a valid S3 path returns an empty string"""
+    """Test that a valid S3 path returns an empty string."""
     valid_path = "s3://bucket-name/test/my_pipeline/etl_stage/"
     assert v.is_valid_s3_path(valid_path, "my_pipeline") == ""
 
@@ -125,6 +125,6 @@ def test_s3_path_valid() -> None:
     ],
 )
 def test_s3_path_invalid(filepath: str, exp_error: str) -> None:
-    """Test that an invalid S3 path returns the correct error message"""
+    """Test that an invalid S3 path returns the correct error message."""
     err = v.is_valid_s3_path(filepath, "my_pipeline")
     assert err == exp_error

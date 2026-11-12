@@ -8,7 +8,6 @@ from tests.test_utils import assert_log_record
 
 def test_create_run_config(caplog: pytest.LogCaptureFixture) -> None:
     """Test the creation of a RunConfig instance."""
-
     pipeline = PipelineConfig(
         name="test_pipeline",
         description="description",

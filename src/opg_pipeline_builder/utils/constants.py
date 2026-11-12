@@ -377,5 +377,5 @@ def get_dag_timestamp() -> int | None:
     try:
         dag_ts = int(os.environ["RUN_TIMESTAMP"])
         return dag_ts
-    except (KeyError, TypeError, ValueError):
+    except KeyError:
         return None

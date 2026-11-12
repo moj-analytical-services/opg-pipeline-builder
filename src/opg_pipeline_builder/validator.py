@@ -234,8 +234,11 @@ class PipelineConfig(BaseModel):
                 table_tf = table.transform_type
 
                 if table_tf != "derived":
-                    lint_opt = table.lint_options
-                    if lint_opt is None:
+                    try:
+                        lint_opt = table.lint_options
+                        full_lint_config["tables"][table_name] = lint_opt
+
+                    except AttributeError:
                         raise KeyError(f"{table} does not have lint options")
                     full_lint_config["tables"][table_name] = lint_opt
 

@@ -36,7 +36,7 @@ logging.getLogger("moto").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="module", autouse=True)
-def tests_env_setup_and_teardown() -> Generator[None, None, None]:
+def tests_env_setup_and_teardown() -> Generator[Any, Any, Any]:
     if "TEST_ENV" in os.environ:
         test_env = os.environ["TEST_ENV"]
     else:
@@ -93,7 +93,7 @@ def create_database(config: PipelineConfig) -> Database:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def copy_files() -> Generator[None, None, None]:
+def copy_files() -> Generator[Any, Any, Any]:
     test_directories = {"configs", "meta_data/test", "glue_jobs", "pipelines", "sql"}
 
     for dir in test_directories:
@@ -123,13 +123,13 @@ def copy_files() -> Generator[None, None, None]:
 
 
 @pytest.fixture(scope="function")
-def s3() -> Generator[boto3.resources.base.ServiceResource, None, None]:
+def s3() -> Generator[boto3.resources.base.ServiceResource]:
     with mock_aws():
         yield boto3.resource("s3", region_name="eu-west-1")
 
 
 @pytest.fixture(scope="function")
-def s3_client() -> Generator[boto3.client, None, None]:
+def s3_client() -> Generator[boto3.client]:
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-1")
 
@@ -242,7 +242,7 @@ def copy(odir: str, ndir: str) -> None:
 class MockS3FilesystemReadInputStream:
     @staticmethod
     @contextmanager
-    def open_input_stream(s3_file_path_in: str) -> Generator[io.BytesIO, None, None]:
+    def open_input_stream(s3_file_path_in: str) -> Generator[io.BytesIO]:
         s3_resource = boto3.resource("s3")
         bucket, key = s3_path_to_bucket_key(s3_file_path_in)
         obj_bytes = s3_resource.Object(bucket, key).get()["Body"].read()
@@ -254,7 +254,7 @@ class MockS3FilesystemReadInputStream:
 
     @staticmethod
     @contextmanager
-    def open_input_file(s3_file_path_in: str) -> Generator[str, None, None]:
+    def open_input_file(s3_file_path_in: str) -> Generator[str]:
         s3_client = boto3.client("s3")
         bucket, key = s3_path_to_bucket_key(s3_file_path_in)
         with NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp_file:
@@ -328,7 +328,7 @@ def mock_reader_read(
 
 
 @pytest.fixture(autouse=True, scope="session")
-def fix_set_log_level() -> Generator[None, None, None]:
+def fix_set_log_level() -> Generator[Any, Any, Any]:
     """Set logging level to CRITICAL for libraries that spit out a lot of DEBUG logs."""
     logging.getLogger("botocore").setLevel(logging.CRITICAL)
     logging.getLogger("awswrangler").setLevel(logging.CRITICAL)

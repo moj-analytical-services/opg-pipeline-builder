@@ -47,13 +47,13 @@ class CatalogTransformEngine(BaseTransformEngine):
                         "Name": db_name,
                     }
                 }
-                _logger.info(f"Creating initial {db_name} db")
+                _logger.info("Creating initial %s db", db_name)
                 glue_client.create_database(**db_meta)
             else:
-                _logger.info(f"Unexpected error: {e}")
+                _logger.info("Unexpected error: %s", e)
 
         for table_name in tables:
-            _logger.info(f"Updating {db_name}.{table_name}")
+            _logger.info("Updating %s.%s", db_name, table_name)
             db_table = db.table(table_name)
 
             stage_meta = db_table.get_table_metadata("curated")
@@ -78,6 +78,6 @@ class CatalogTransformEngine(BaseTransformEngine):
             glue_client.create_table(**spec)
             wr.athena.repair_table(table=table_name, database=db_name)
 
-            _logger.info(f"{db_name}.{table_name} updated")
+            _logger.info("%s.%s updated", db_name, table)
 
-        _logger.info(f"Finished updating {db_name}")
+        _logger.info("Finished updating %s", db_name)

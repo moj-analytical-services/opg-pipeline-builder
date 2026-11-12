@@ -9,7 +9,6 @@ import pandas as pd
 from dataengineeringutils3.s3 import read_json_from_s3
 from jinja2 import Template
 from mojap_metadata import Metadata
-from pydantic import Field
 
 from opg_pipeline_builder.transform_engines.transforms.base import BaseTransformations
 
@@ -19,8 +18,8 @@ _logger: logging.Logger = logging.getLogger(__name__)
 class PandasTransformations(BaseTransformations):  # type: ignore
     add_partition_column: bool = False
     attributes_file: str = ""
-    attributes: dict[Any, Any] = Field(default_factory=dict)
-    extract_header_values: dict[str, str] = Field(default_factory=dict)
+    attributes: dict[Any, Any] | None = None
+    extract_header_values: dict[str, str] | None = None
 
     @staticmethod
     def remove_columns_not_in_metadata(

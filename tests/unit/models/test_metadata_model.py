@@ -35,7 +35,8 @@ def create_column(
     """Create a Column instance with the given parameters."""
 
     allowed_values = allowed_values or []
-    etl_stages = etl_stages or ["raw", "curated"]
+    if etl_stages is None:
+        etl_stages = ["raw", "curated"]
 
     return m.Column.model_validate(
         {
@@ -195,7 +196,7 @@ class TestColumn:
 
     @pytest.mark.parametrize(
         ("etl_stage"),
-        [(["raw"]), (["curated"]), (["raw", "curated"]), ([])],
+        [(["raw"]), (["curated"]), (["raw", "curated"])],
     )
     def test_validate_etl_stage_valid(self, etl_stage: list[str]) -> None:
         """Test that valid ETL stages are accepted."""
@@ -239,14 +240,8 @@ class TestColumn:
         with pytest.raises(
             exc.InvalidStageError, match="ETL stages list cannot be empty"
         ):
-            m.Column(
-                name="name",
-                semantic_type="postcode",
-                etl_stages=[],
-                input_data_type="str",
-                output_data_type="str",
-            )
-        assert_log_record(caplog, "ETL stages list cannot be empty", "", "etl_stages")
+            create_column(etl_stages=[])
+        assert_log_record(caplog, "ETL stages list cannot be empty", field="etl_stages")
 
     @pytest.mark.parametrize(
         ("data_type"),

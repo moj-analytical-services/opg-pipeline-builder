@@ -284,7 +284,7 @@ class TestStructuredLogRecord:
         """Test that naive datetime fields are rejected."""
         with pytest.raises(ValidationError):
             StructuredLogRecord.model_validate(
-                {**self.valid_values, field: datetime(2024, 1, 2)}  # noqa: DTZ001
+                {**self.valid_values, field: datetime.fromisoformat("2024-01-02")}
             )
 
 

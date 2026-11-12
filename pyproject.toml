@@ -24,13 +24,14 @@ package = true
 [dependency-groups]
 dev = [
     "mypy==2.3.0",
+    "prek>=0.5.10",
     "ruff>=0.17.4",
-    "pre-commit>=4.6.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "duckdb==1.5.4",
+    "freezegun>=1.5.5",
     "moto==5.2.2",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",

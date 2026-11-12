@@ -8,4 +8,4 @@ jobs:
     name: Check pre commit
     permissions:
       contents: read
-    uses: ministryofjustice/data-engineering-github-actions/.github/workflows/reusable-pre-commit.yml@main
+    uses: ministryofjustice/data-engineering-github-actions/.github/workflows/reusable-pre-commit.yml@3040f4682ca515997a4177a29a02e8478b24669a

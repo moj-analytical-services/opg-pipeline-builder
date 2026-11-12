@@ -43,3 +43,14 @@ ALLOWED_DATA_TYPES: dict[str, type] = {
 ALLOWED_VALUE_FORMATS: tuple[str, ...] = ("datetime", "date")
 
 ALLOWED_FILE_FORMATS: tuple[str, ...] = ("parquet", "csv", "json", "xlsx")
+
+ALLOWED_STATUSES: tuple[str, ...] = (
+    "Processing",
+    "Error",
+    "Error (cleaned)",
+    "Complete",
+    "Deleted",
+    "Writing",
+    "Paused",
+    "Skipped",
+)

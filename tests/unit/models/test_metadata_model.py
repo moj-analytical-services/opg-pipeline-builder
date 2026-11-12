@@ -1268,7 +1268,7 @@ def test_output_metadata_as_csv() -> None:
                 "record_updated_datetime",
                 "triage_level2",
             ],
-            "Description": [np.NaN] * 26,
+            "Description": [np.nan] * 26,
             "Data Type": [
                 "<class 'str'>",
                 "<class 'str'>",

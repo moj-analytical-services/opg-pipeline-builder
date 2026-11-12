@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,8 @@ from tests.test_utils import assert_log_record, create_pipeline_config
 
 
 class TestPipelineConfig:
+    """Test suite for the PipelineConfig model."""
+
     def test_validate_name_valid(self) -> None:
         """Test the validation of a valid pipeline name."""
         with patch(
@@ -27,7 +30,9 @@ class TestPipelineConfig:
             ) as mock_valid,
             pytest.raises(
                 exc.InvalidPipelineNameError,
-                match="Pipeline name '1_invalid_name' is invalid: Invalid identifier.",
+                match=re.escape(
+                    "Pipeline name '1_invalid_name' is invalid: Invalid identifier."
+                ),
             ),
         ):
             create_pipeline_config(name="1_invalid_name")
@@ -36,8 +41,8 @@ class TestPipelineConfig:
         assert_log_record(
             caplog,
             message="Pipeline name '1_invalid_name' is invalid: Invalid identifier.",
-            process="Pipeline validation",
-            table="pipeline",
+            process="Validating model",
+            table="Pipeline config",
             field="name",
             stage="Processing",
         )
@@ -72,7 +77,9 @@ class TestPipelineConfig:
             ) as mock_valid,
             pytest.raises(
                 exc.InvalidPathError,
-                match="S3 path for field 'land_path' is invalid: Error found.",
+                match=re.escape(
+                    "S3 path for field 'land_path' is invalid: Error found."
+                ),
             ),
         ):
             create_pipeline_config(land_path="invalid_land_path")
@@ -80,8 +87,8 @@ class TestPipelineConfig:
         assert_log_record(
             caplog,
             message="S3 path for field 'land_path' is invalid: Error found.",
-            process="Pipeline validation",
-            table="pipeline",
+            process="Validating model",
+            table="Pipeline config",
             field="land_path",
             stage="Processing",
         )

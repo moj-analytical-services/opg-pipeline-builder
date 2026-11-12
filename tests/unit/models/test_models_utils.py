@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationInfo
 
 from opg_pipeline_builder.models import utils as u
+from tests.test_utils import assert_log_record
 
 
 def test_table_name_exists() -> None:
@@ -60,7 +61,7 @@ def test_render_s3_path_missing_args() -> None:
     assert mock_valid.call_count == 0
 
 
-def test_render_s3_path_invalid() -> None:
+def test_render_s3_path_invalid(caplog: pytest.LogCaptureFixture) -> None:
     """Test that an invalid S3 path raises a ValueError."""
     with (
         patch(
@@ -73,3 +74,4 @@ def test_render_s3_path_invalid() -> None:
             "s3://bucket-name/{{ env }}/{{ db }}/land", env="dev", db="test_db"
         )
     assert mock_render.call_count == 1
+    assert_log_record(caplog, "Invalid S3 path: Error Found", process="Render S3 path")

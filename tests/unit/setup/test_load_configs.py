@@ -14,6 +14,7 @@ from tests.test_utils import assert_log_record, create_pipeline_config, output_y
 def test_load_pipeline_config_success(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Test that the pipeline configuration is loaded successfully."""
     pipeline_config = create_pipeline_config()
     config_path = tmp_path / f"{pipeline_config.name}.yml"
     output_yaml_data(config_path, pipeline_config.model_dump(mode="json"))
@@ -22,11 +23,13 @@ def test_load_pipeline_config_success(
     assert_log_record(
         caplog,
         f"Loading configuration for pipeline '{pipeline_config.name}'",
+        process="Configuring",
         stage="Start",
     )
     assert_log_record(
         caplog,
         f"Configuration for pipeline '{pipeline_config.name}' loaded successfully",
+        process="Configuring",
         stage="End",
     )
 
@@ -34,24 +37,29 @@ def test_load_pipeline_config_success(
 def test_load_pipeline_config_file_not_found(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Test that loading a non-existent pipeline configuration raises FileNotFoundError."""
     pipeline_name = "non_existent_pipeline"
 
     with pytest.raises(FileNotFoundError):
         load_pipeline_config(tmp_path, pipeline_name)
 
     assert_log_record(
-        caplog, f"Loading configuration for pipeline '{pipeline_name}'", stage="Start"
+        caplog,
+        f"Loading configuration for pipeline '{pipeline_name}'",
+        process="Configuring",
+        stage="Start",
     )
     assert_log_record(
         caplog,
         f"Configuration for pipeline '{pipeline_name}' not found in {tmp_path}",
-        stage="End",
+        process="Configuring",
     )
 
 
 def test_load_pipeline_config_yaml_error(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Test that loading a pipeline configuration with YAML errors raises yaml.YAMLError."""
     pipeline_config = create_pipeline_config()
     config_path = tmp_path / f"{pipeline_config.name}.yml"
     output_yaml_data(config_path, pipeline_config.model_dump(mode="json"))
@@ -65,12 +73,13 @@ def test_load_pipeline_config_yaml_error(
     assert_log_record(
         caplog,
         f"Loading configuration for pipeline '{pipeline_config.name}'",
+        process="Configuring",
         stage="Start",
     )
     assert_log_record(
         caplog,
-        f"Failed to parse configuration for pipeline '{pipeline_config.name}'",
-        stage="End",
+        f"Failed to parse configuration for pipeline '{pipeline_config.name}': mocked error",
+        process="Configuring",
     )
 
 
@@ -80,20 +89,31 @@ def test_setup_run_config(caplog: pytest.LogCaptureFixture) -> None:
         "opg_pipeline_builder.setup.load_configs.load_pipeline_config",
         return_value=create_pipeline_config(),
     ):
-        run_config = setup_run_config(configs_folder=Path("."))
+        run_config = setup_run_config(configs_folder=Path())
 
     assert run_config.env == "test"
     assert run_config.name == "test_pipeline"
-    assert not "{{ db }}" in run_config.land_path
-    assert not "{{ env }}" in run_config.archive_path
+    assert "{{ db }}" not in run_config.land_path
+    assert "{{ env }}" not in run_config.archive_path
     assert "test" in run_config.curated_path
-    assert_log_record(caplog, "Setting up run configuration", stage="Start")
+    assert_log_record(
+        caplog, "Configuring pipeline", process="Configuring", stage="Start"
+    )
     assert_log_record(
         caplog,
-        "Loaded DAG settings: Running 'test_pipeline' pipeline in test",
-        stage="Processing",
+        "Loaded DAG settings",
+        process="Configuring",
+        table="settings",
     )
     assert_log_record(
-        caplog, "Loaded pipeline configuration for 'test_pipeline'", stage="Processing"
+        caplog,
+        "Loaded pipeline configuration",
+        process="Configuring",
+        table="pipeline",
     )
-    assert_log_record(caplog, "Run configuration set up successfully", stage="End")
+    assert_log_record(
+        caplog,
+        "Run configuration set up successfully",
+        process="Configuring",
+        stage="End",
+    )

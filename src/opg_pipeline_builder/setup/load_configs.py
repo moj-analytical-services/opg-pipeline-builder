@@ -8,7 +8,7 @@ from opg_pipeline_builder.models.pipeline_config import PipelineConfig
 from opg_pipeline_builder.models.run_config import RunConfig, create_run_config
 from opg_pipeline_builder.models.settings_config import SettingsConfig
 
-log = ModuleLogger(logger=getLogger(__name__))
+log = ModuleLogger(logger=getLogger(__name__), process="Configuring")
 
 
 def load_pipeline_config(configs_folder: Path, name: str) -> PipelineConfig:
@@ -36,7 +36,9 @@ def load_pipeline_config(configs_folder: Path, name: str) -> PipelineConfig:
         with (configs_folder / f"{name}.yml").open(encoding="utf-8") as config_file:
             config = yaml.safe_load(config_file)
     except yaml.YAMLError as exc:
-        log.error("Failed to parse configuration for pipeline '%s': %s", name, exc)
+        log.error(  # noqa: TRY400
+            "Failed to parse configuration for pipeline '%s': %s", name, exc
+        )
         raise
 
     pipeline_config = PipelineConfig(**config)
@@ -46,6 +48,14 @@ def load_pipeline_config(configs_folder: Path, name: str) -> PipelineConfig:
 
 
 def setup_run_config(configs_folder: Path) -> RunConfig:
+    """Set up the run configuration for the pipeline.
+
+    Args:
+        configs_folder (Path): The path to the folder containing the pipeline configuration files.
+
+    Returns:
+        RunConfig: The configured run settings for the pipeline.
+    """
     log.info("Configuring pipeline", process="Configuring", stage="Start")
 
     settings = SettingsConfig()
@@ -61,9 +71,9 @@ def setup_run_config(configs_folder: Path) -> RunConfig:
         settings=settings,
     )
 
-    : Running '%s' pipeline in %s",
-        settings.PIPELINE_NAME,
-        settings.ENV,
+    # : Running '%s' pipeline in %s",
+    #     settings.PIPELINE_NAME,
+    #     settings.ENV,
 
     log.info(
         "Run configuration set up successfully",

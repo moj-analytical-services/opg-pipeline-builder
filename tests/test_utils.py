@@ -54,16 +54,16 @@ def create_column(
             "default_value": default_value,
             **extra_fields,
         },
-        # context={"table_name": "test_table"},
+        context={"table_name": "test_table"},
     )
 
 
 def create_file_format(
     stage: str = "raw", file_format: str = "parquet"
 ) -> m.FileFormat:
+    """Create a FileFormat instance with the given stage and format."""
     return m.FileFormat.model_validate(
         {"stage": stage, "format": file_format},
-        # context={"table_name": "test_table"},
     )
 
 
@@ -74,12 +74,16 @@ def create_table_metadata(
     description: str = "description",
     **extra_fields: Any,
 ) -> m.TableMetaData:
-    return m.TableMetaData(
-        table_name=name,
-        description=description,
-        file_formats=file_formats,
-        columns=columns,
-        **extra_fields,
+    """Create a TableMetaData instance with the given parameters."""
+    return m.TableMetaData.model_validate(
+        {
+            "table_name": name,
+            "description": description,
+            "file_formats": file_formats,
+            "columns": columns,
+            **extra_fields,
+        },
+        context={"table_name": name},
     )
 
 
@@ -134,7 +138,8 @@ def assert_log_record(
     """Assert that a log message has the expected structured metadata."""
     record = next(record for record in caplog.records if record.getMessage() == message)
     if not record:
-        raise AssertionError(f"Log message '{message}' not found")
+        err = f"Log message '{message}' not found"
+        raise AssertionError(err)
     assert record.__dict__["custom_fields"] == CustomLogFields(
         process=process,
         table=table,

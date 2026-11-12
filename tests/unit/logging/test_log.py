@@ -1,4 +1,5 @@
 # pyright: reportPrivateUsage=false
+# pylint: disable=protected-access
 
 import contextvars
 import inspect
@@ -39,6 +40,9 @@ DEFAULT_ATHENA_PREFIX = "prefix/to/log/curated/"
 DEFAULT_ATHENA_DATABASE = "opg_test_logging"
 DEFAULT_ATHENA_TABLE = "test_logging_curated"
 DEFAULT_PIPELINE = "test_pipeline"
+DEFAULT_BATCH_SIZE = 500
+TEST_BATCH_SIZE = 5
+SMALL_BATCH_SIZE = 2
 
 
 ##################
@@ -79,12 +83,16 @@ def create_handler(apply_patches: bool = True, **overrides: Any) -> log.JsonlLog
         config_values(**{"batch_size": 2, **overrides})
     )
     with (
-        patch.object(log.JsonlLogHandler, "_validate_log_location")
-        if apply_patches
-        else nullcontext(),
-        patch.object(log.JsonlLogHandler, "_write_configuration_log")
-        if apply_patches
-        else nullcontext(),
+        (
+            patch.object(log.JsonlLogHandler, "_validate_log_location")
+            if apply_patches
+            else nullcontext()
+        ),
+        (
+            patch.object(log.JsonlLogHandler, "_write_configuration_log")
+            if apply_patches
+            else nullcontext()
+        ),
     ):
         return log.JsonlLogHandler(logging_config=config)
 
@@ -154,7 +162,7 @@ def simulate_atexit_shutdown(controller: log.LoggingController) -> None:
     )
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def reset_root_logger() -> Generator[None]:
     """Isolate test JSONL handlers while preserving host-owned root handlers."""
     root_logger = logging.getLogger()
@@ -180,7 +188,7 @@ def reset_root_logger() -> Generator[None]:
     root_logger.setLevel(original_level)
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def retire_test_handlers() -> Generator[None]:
     """Mark JSONL handlers created by a test as closed so the real atexit shutdown skips them.
 
@@ -214,7 +222,7 @@ def logging_configured() -> Generator[None]:
         root_logger.removeHandler(stand_in)
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def mock_athena_clients() -> Generator[None]:
     """Keep handler lifecycle tests independent of external Athena and Glue calls."""
     with (
@@ -439,6 +447,8 @@ class TestLoggingConfig:
 
 
 class TestJsonlLogHandler:
+    """Tests for the JSONL log handler."""
+
     def test_init(self, s3: boto3.client) -> None:
         """Test that the handler initializes correctly with default values."""
         with (
@@ -449,8 +459,8 @@ class TestJsonlLogHandler:
         ):
             handler = create_handler(apply_patches=False)
             assert handler._config.model_dump() == config_values(batch_size=2)
-            assert handler._batch_size == 2
-            assert handler._base_batch_size == 2
+            assert handler._batch_size == SMALL_BATCH_SIZE
+            assert handler._base_batch_size == SMALL_BATCH_SIZE
             assert handler._part_number == 0
             assert handler._writer_id
             assert handler._buffer == []
@@ -650,7 +660,7 @@ class TestJsonlLogHandler:
         assert (
             capsys.readouterr().err.count("flushed outside of LoggingController") == 1
         )
-        assert len(handler._buffer) == 2
+        assert len(handler._buffer) == SMALL_BATCH_SIZE
         warning = handler._buffer[-1]
         assert warning["log_level"] == "WARNING"
         assert warning["function"] == "flush"
@@ -714,7 +724,8 @@ class TestJsonlLogHandler:
     @pytest.mark.parametrize("count", [2, 3])
     def test_emit_buffers_and_flushes_at_threshold(self, count: int) -> None:
         """Below the threshold rows remain in order; at the threshold they are flushed."""
-        handler = create_handler(batch_size=3)
+        threshold = 3
+        handler = create_handler(batch_size=threshold)
         records = [
             create_log_record(message=f"event {number}") for number in range(count)
         ]
@@ -737,8 +748,8 @@ class TestJsonlLogHandler:
         assert [call.args for call in mock_record.call_args_list] == [
             (record, vars(record)["custom_fields"]) for record in records
         ]
-        assert mock_flush.call_count == int(count == 3)
-        assert handler._buffer == ([] if count == 3 else rows)
+        assert mock_flush.call_count == int(count == threshold)
+        assert handler._buffer == ([] if count == threshold else rows)
 
     @pytest.mark.parametrize("registration_fails", [False, True])
     def test_close_after_successful_flush(
@@ -761,9 +772,9 @@ class TestJsonlLogHandler:
             patch.object(
                 log.JsonlLogHandler,
                 "_register_logs_in_athena",
-                side_effect=RuntimeError("Athena unavailable")
-                if registration_fails
-                else None,
+                side_effect=(
+                    RuntimeError("Athena unavailable") if registration_fails else None
+                ),
             ) as mock_register,
         ):
             with (
@@ -974,15 +985,15 @@ class TestJsonlLogHandler:
 
         assert handler._buffer == []
         assert handler._part_number == 1
-        assert handler._batch_size == 5
+        assert handler._batch_size == TEST_BATCH_SIZE
 
         handler.emit(create_log_record(message="Fourth application event"))
 
         handler._flush_locked()
 
         assert handler._buffer == []
-        assert handler._part_number == 2
-        assert handler._batch_size == 5
+        assert handler._part_number == SMALL_BATCH_SIZE
+        assert handler._batch_size == TEST_BATCH_SIZE
 
         logs = read_jsonl_logs(s3)
 
@@ -991,7 +1002,8 @@ class TestJsonlLogHandler:
         assert log_1_key in logs
         log_1_records = logs[log_1_key]
 
-        assert len(log_1_records) == 4
+        expected_first_batch_size = 4
+        assert len(log_1_records) == expected_first_batch_size
         assert log_1_records[0]["message"] == "Logging configured successfully."
         assert log_1_records[1]["message"] == "First application event"
         assert log_1_records[2]["message"] == "Second application event"
@@ -1013,7 +1025,7 @@ class TestJsonlLogHandler:
         mock_put.assert_not_called()
         assert handler._buffer == []
         assert handler._part_number == 0
-        assert handler._batch_size == 5
+        assert handler._batch_size == TEST_BATCH_SIZE
 
     @pytest.mark.parametrize(
         ("exception"),
@@ -1049,7 +1061,7 @@ class TestJsonlLogHandler:
         mock_put.assert_called_once()
         assert handler._buffer == []
         assert handler._part_number == 1
-        assert handler._batch_size == 5
+        assert handler._batch_size == TEST_BATCH_SIZE
         assert handler._write_failures == 0
 
     @pytest.mark.parametrize(
@@ -1072,7 +1084,7 @@ class TestJsonlLogHandler:
             handler._flush_locked()
 
         assert handler._write_failures == 0
-        assert handler._batch_size == 5
+        assert handler._batch_size == TEST_BATCH_SIZE
         assert handler._buffer == buffered
         assert handler._part_number == 0
 
@@ -1121,9 +1133,7 @@ class TestJsonlLogHandler:
         mock_create_database.assert_not_called()
 
     def test_registration_reads_exactly_the_uploaded_keys(self) -> None:
-        """Test that the keys rebuilt at registration match the keys uploaded, and a failed upload does
-        not consume a part number.
-        """
+        """Test that registration keys match uploaded keys and failed uploads retain the part number."""
         handler = create_handler(batch_size=5)
         uploaded: list[str] = []
 
@@ -1176,7 +1186,8 @@ class TestJsonlLogHandler:
         with (
             patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError),
             pytest.raises(
-                RuntimeError, match="Attempted to write logs 4 times. Retries exceeded"
+                RuntimeError,
+                match=r"Attempted to write logs 4 times\. Retries exceeded",
             ),
         ):
             handler._flush_locked()
@@ -1216,7 +1227,7 @@ class TestJsonlLogHandler:
 
         try:
             try:
-                raise KeyError("missing_column")
+                raise KeyError("missing_column")  # noqa: EM101, TRY301
             except KeyError as cause:
                 error = ValueError("bad row")
                 error.add_note("while loading table_a")
@@ -1256,19 +1267,21 @@ class TestJsonlLogHandler:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test that long text is capped: the message keeps its start, the traceback keeps its end."""
-        monkeypatch.setattr(log, "_MAX_TEXT_LENGTH", 10)
+        monkeypatch.setattr(log, "_MAX_TEXT_LENGTH", 8)
         handler = create_handler(batch_size=5)
-        record = create_log_record(message="0123456789ABCDEF")
+        record = create_log_record(message="01234567ABCDEF")
         record.exc_info = (ValueError, ValueError("x"), None)
         record.exc_text = "Traceback line\nValueError: x"
 
         row = handler._record_to_row(record, vars(record)["custom_fields"])
 
-        assert row["message"] == "0123456789...[truncated 6 characters]..."
-        assert row["exception"] == "...[truncated 18 characters]...ueError: x"
+        assert row["message"] == "01234567...[truncated 6 characters]..."
+        assert row["exception"] == "...[truncated 20 characters]...Error: x"
 
 
 class TestLoggingController:
+    """Tests for the logging controller."""
+
     @pytest.fixture
     def third_party_handler(self) -> Generator[logging.Handler]:
         """A handler owned by someone else (e.g. Airflow or pytest) attached to the root logger."""
@@ -1278,6 +1291,7 @@ class TestLoggingController:
         logging.getLogger().removeHandler(handler)
 
     def create_controller(self) -> log.LoggingController:
+        """Create a controller with JSONL and console handlers."""
         logger = logging.getLogger()
         handler = create_handler(batch_size=5)
         handler.set_name(log._JSONL_HANDLER_NAME)
@@ -1289,6 +1303,7 @@ class TestLoggingController:
 
     @staticmethod
     def owned_handlers_removed(controller: log.LoggingController) -> bool:
+        """Check that the controller's handlers were removed from its logger."""
         return all(
             handler not in controller._logger.handlers
             for handler in controller._handlers
@@ -1306,7 +1321,7 @@ class TestLoggingController:
         """Test that the flush method raises an error if logging has been shut down."""
         controller = self.create_controller()
         controller._is_shutdown = True
-        with pytest.raises(RuntimeError, match="Logging has already been shut down."):
+        with pytest.raises(RuntimeError, match=r"Logging has already been shut down\."):
             controller.flush()
 
     def test_shutdown_only_closes_owned_handlers(
@@ -1470,7 +1485,7 @@ class TestConfigureLogging:
         assert root_logger.handlers.index(jsonl_handler) < root_logger.handlers.index(
             console_handler
         )
-        assert jsonl_handler._config.batch_size == 500
+        assert jsonl_handler._config.batch_size == DEFAULT_BATCH_SIZE
 
     @pytest.mark.parametrize(
         ("prefix_name", "invalid_prefix"),
@@ -1600,7 +1615,10 @@ class TestConfigureLogging:
 
 
 class TestModuleLogger:
+    """Tests for the module logger."""
+
     def test_rejects_extra_model_fields(self) -> None:
+        """Reject unexpected module logger fields."""
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             log.ModuleLogger.model_validate(
                 {
@@ -1805,8 +1823,9 @@ class TestModuleLogger:
             process="Logging",
             table="Original",
         )
+        error = ValueError("boom")
         with pytest.raises(ValueError, match="boom"), module_logger.with_table("Temp"):
-            raise ValueError("boom")
+            raise error
 
         with patch.object(logging.Logger, "info") as mock_info:
             module_logger.info("after")
@@ -2062,6 +2081,7 @@ class TestLoggingEndToEnd:
                 ("load", "error", "Load validation failed", "Processing", "col_a"),
                 ("load", "info", "Load finished", "End", ""),
             ]
+            manual_flush_index = 4
             for index, (name, method, message, stage, field) in enumerate(events):
                 frame = inspect.currentframe()
                 assert frame is not None
@@ -2081,7 +2101,7 @@ class TestLoggingEndToEnd:
                         message=message,
                     )
                 )
-                if index == 4:
+                if index == manual_flush_index:
                     controller.flush()
             controller.shutdown()
 
@@ -2117,8 +2137,9 @@ class TestLoggingEndToEnd:
         expect_shutdown_recorded: bool,
         expect_handler_removed: bool,
     ) -> None:
-        """Test that both ways of triggering shutdown flush pending logs identically, but leave
-        the controller/handler in different states afterward.
+        """Test that both shutdown triggers flush pending logs.
+
+        The controller and handler are left in different states afterward.
 
         `with controller:` (the recommended usage) calls LoggingController.shutdown() on exit,
         which removes the handler and records `_is_shutdown`. Falling back to the interpreter's
@@ -2206,8 +2227,7 @@ class TestLoggingEndToEnd:
     def test_shutdown_trigger_raises_on_failed_final_flush(
         self, s3: boto3.client, trigger: str, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Test that a failed final flush is never silently discarded, however shutdown is
-        triggered.
+        """Test that a failed final flush is never silently discarded.
 
         Via the context manager this fails the task itself (the recommended, fatal path); via
         the atexit-triggered logging.shutdown() fallback it's only reported to stderr, not fatal
@@ -2224,7 +2244,7 @@ class TestLoggingEndToEnd:
                 "Pipeline started", process="E2E test", table="table_a", stage="Start"
             )
 
-            with (
+            with (  # noqa: PT012
                 patch.object(log.JsonlLogHandler, "_put_object", side_effect=OSError()),
                 pytest.raises(RuntimeError, match="Failed to write"),
             ):
@@ -2274,8 +2294,9 @@ class TestLoggingEndToEnd:
             assert jsonl_handler._write_failures == 1
 
             # Repeated failures eventually exceed the retry threshold and raise through flush().
-            with pytest.raises(
-                RuntimeError, match="Attempted to write logs 4 times. Retries exceeded"
+            with pytest.raises(  # noqa: PT012
+                RuntimeError,
+                match=r"Attempted to write logs 4 times\. Retries exceeded",
             ):
                 for _ in range(3):
                     controller.flush()
@@ -2302,8 +2323,9 @@ class TestLoggingEndToEnd:
         controller.shutdown()
 
     def test_multithreaded_logging(self, s3: boto3.client) -> None:
-        """Test that multiple threads writing through the same handler produce exactly the
-        expected records, with none lost or duplicated, and sequential, gap-free part numbers.
+        """Test that multiple threads produce the expected records.
+
+        No records are lost or duplicated, and part numbers are sequential and gap-free.
         """
         worker_count = 3
         messages_per_worker = 5
@@ -2320,7 +2342,9 @@ class TestLoggingEndToEnd:
                 )
                 for message_number in range(messages_per_worker):
                     worker_logger.info(
-                        f"worker-{worker_number}-{message_number}",
+                        "worker-%s-%s",
+                        worker_number,
+                        message_number,
                         table="table_a",
                         stage="Processing",
                     )
@@ -2413,8 +2437,9 @@ class TestLoggingEndToEnd:
     def test_concurrent_writers_in_same_run_register_only_their_own_records(
         self, s3: boto3.client
     ) -> None:
-        """Test that two writers (e.g. two processes) in the same run each register only their own
-        objects, so every record lands in Athena exactly once even though they share a run prefix.
+        """Test that two writers in the same run each register only their own objects.
+
+        Every record lands in Athena exactly once even though the writers share a run prefix.
 
         Writers are attached to non-propagating named loggers to simulate separate processes, so the
         root-level configured check is satisfied with a stand-in.
@@ -2531,7 +2556,7 @@ class TestLoggingEndToEnd:
                     except exc.LoggingNotConfiguredError:
                         pass  # Handlers already detached from root.
                     except RuntimeError as error:
-                        assert "already been closed" in str(error)  # Raced the close.
+                        assert "already been closed" in str(error)  # noqa: PT017
                     message_number += 1
             except BaseException as error:  # noqa: BLE001
                 unexpected_errors.append(error)
@@ -2609,11 +2634,11 @@ class TestLoggingEndToEnd:
             with controller:
                 try:
                     try:
-                        raise KeyError("missing_column")
+                        raise KeyError("missing_column")  # noqa: EM101, TRY301
                     except KeyError as cause:
-                        raise ValueError("bad row") from cause
+                        raise ValueError("bad row") from cause  # noqa: EM101, TRY003
                 except ValueError:
-                    module_logger.error("Load failed", exc_info=True)
+                    module_logger.error("Load failed", exc_info=True)  # noqa: G201
                 module_logger.info("Load finished", stage="End")
 
         logs = read_jsonl_logs(
@@ -2633,9 +2658,7 @@ class TestLoggingEndToEnd:
     def test_two_pipeline_runs_with_different_attempt_numbers_do_not_collide(
         self, s3: boto3.client
     ) -> None:
-        """Test that two runs for the same pipeline/data_delivery_period but different attempt_no
-        write to distinct S3 partitions without colliding or mixing records.
-        """
+        """Test two runs for the same pipeline/data_delivery_period."""
         expected = {}
         with freeze_time("2024-01-02T00:00:00Z"):
             for attempt, message in [

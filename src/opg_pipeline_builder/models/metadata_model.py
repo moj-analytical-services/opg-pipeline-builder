@@ -7,8 +7,10 @@ from typing import Any
 import pandas as pd
 import polars as pl
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
+    Field,
     PrivateAttr,
     ValidationInfo,
     field_validator,
@@ -35,7 +37,7 @@ class Column(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    column_name: str
+    column_name: str = Field(validation_alias=AliasChoices("column_name", "name"))
     description: str = ""
     semantic_type: str
     etl_stages: list[str]
@@ -116,7 +118,8 @@ class Column(BaseModel):
 
     @model_validator(mode="after")
     def set_table_name(self, info: ValidationInfo) -> "Column":
-        tbl_name = info.context.get("table_name")
+        """Set the table name from context, preserving it during nested revalidation."""
+        tbl_name = table_name(info) if info.context is not None else self._table_name
         if not tbl_name:
             err = "Table name is not provided in the context"
             log.error(err, table=table_name(info), field="table_name")
@@ -126,7 +129,7 @@ class Column(BaseModel):
 
     @model_validator(mode="after")
     def _partition_and_composite_keys_not_nullable(
-        self, info: ValidationInfo
+        self,
     ) -> "Column":
         """Ensure that partition and composite key columns are not nullable."""
         if (self.is_composite_key or self.is_partition) and self.nullable:
@@ -136,7 +139,7 @@ class Column(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _allowed_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
+    def _allowed_values_match_input_data_type(self) -> "Column":
         """Ensure that allowed values match the input data type."""
         if self.allowed_values:
             if self.input_data_type in (str, int):
@@ -151,7 +154,7 @@ class Column(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _default_values_match_input_data_type(self, info: ValidationInfo) -> "Column":
+    def _default_values_match_input_data_type(self) -> "Column":
         """Ensure that default values match the input data type."""
         if self.default_value is not None:
             if self.input_data_type in (str, int):
@@ -241,7 +244,7 @@ class TableMetaData(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    table_name: str
+    table_name: str = Field(validation_alias=AliasChoices("table_name", "name"))
     description: str
     file_formats: list[FileFormat]
     columns: list[Column]
@@ -353,7 +356,7 @@ class TableMetaData(BaseModel):
             if format_obj.stage == stage_name:
                 return format_obj
 
-        err = f"No file format metadata is configured for stage '{stage_name}' for table '{self.name}'"
+        err = f"No file format metadata is configured for stage '{stage_name}' for table '{self.table_name}'"
         log.error(
             err, process="Get file format", table=self.table_name, field="file_format"
         )
@@ -372,7 +375,7 @@ class TableMetaData(BaseModel):
         return [column for column in self.columns if column.exists_in_stage(stage_name)]
 
     def get_column(self, name: str) -> Column:
-        """Get the definition of a specific column from the metadata
+        """Get the definition of a specific column from the metadata.
 
         Args:
             name (str): The name of the column to be returned
@@ -394,6 +397,8 @@ class TableMetaData(BaseModel):
 
 
 class MetaData(BaseModel):
+    """Metadata for the entire pipeline, including tables and their columns."""
+
     model_config = ConfigDict(extra="forbid")
 
     pipeline: str
@@ -530,7 +535,14 @@ def load_metadata(metadata_path: Path, pipeline_name: str) -> MetaData:
             log.info(msg, process="Load metadata", table=file.stem)
 
             metadata_file = json.load(json_file)
-            pipeline_metadata[file.stem] = TableMetaData.model_validate(metadata_file)
+            pipeline_metadata[file.stem] = TableMetaData.model_validate(
+                metadata_file,
+                context={
+                    "table_name": metadata_file.get(
+                        "table_name", metadata_file.get("name", file.stem)
+                    )
+                },
+            )
 
     log.info("Finished loading metadata.", process="Load metadata", stage="End")
     return MetaData(pipeline=pipeline_name, tables=pipeline_metadata)

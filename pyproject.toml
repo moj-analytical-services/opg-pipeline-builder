@@ -22,13 +22,16 @@ dependencies = [
 [tool.uv]
 package = true
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "duckdb==1.5.4",
     "mypy==2.3.0",
-    "pre-commit>=4.6.0",
+    "prek>=0.5.10",
+    "ruff>=0.17.4",
 ]
+
+[project.optional-dependencies]
 test = [
+    "duckdb==1.5.4",
     "freezegun>=1.5.5",
     "moto==5.2.2",
     "pytest==9.1.1",
@@ -62,6 +65,15 @@ plugins = ["pydantic.mypy"]
 
 [tool.ruff]
 exclude = ["typings", "playground"]
+force-exclude = true
+# Legacy code pending rewrite.
+extend-exclude = [
+    "src/opg_pipeline_builder/transform_engines",
+    "src/opg_pipeline_builder/utils",
+    "src/opg_pipeline_builder/database.py",
+    "src/opg_pipeline_builder/transforms.py",
+    "src/opg_pipeline_builder/validator.py",
+]
 
 [tool.ruff.lint]
 select = [
@@ -134,7 +146,12 @@ ignore = [
 "tests/*" = [
     "ARG", # some arguments are unused in tests functions but useful (e.g. mocks)
     "S101", # asserts are OK for tests
-    "SLF001" # accessing private members is OK for tests
+    "SLF001", # accessing private members is OK for tests
+    "FBT001", # Boolean-typed positional argument in function definition
+    "FBT002", # Boolean-typed keyword argument in function definition
+    "PLR0913", # too many arguments in function definition
+    "PLR0917", # too many positional arguments in function definition
+    "PLR2004", # Magic numbers are allowed in tests
 ]
 
 [tool.ruff.lint.pydocstyle]

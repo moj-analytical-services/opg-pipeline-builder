@@ -20,6 +20,7 @@ dependencies = [
 
 [tool.uv]
 package = true
+required-version = ">=0.9.17"
 exclude-newer = "7 days"
 
 [dependency-groups]
@@ -39,24 +40,19 @@ test = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src --cov-report=term-missing"
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=95"
 
-[tool.lint.coverage.paths]
-source = ["src", "tests"]
-
-[tool.lint.coverage.run]
+[tool.coverage.run]
 branch = true
-source = ["src", "tests"]
+source = ["src"]
 
-[tool.lint.coverage.report]
+[tool.coverage.report]
 show_missing = true
+include_namespace_packages = true
 
 [tool.mypy]
 strict = true
-disallow_untyped_defs = true
-exclude = "migrations|dist|build|typings"
 explicit_package_bases = true
-warn_unused_ignores = true
 show_error_codes = true
 mypy_path = "src"
 ignore_missing_imports = true
@@ -66,7 +62,6 @@ plugins = ["pydantic.mypy"]
 [tool.ruff]
 exclude = ["typings", "playground"]
 force-exclude = true
-# Legacy code pending rewrite.
 extend-exclude = [
     "src/opg_pipeline_builder/transform_engines",
     "src/opg_pipeline_builder/utils",
@@ -77,25 +72,8 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-extend-select = ["E"]
+extend-select = ["E", "B", "UP", "SIM", "I", "PT", "RUF"]
 ignore = ["E501"]
-
-[tool.ruff.lint.per-file-ignores]
-"docs/conf.py" = [
-    "A001", # redefine some builtins (like "copyright") is OK in docs
-]
-"noxfile.py" = [
-    "D402" # repeating the name of the function is OK for nox since it's to display it to the user
-]
-"tests/*" = [
-    "ARG", # some arguments are unused in tests functions but useful (e.g. mocks)
-    "S101", # asserts are OK in tests
-    "SLF001", # accessing private members is OK in tests
-    "FBT001", # Boolean-typed positional argument in function definition
-    "FBT002", # Boolean-typed keyword argument in function definition
-    "PLR0913", # too many arguments in function definition
-    "PLR0917", # too many positional arguments in function definition
-]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -108,13 +86,3 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
-[tool.lint.isort]
-profile = "black"
-line_length = 88
-known_first_party = ["src", "tests"]
-
-[tool.lint.bandit]
-skips = [
-    "B101", # assert used
-]

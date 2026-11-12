@@ -1330,6 +1330,7 @@ class TestJsonlLogHandler:
         """Dump remaining rows and raise without registration when the final flush fails."""
         handler = create_handler()
         handler._buffer = [{"A": "B"}]
+        assert handler._buffer == [{"A": "B"}]
 
         with (
             patch.object(handler, "_locked") as locked,
@@ -1341,7 +1342,6 @@ class TestJsonlLogHandler:
                 RuntimeError, match=re.escape("Failed to write 1 log records to S3.")
             ),
         ):
-            assert handler._buffer == [{"A": "B"}]
             handler.close()
 
         locked.assert_called_once()

@@ -143,7 +143,7 @@ class RunTracker(BaseModel):
         return value
 
 
-def create_run_tracker(  # noqa: PLR0913, PLR0917
+def create_run_tracker(
     pipeline_name: str,
     data_delivery_period: datetime,
     attempt_no: int,

@@ -8,4 +8,4 @@ jobs:
     name: YAML lint
     permissions:
       contents: read
-    uses: ministryofjustice/data-engineering-github-actions/.github/workflows/reusable-yaml-lint.yml@main
+    uses: ministryofjustice/data-engineering-github-actions/.github/workflows/reusable-yaml-lint.yml@ace450d0fa64b84ea2db574e7933d374716fab8b

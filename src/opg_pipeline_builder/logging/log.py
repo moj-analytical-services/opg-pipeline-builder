@@ -301,7 +301,7 @@ class JsonlLogHandler(logging.Handler):
         The function name and line number are taken from the calling frame so they point at the
         code that generated the record.
         """
-        caller = sys._getframe(1)  # noqa: SLF001  # pylint: disable=W0212
+        caller = sys._getframe(1)  # pylint: disable=W0212
         return self._build_row(
             message=message,
             exception=exception,
@@ -398,7 +398,7 @@ class JsonlLogHandler(logging.Handler):
             self._put_object(key, body)
         except (BotoCoreError, ClientError, OSError) as error:
             self._write_failures += 1
-            print(  # noqa: T201
+            print(
                 f"Failed to write a batch of logs to s3://{self._config.bucket}/{key} "
                 f"(failure_count={self._write_failures}). Error: {error}",
                 file=sys.stderr,
@@ -477,13 +477,13 @@ class JsonlLogHandler(logging.Handler):
 
     def _dump_unwritten_records(self) -> None:
         """Print records that could not be uploaded to stderr, so the task log still holds them."""
-        print(  # noqa: T201
+        print(
             f"ERROR: {len(self._buffer)} log records could not be written to "
             f"s3://{self._config.bucket}/{self._config.log_store_prefix}. Dumping records:",
             file=sys.stderr,
         )
         for row in self._buffer:
-            print(u.to_jsonl_line(row), file=sys.stderr)  # noqa: T201
+            print(u.to_jsonl_line(row), file=sys.stderr)
         sys.stderr.flush()
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -528,7 +528,7 @@ class JsonlLogHandler(logging.Handler):
                 self._flush_locked()
                 if self._buffer:
                     err = f"Failed to write {len(self._buffer)} log records to S3."
-                    raise RuntimeError(err)  # noqa: TRY301
+                    raise RuntimeError(err)
             except Exception:
                 self._dump_unwritten_records()
                 raise
@@ -548,7 +548,7 @@ class JsonlLogHandler(logging.Handler):
             if self._closed or self._unmanaged_flush_warned:
                 return
             self._unmanaged_flush_warned = True
-            print(_UNMANAGED_FLUSH_WARNING, file=sys.stderr, flush=True)  # noqa: T201
+            print(_UNMANAGED_FLUSH_WARNING, file=sys.stderr, flush=True)
             self._buffer.append(
                 self._internal_record(
                     log_level="WARNING",
@@ -623,8 +623,8 @@ class LoggingController:
         for handler in self._handlers:
             if isinstance(handler, JsonlLogHandler):
                 try:
-                    with handler._locked():  # noqa: SLF001  # pylint: disable=W0212
-                        handler._flush_locked()  # noqa: SLF001  # pylint: disable=W0212
+                    with handler._locked():  # pylint: disable=W0212
+                        handler._flush_locked()  # pylint: disable=W0212
                 except Exception as flush_error:  # pylint: disable=W0718
                     err = f"Failed to flush handler {handler}: {flush_error}"
                     raise RuntimeError(err) from flush_error
@@ -659,7 +659,7 @@ class LoggingController:
             raise first_error
 
 
-def configure_logging(  # noqa: PLR0917 PLR0913
+def configure_logging(
     bucket: str,
     log_store_prefix: str,
     athena_prefix: str,
@@ -789,7 +789,7 @@ class ModuleLogger(BaseModel):
         table_override = self._table_override.get()
         return self.table if table_override is None else table_override
 
-    def error(  # noqa: PLR0913
+    def error(
         self,
         message: str,
         *args: object,

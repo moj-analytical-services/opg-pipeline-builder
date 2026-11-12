@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import traceback
 import uuid
 from collections.abc import Generator, Sequence
@@ -11,7 +12,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import awswrangler as wr
 import boto3
@@ -22,6 +23,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PlainSerializer,
     PrivateAttr,
     TypeAdapter,
     ValidationInfo,
@@ -30,15 +32,15 @@ from pydantic import (
 )
 
 from opg_pipeline_builder.logging import log_exceptions as exc
-from opg_pipeline_builder.logging import logging_utils as u
-from opg_pipeline_builder.validation.validators import is_valid_identifier
+from opg_pipeline_builder.logging import log_utils as u
+from opg_pipeline_builder.validation import validation_exceptions as vexc
+from opg_pipeline_builder.validation import validators as v
 
 _JSONL_HANDLER_NAME = "json_handler"
 _CONSOLE_HANDLER_NAME = "console_handler"
 _S3_RETRY_CONFIG = Config(retries={"mode": "standard", "max_attempts": 5})
 _CONFIGURE_LOCK = threading.Lock()  # Ensures thread-safe configuration
 _MAX_TEXT_LENGTH = 32_768  # Caps the message and exception text written to JSONL
-_DATETIME_JSON = TypeAdapter(datetime)
 _UNMANAGED_FLUSH_WARNING = (
     "JsonlLogHandler is being flushed outside of LoggingController. Use "
     "'with configure_logging(...) as controller:' for proper management of the JSONL handler."
@@ -47,20 +49,35 @@ _UNMANAGED_FLUSH_WARNING = (
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 ProcessStage = Literal["Start", "Processing", "End"]
 
+_JsonDatetime = Annotated[
+    datetime, PlainSerializer(u.format_datetime, return_type=str, when_used="json")
+]
+_DATETIME_JSON = TypeAdapter(_JsonDatetime)
+
+_JsonTimestamp = Annotated[
+    float,
+    Field(allow_inf_nan=False),
+    PlainSerializer(
+        lambda value: u.format_datetime(datetime.fromtimestamp(value, tz=UTC)),
+        return_type=str,
+        when_used="json",
+    ),
+]
+
 
 class StructuredLogRecord(BaseModel):
     """Pydantic model representing a structured log record written to JSONL."""
 
     pipeline: str
     run_id: str
-    data_delivery_period: datetime
+    data_delivery_period: _JsonDatetime
     attempt_no: int
     logger_name: str
     module: str
     function: str
     line_number: int
     log_level: LogLevel
-    log_timestamp: datetime
+    log_timestamp: _JsonTimestamp
     process: str
     table: str
     field: str
@@ -105,12 +122,23 @@ class LoggingConfig(BaseModel):
     athena_database_name: str
     athena_table_name: str
     pipeline: str
-    data_delivery_period: datetime
-    attempt_no: int
+    data_delivery_period: _JsonDatetime
+    attempt_no: int = Field(strict=True)
     run_id: str
     batch_size: int = Field(strict=True)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @property
+    def partitions(self) -> dict[str, str | int]:
+        """Construct the S3 partition path based on the current configuration."""
+        return {
+            "data_delivery_period": _DATETIME_JSON.dump_python(
+                self.data_delivery_period, mode="json"
+            ),
+            "attempt_no": self.attempt_no,
+            "run_id": self.run_id,
+        }
 
     @model_validator(mode="after")
     def validate_s3_prefixes(self) -> "LoggingConfig":
@@ -120,19 +148,31 @@ class LoggingConfig(BaseModel):
         the location of the log store prefix. But the log store prefix must not be
         the same as, or nested inside, the Athena prefix.
         """
-        u.validate_s3_prefix(self.log_store_prefix, "log_store_prefix", self.bucket)
-        u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
-        u.validate_prefix_layout(self.log_store_prefix, self.athena_prefix)
+        errors = []
+        errors.append(
+            u.validate_s3_prefix(self.log_store_prefix, "log_store_prefix", self.bucket)
+        )
+        errors.append(
+            u.validate_s3_prefix(self.athena_prefix, "athena_prefix", self.bucket)
+        )
+        errors.append(
+            u.validate_prefix_layout(self.log_store_prefix, self.athena_prefix)
+        )
+        errors = [e for e in errors if e]
+        if errors:
+            raise exc.InvalidPrefixError(
+                "Validating StructuredLogRecord: " + " ".join(errors)
+            )
         return self
 
     @field_validator("athena_database_name", "athena_table_name")
     @classmethod
     def validate_athena_db_and_table(cls, value: str, info: ValidationInfo) -> str:
         """Require Athena database and table names to be valid identifiers."""
-        identifier_error = is_valid_identifier(value)
+        identifier_error = v.is_valid_identifier(value)
         if identifier_error:
-            err = f"Validating StructuredLogRecord: {identifier_error}: '{info.field_name}.'"
-            raise ValueError(err)
+            err = f"Validating StructuredLogRecord: '{info.field_name}': {identifier_error}"
+            raise vexc.InvalidIdentifierError(err)
         return value
 
     @field_validator("pipeline", "run_id")
@@ -141,24 +181,22 @@ class LoggingConfig(BaseModel):
         """Require non-empty run context identifiers."""
         if not u.not_empty(value):
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be non-empty."
-            raise ValueError(err)
+            raise exc.InvalidRunIdentifierError(err)
         return value
 
     @field_validator("data_delivery_period")
     @classmethod
-    def validate_datetimes_are_timezone_aware(
-        cls, value: datetime, info: ValidationInfo
-    ) -> datetime:
+    def validate_datetimes(cls, value: datetime, info: ValidationInfo) -> datetime:
         """Require timezone-aware datetimes and normalize them to UTC."""
-        if not u.is_timezone_aware(value):
+        if not v.is_timezone_aware(value):
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be timezone-aware."
-            raise ValueError(err)
+            raise vexc.InvalidDatetimeError(err)
         return value.astimezone(UTC)
 
     @field_validator("attempt_no", "batch_size")
     @classmethod
-    def validate_attempt_no(cls, value: int, info: ValidationInfo) -> int:
-        """Require a positive run attempt number."""
+    def validate_attempt_and_batch(cls, value: int, info: ValidationInfo) -> int:
+        """Require positive run attempt numbers and batch sizes."""
         if value < 1:
             err = f"Validating StructuredLogRecord: '{info.field_name}' must be >=1."
             raise ValueError(err)
@@ -215,50 +253,6 @@ class JsonlLogHandler(logging.Handler):
             err = f"Failed to write marker object to s3://{self._config.bucket}/{key}: {error}"
             raise RuntimeError(err) from error
 
-    def _build_row(
-        self, *, message: str, exception: str = "", **fields: Any
-    ) -> dict[str, Any]:
-        """Generate a structured log record and return it as a JSON-serializable dictionary."""
-        return StructuredLogRecord(
-            pipeline=self._config.pipeline,
-            run_id=self._config.run_id,
-            data_delivery_period=self._config.data_delivery_period,
-            attempt_no=self._config.attempt_no,
-            message=u.truncate_text(message, _MAX_TEXT_LENGTH),
-            exception=u.truncate_text(exception, _MAX_TEXT_LENGTH, keep_end=True),
-            **fields,
-        ).model_dump(mode="json")
-
-    def _internal_record(
-        self,
-        *,
-        log_level: LogLevel,
-        process: str,
-        process_stage: ProcessStage,
-        message: str,
-        exception: str = "",
-    ) -> dict[str, Any]:
-        """Build a validated row for a record generated by the logging module itself.
-
-        The function name and line number are taken from the calling frame so they point at the
-        code that generated the record.
-        """
-        caller = sys._getframe(1)  # noqa: SLF001  # pylint: disable=W0212
-        return self._build_row(
-            logger_name=logging.getLogger().name,
-            module="logging.log",
-            function=caller.f_code.co_name,
-            line_number=caller.f_lineno,
-            log_level=log_level,
-            log_timestamp=datetime.now(tz=UTC),
-            process=process,
-            table="",
-            field="",
-            process_stage=process_stage,
-            message=message,
-            exception=exception,
-        )
-
     def _write_configuration_log(self) -> None:
         """Write a log record indicating that logging has been configured successfully."""
         self._buffer.append(
@@ -267,7 +261,7 @@ class JsonlLogHandler(logging.Handler):
                 process="Configuration",
                 process_stage="End",
                 message="Logging configured successfully.",
-            )
+            ).model_dump(mode="json")
         )
 
     @contextmanager
@@ -279,66 +273,78 @@ class JsonlLogHandler(logging.Handler):
         finally:
             self.release()
 
-    def emit(self, record: logging.LogRecord) -> None:
-        """Buffer one record, uploading a batch to S3 when the buffer is full.
-
-        Raises:
-            ValueError: If 'custom_fields' is present but is not a CustomLogFields instance.
-            RuntimeError: If handler has already been closed, so records are never silently lost.
-        """
-        # Skips logging calls without custom_fields which are required for the JSONL log format.
-        custom_fields = getattr(record, "custom_fields", None)
-        if not custom_fields:
-            return
-        if not isinstance(custom_fields, CustomLogFields):
-            err = "Custom log fields is not an instance of CustomLogFields."
-            raise TypeError(err)
-
-        row = self._record_to_row(record, custom_fields)
-
-        with self._locked():
-            if self._closed:
-                err = "Cannot write log record: the JSONL log handler has already been closed."
-                raise RuntimeError(err)
-            self._buffer.append(row)
-            if len(self._buffer) >= self._batch_size:
-                self._flush_locked()
-
-    def close(self) -> None:
-        """Upload all remaining log records and close the handlers.
-
-        Fails the pipeline if it was unable to upload or register all run logs. The closed
-        check and the closed flag are both handled under the handler lock, so concurrent
-        close() calls (e.g. two threads shutting down together) upload and register the run's
-        logs exactly once.
-        """
-        with self._locked():
-            if self._closed:
-                return
-
-            try:
-                self._flush_locked()
-                if self._buffer:
-                    err = f"Failed to write {len(self._buffer)} log records to S3."
-                    raise RuntimeError(err)  # noqa: TRY301
-            except Exception:
-                self._dump_unwritten_records()
-                raise
-            else:
-                self._register_logs_in_athena()
-            finally:
-                super().close()
-
-    def _dump_unwritten_records(self) -> None:
-        """Print records that could not be uploaded to stderr, so the task log still holds them."""
-        print(  # noqa: T201
-            f"ERROR: {len(self._buffer)} log records could not be written to "
-            f"s3://{self._config.bucket}/{self._config.log_store_prefix}. Dumping records:",
-            file=sys.stderr,
+    def _build_row(
+        self, *, message: str, exception: str = "", **fields: Any
+    ) -> StructuredLogRecord:
+        """Generate a structured log record and return it as a JSON-serializable dictionary."""
+        return StructuredLogRecord(
+            pipeline=self._config.pipeline,
+            run_id=self._config.run_id,
+            data_delivery_period=self._config.data_delivery_period,
+            attempt_no=self._config.attempt_no,
+            message=u.truncate_text(message, _MAX_TEXT_LENGTH),
+            exception=u.truncate_text(exception, _MAX_TEXT_LENGTH, keep_end=True),
+            **fields,
         )
-        for row in self._buffer:
-            print(u.to_jsonl_line(row), file=sys.stderr)  # noqa: T201
-        sys.stderr.flush()
+
+    def _internal_record(
+        self,
+        *,
+        log_level: LogLevel,
+        process: str,
+        process_stage: ProcessStage,
+        message: str,
+        exception: str = "",
+    ) -> StructuredLogRecord:
+        """Build a validated row for a record generated by the logging module itself.
+
+        The function name and line number are taken from the calling frame so they point at the
+        code that generated the record.
+        """
+        caller = sys._getframe(1)  # noqa: SLF001  # pylint: disable=W0212
+        return self._build_row(
+            message=message,
+            exception=exception,
+            logger_name=logging.getLogger().name,
+            module="logging.log",
+            function=caller.f_code.co_name,
+            line_number=caller.f_lineno,
+            log_level=log_level,
+            log_timestamp=time.time(),
+            process=process,
+            table="",
+            field="",
+            process_stage=process_stage,
+        )
+
+    def _record_to_row(
+        self, record: logging.LogRecord, custom_fields: CustomLogFields
+    ) -> dict[str, Any]:
+        """Convert a logging.LogRecord to a dictionary suitable for JSONL.
+
+        If the record carries exception info, the formatted traceback (including chained causes,
+        notes and exception group members) is written to the 'exception' column. It is cached on
+        record.exc_text, sothe console handler prints the same text without formatting it again.
+        """
+        if record.exc_info and record.exc_info[0] is not None:
+            exception = record.exc_text or logging.Formatter().formatException(
+                record.exc_info
+            )
+            record.exc_text = exception
+        else:
+            exception = ""
+
+        return self._build_row(
+            logger_name=record.name,
+            module=record.module,
+            function=record.funcName,
+            line_number=record.lineno,
+            log_level=record.levelname,
+            log_timestamp=record.created,
+            **custom_fields.model_dump(),
+            message=record.getMessage(),
+            exception=exception,
+        ).model_dump(mode="json")
 
     def _create_key_directory(self, prefix: str) -> str:
         """Generate the S3 key directory, excluding the filename.
@@ -346,16 +352,9 @@ class JsonlLogHandler(logging.Handler):
         Partition values are percent-encoded so characters such as ':', '+' and '/' cannot create
         extra path segments or ambiguous keys.
         """
-        partitions = {
-            "data_delivery_period": _DATETIME_JSON.dump_python(
-                self._config.data_delivery_period, mode="json"
-            ),
-            "attempt_no": self._config.attempt_no,
-            "run_id": self._config.run_id,
-        }
         return f"{prefix.rstrip('/')}/" + "".join(
             f"{name}={u.encode_partition_value(value)}/"
-            for name, value in partitions.items()
+            for name, value in self._config.partitions.items()
         )
 
     def _object_key(self, part_number: int) -> str:
@@ -368,46 +367,6 @@ class JsonlLogHandler(logging.Handler):
         return (
             f"{self._create_key_directory(self._config.log_store_prefix)}"
             f"{os.getpid()}_{self._writer_id}_{part_number}.jsonl"
-        )
-
-    def _register_logs_in_athena(self) -> None:
-        """Append the JSONL objects written by this handler to the curated Athena dataset.
-
-        Only the exact objects written by this handler are read, so concurrent writers in the
-        same run (e.g. other processes) never register each other's records. The Glue database
-        is created here if it does not exist.
-
-        Keys are rebuilt rather than tracked: _part_number only increments after a successful
-        upload (a failed upload retries under the same part number), so parts 0..n-1 are exactly
-        the objects written.
-        """
-        if self._part_number == 0:
-            return
-
-        logs = wr.s3.read_json(
-            path=[
-                f"s3://{self._config.bucket}/{self._object_key(part)}"
-                for part in range(self._part_number)
-            ],
-            lines=True,
-            dtype=False,
-            convert_dates=False,
-        )
-        # Pydantic omits fractional seconds when they are zero, so the format varies between rows.
-        logs["log_timestamp"] = pd.to_datetime(
-            logs["log_timestamp"], utc=True, format="ISO8601"
-        )
-        wr.catalog.create_database(self._config.athena_database_name, exist_ok=True)
-
-        wr.s3.to_parquet(
-            df=logs,
-            path=f"s3://{self._config.bucket}/{self._config.athena_prefix}",
-            dataset=True,
-            mode="append",
-            database=self._config.athena_database_name,
-            table=self._config.athena_table_name,
-            partition_cols=["data_delivery_period", "attempt_no", "run_id"],
-            dtype=u.ATHENA_COLUMN_TYPES,
         )
 
     def _put_object(self, key: str, body: bytes) -> None:
@@ -460,7 +419,7 @@ class JsonlLogHandler(logging.Handler):
                         f"(failure_count={self._write_failures})."
                     ),
                     exception="".join(traceback.format_exception(error)),
-                )
+                ).model_dump(mode="json"),
             )
             return
 
@@ -469,37 +428,121 @@ class JsonlLogHandler(logging.Handler):
         self._write_failures = 0
         self._batch_size = self._base_batch_size
 
-    def _record_to_row(
-        self, record: logging.LogRecord, custom_fields: CustomLogFields
-    ) -> dict[str, Any]:
-        """Convert a logging.LogRecord to a dictionary suitable for JSONL.
+    def _register_logs_in_athena(self) -> None:
+        """Append the JSONL objects written by this handler to the curated Athena dataset.
 
-        If the record carries exception info, the formatted traceback (including chained causes,
-        notes and exception group members) is written to the 'exception' column. It is cached on
-        record.exc_text, sothe console handler prints the same text without formatting it again.
+        Only the exact objects written by this handler are read, so concurrent writers in the
+        same run (e.g. other processes) never register each other's records. The Glue database
+        is created here if it does not exist.
+
+        Keys are rebuilt rather than tracked: _part_number only increments after a successful
+        upload (a failed upload retries under the same part number), so parts 0..n-1 are exactly
+        the objects written.
         """
-        exception = ""
-        if record.exc_info and record.exc_info[0] is not None:
-            if not record.exc_text:
-                record.exc_text = logging.Formatter().formatException(record.exc_info)
-            exception = record.exc_text
+        try:
+            if self._part_number == 0:
+                return
 
-        return self._build_row(
-            logger_name=record.name,
-            module=record.module,
-            function=record.funcName,
-            line_number=record.lineno,
-            log_level=record.levelname,
-            log_timestamp=datetime.fromtimestamp(record.created, tz=UTC),
-            **custom_fields.model_dump(),
-            message=record.getMessage(),
-            exception=exception,
+            logs = wr.s3.read_json(
+                path=[
+                    f"s3://{self._config.bucket}/{self._object_key(part)}"
+                    for part in range(self._part_number)
+                ],
+                lines=True,
+                dtype=False,
+                convert_dates=False,
+            )
+
+            if logs.empty:
+                return
+
+            logs["log_timestamp"] = pd.to_datetime(
+                logs["log_timestamp"], utc=True, format="ISO8601"
+            )
+            wr.catalog.create_database(self._config.athena_database_name, exist_ok=True)
+
+            wr.s3.to_parquet(
+                df=logs,
+                path=f"s3://{self._config.bucket}/{self._config.athena_prefix}",
+                dataset=True,
+                mode="append",
+                database=self._config.athena_database_name,
+                table=self._config.athena_table_name,
+                partition_cols=["data_delivery_period", "attempt_no", "run_id"],
+                dtype=u.ATHENA_COLUMN_TYPES,
+            )
+        except (ClientError, BotoCoreError, OSError, ValueError) as e:
+            err = "Failed to register logs in Athena."
+            raise RuntimeError(err) from e
+
+    def _dump_unwritten_records(self) -> None:
+        """Print records that could not be uploaded to stderr, so the task log still holds them."""
+        print(  # noqa: T201
+            f"ERROR: {len(self._buffer)} log records could not be written to "
+            f"s3://{self._config.bucket}/{self._config.log_store_prefix}. Dumping records:",
+            file=sys.stderr,
         )
+        for row in self._buffer:
+            print(u.to_jsonl_line(row), file=sys.stderr)  # noqa: T201
+        sys.stderr.flush()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Buffer one record, uploading a batch to S3 when the buffer is full.
+
+        Raises:
+            TypeError: If 'custom_fields' is truthy but is not a CustomLogFields instance.
+            RuntimeError: If handler has already been closed, so records are never silently lost.
+        """
+        if self._closed:
+            err = "Cannot write log record: the JSONL log handler has already been closed."
+            raise RuntimeError(err)
+
+        # Skips logging calls without custom_fields which are required for the JSONL log format.
+        custom_fields = getattr(record, "custom_fields", None)
+        if not custom_fields:
+            return
+        if not isinstance(custom_fields, CustomLogFields):
+            err = "Custom log fields is not an instance of CustomLogFields."
+            raise TypeError(err)
+
+        row = self._record_to_row(record, custom_fields)
+
+        with self._locked():
+            self._buffer.append(row)
+            if len(self._buffer) >= self._batch_size:
+                self._flush_locked()
+
+    def close(self) -> None:
+        """Upload all remaining log records and close the handlers.
+
+        Fails the pipeline if it was unable to upload or register all run logs. The closed
+        check and the closed flag are both handled under the handler lock, so concurrent
+        close() calls (e.g. two threads shutting down together) upload and register the run's
+        logs exactly once.
+        """
+        with self._locked():
+            if self._closed:
+                return
+
+            try:
+                self._flush_locked()
+                if self._buffer:
+                    err = f"Failed to write {len(self._buffer)} log records to S3."
+                    raise RuntimeError(err)  # noqa: TRY301
+            except Exception:
+                self._dump_unwritten_records()
+                raise
+            else:
+                self._register_logs_in_athena()
+            finally:
+                super().close()
 
     def flush(self) -> None:
-        """Do not use. Instead flush via LoggingController.flush() or on close.
+        """Warn once about unmanaged flushing without uploading any records.
 
-        Warn once on unmanaged flushing;
+        Python's logging shutdown calls this before close(). For an open handler, the warning
+        is printed to stderr and buffered for the subsequent upload. Closed handlers and
+        repeated calls do nothing. Use LoggingController.flush() for an actual upload.
         """
         with self._locked():
             if self._closed or self._unmanaged_flush_warned:
@@ -512,7 +555,7 @@ class JsonlLogHandler(logging.Handler):
                     process="Logging",
                     process_stage="End",
                     message=_UNMANAGED_FLUSH_WARNING,
-                )
+                ).model_dump(mode="json"),
             )
 
 
@@ -540,7 +583,7 @@ class LoggingController:
         self._is_shutdown = False
 
     def __enter__(self) -> Self:
-        """Support use as a context manager."""
+        """Return this controller when entering its context manager."""
         return self
 
     def __exit__(
@@ -557,7 +600,7 @@ class LoggingController:
         try:
             self.shutdown()
         except Exception as shutdown_error:  # pylint: disable=W0718
-            if exc_value is None:
+            if not exc_value:
                 raise
             traceback.print_exception(shutdown_error, file=sys.stderr)
             exc_value.add_note(
@@ -566,14 +609,25 @@ class LoggingController:
             )
 
     def flush(self) -> None:
-        """Upload buffered records without closing package logging."""
+        """Attempt to upload buffered records without closing the owned JSONL handlers.
+
+        Recoverable sink failures retain the buffer for a later attempt.
+
+        Raises:
+            RuntimeError: If the controller is shut down or a handler exceeds its retry cap.
+            Exception: If a handler encounters an unexpected error during serialization or upload.
+        """
         if self._is_shutdown:
             err = "Logging has already been shut down."
             raise RuntimeError(err)
         for handler in self._handlers:
             if isinstance(handler, JsonlLogHandler):
-                with handler._locked():  # noqa: SLF001  # pylint: disable=W0212
-                    handler._flush_locked()  # noqa: SLF001  # pylint: disable=W0212
+                try:
+                    with handler._locked():  # noqa: SLF001  # pylint: disable=W0212
+                        handler._flush_locked()  # noqa: SLF001  # pylint: disable=W0212
+                except Exception as flush_error:  # pylint: disable=W0718
+                    err = f"Failed to flush handler {handler}: {flush_error}"
+                    raise RuntimeError(err) from flush_error
 
     def shutdown(self) -> None:
         """Flush, close, and remove the handlers created by configure_logging.
@@ -624,34 +678,24 @@ def configure_logging(  # noqa: PLR0917 PLR0913
     returns a controller configured for the specific pipeline run.
 
     Args:
-        pipeline: str
-            The name of the pipeline associated with the logs.
-        data_delivery_period: datetime
-            The data delivery period for the logs. Must be timezone-aware; it is normalised to UTC.
-        attempt_no: int
-            The attempt number for this data delivery period.
-        run_id: str
-            Airflow run identifier used to isolate records and objects.
-        bucket: str
-            The S3 bucket where logs will be stored.
-        log_store_prefix: str
-            Bucket-relative S3 key prefix for raw logs. Do not include the bucket or
-            the 's3://' scheme. Must not be the same as, or nested inside, 'athena_prefix'.
-        athena_prefix: str
-            Bucket-relative S3 key prefix for curated logs. Do not include the bucket or
-            the 's3://' scheme.
-        athena_database_name: str
-            The name of the existing Athena database where curated logs will be stored.
-        athena_table_name: str
-            The name of the Athena table where curated logs will be stored.
-        batch_size: int, optional
-            Number of records written in each JSONL S3 object.
+        bucket: S3 bucket where raw and curated logs will be stored.
+        log_store_prefix: Bucket-relative raw JSONL prefix, without the bucket or 's3://'.
+            Must not equal or sit inside athena_prefix.
+        athena_prefix: Bucket-relative curated Parquet prefix, without the bucket or 's3://'.
+        athena_database_name: Glue database for curated logs; created on registration if absent.
+        athena_table_name: Athena table for the curated Parquet dataset.
+        pipeline: Non-empty pipeline identifier associated with the logs.
+        data_delivery_period: Timezone-aware delivery period, normalised to UTC.
+        attempt_no: Positive attempt number for this data delivery period.
+        run_id: Non-empty run identifier used to isolate records and objects.
+        batch_size: Positive integer buffer threshold; defaults to 500. Booleans, strings
+            and floats are rejected rather than coerced.
 
     Returns:
-        LoggingController: Controller for flushing and shutting down logging.
+        Controller owning the newly attached JSONL and console handlers.
 
     Raises:
-        ValueError: If the batch size is not an integer >= 1 or the data delivery period is naive.
+        ValidationError: If configuration fields fail type, identifier, range or timezone validation.
         InvalidPrefixError: If either prefix is invalid or the prefixes overlap.
         RuntimeError: If the logger has already been configured or the log location is unreachable.
     """
@@ -721,7 +765,7 @@ class ModuleLogger(BaseModel):
     def with_table(self, table: str) -> Generator[None]:
         """Set the table for log calls made in this thread/task within this block.
 
-        The value is held in a ContextVar, so concurrent threads/tasks sharing this
+        The value is held in a ContextVar, so concurrent threads/tasks sharing the
         ModuleLogger never see each other's table, and nested blocks restore the
         previous value on exit. New threads (including ThreadPoolExecutor workers)
         start with no active block, so they fall back to the logger's table.

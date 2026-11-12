@@ -8,8 +8,6 @@ from _pytest.monkeypatch import MonkeyPatch
 from moto import mock_aws
 
 from opg_pipeline_builder.logging.log import (
-    _CONSOLE_HANDLER_NAME,
-    _JSONL_HANDLER_NAME,
     configure_logging,
 )
 
@@ -40,8 +38,8 @@ def set_env_vars(monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setenv(key, value)
 
 
-@pytest.fixture(name="_suppress_aws_logs", autouse=True, scope="session")
-def suppress_aws_logs() -> Generator[None]:
+@pytest.fixture(name="suppress_aws_logs", autouse=True, scope="session")
+def _suppress_aws_logs() -> Generator[None]:
     """Suppress AWS library logs for the lifetime of the mocked clients."""
     loggers = [logging.getLogger(name) for name in ("botocore", "awswrangler", "boto3")]
     original_levels = [logger.level for logger in loggers]
@@ -55,22 +53,22 @@ def suppress_aws_logs() -> Generator[None]:
 
 
 @pytest.fixture(name="s3", scope="session")
-def mock_s3(_suppress_aws_logs: None) -> Generator[boto3.client]:
+def mock_s3() -> Generator[boto3.client]:
     """Return a mocked S3 client."""
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
 
 
 @pytest.fixture(name="glue", scope="session")
-def mock_glue(_suppress_aws_logs: None) -> Generator[boto3.client]:
-    """Return a mocked glue client."""
+def mock_glue() -> Generator[boto3.client]:
+    """Return a mocked Glue client."""
     with mock_aws():
         yield boto3.client("glue", region_name="eu-west-2")
 
 
 @pytest.fixture(autouse=True, scope="session")
 def setup_log_bucket(s3: boto3.client) -> Generator[None]:
-    """Create and clean up the log bucket for each test function."""
+    """Create the session log bucket and remove its remaining objects on teardown."""
     s3.create_bucket(
         Bucket="log-bucket",
         CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
@@ -86,30 +84,30 @@ def setup_log_bucket(s3: boto3.client) -> Generator[None]:
 
 
 @pytest.fixture(autouse=True, scope="session")
-def setup_logging(
-    s3: boto3.client,  # pylint: disable=unused-argument
-) -> Generator[None]:
-    """Configure package logging for the test session."""
-    configure_logging(
-        pipeline="pipeline_name",
+def setup_logging(setup_log_bucket: None) -> Generator[None]:
+    """Configure root logging for tests without registering disposable logs on teardown."""
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+    controller = configure_logging(
+        bucket="log-bucket",
+        log_store_prefix="prefix",
+        athena_prefix="prefix/curated",
+        athena_database_name="test_logging",
+        athena_table_name="pipeline_logs",
+        pipeline="test_pipeline",
         data_delivery_period=datetime(2026, 6, 1, 12, 30, 00, tzinfo=UTC),
         attempt_no=1,
         run_id="test-run-id",
-        bucket="log-bucket",
-        log_store_prefix="prefix",
-        athena_prefix="prefix/curated/",
-        athena_database_name="test_logging",
-        athena_table_name="pipeline_logs",
     )
 
-    yield
-
-    root_logger = logging.getLogger()
-    for handler in list(root_logger.handlers):
-        if handler.get_name() in {_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME}:
+    try:
+        yield
+    finally:
+        for handler in controller._handlers:
             root_logger.removeHandler(handler)
+            # Tests delete raw objects between cases; do not upload or register session logs.
             logging.Handler.close(handler)
-    root_logger.setLevel(logging.NOTSET)
+        root_logger.setLevel(original_level)
 
 
 @pytest.fixture(autouse=True)
@@ -123,11 +121,6 @@ def clear_log_bucket(s3: boto3.client) -> None:
 @pytest.fixture(autouse=True)
 def configure_caplog(
     caplog: pytest.LogCaptureFixture,
-) -> Generator[pytest.LogCaptureFixture]:
-    """Configure the caplog handler for the package logger."""
-    package_logger = logging.getLogger()
-    package_logger.addHandler(caplog.handler)
-
-    yield caplog
-
-    package_logger.removeHandler(caplog.handler)
+) -> pytest.LogCaptureFixture:
+    """Expose pytest's root-attached capture handler without changing its ownership."""
+    return caplog

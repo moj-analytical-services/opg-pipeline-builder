@@ -1,4 +1,4 @@
-"""Logging utilities for the OPG pipeline builder."""
+"""Public logging API for pipeline applications."""
 
 from .log import ModuleLogger, configure_logging
 

@@ -392,7 +392,10 @@ def configure_logging(
     package_logger.setLevel(logging.INFO)
     package_logger.propagate = False
 
-    if package_logger.handlers:
+    if any(
+        handler.get_name() in [_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME]
+        for handler in package_logger.handlers
+    ):
         raise RuntimeError(
             "Logger has already been configured. This should only be done once per process."
         )

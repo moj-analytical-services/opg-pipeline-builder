@@ -9,31 +9,31 @@ description = "Provides common re-usable components for building OPG data pipeli
 readme = "README.md"
 requires-python = "==3.13.14"
 dependencies = [
-    "aiobotocore==3.7.0",
-    "awswrangler==3.17.0",
-    "boto3==1.43.0",
+    "awswrangler>=3.18.0",
+    "boto3>=1.43.0",
     "jinja2>=3.1.6",
-    "polars>=1.44.2",
-    "pyarrow==24.0.0",
-    "pydantic==2.13.4",
+    "polars>=2.1.0",
+    "pyarrow>=26.0.0",
+    "pydantic>=2.14.0",
     "pydantic-settings>=2.15.0",
 ]
 
 [tool.uv]
 package = true
+exclude-newer = "7 days"
 
 [project.optional-dependencies]
 dev = [
-    "duckdb==1.5.4",
-    "mypy==2.3.0",
+    "duckdb>=2.0.0",
+    "mypy>=2.4.0",
     "pre-commit>=4.6.0",
-    "ruff==0.16.0",
+    "ruff>=0.16.0",
 ]
 test = [
     "freezegun>=1.5.5",
-    "moto[glue]==5.2.2",
-    "pytest==9.1.1",
-    "pytest-cov==7.1.0",
+    "moto[glue]>=5.2.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.pytest.ini_options]

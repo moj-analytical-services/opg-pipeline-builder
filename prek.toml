@@ -1,0 +1,154 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+
+default_language_version = { python = "python3.13" }
+default_env = { UV_SYSTEM_CERTS = "true" }
+
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+hooks = [
+  { id = "check-added-large-files" },
+  { id = "check-case-conflict" },
+  { id = "check-docstring-first" },
+  { id = "check-json" },
+  { id = "check-merge-conflict" },
+  { id = "check-symlinks" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+  { id = "debug-statements" },
+  { id = "detect-private-key" },
+  { id = "end-of-file-fixer" },
+  { id = "mixed-line-ending" },
+  {
+    id = "name-tests-test",
+    args = ["--pytest-test-first"]
+  },
+  {
+    id = "no-commit-to-branch",
+    args = [
+      "--branch",
+      "main",
+      "--branch",
+      "master"
+    ]
+  },
+  {
+    id = "pretty-format-json",
+    args = ["--autofix"]
+  },
+  { id = "trailing-whitespace" },
+  { id = "check-xml" }
+]
+
+[[repos]]
+repo = "https://github.com/compilerla/conventional-pre-commit"
+rev = "v4.5.0"
+hooks = [
+  {
+    id = "conventional-pre-commit",
+    stages = ["commit-msg"]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/crate-ci/typos"
+rev = "v1.52.2"
+hooks = [
+  { id = "typos" }
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "ruff",
+    name = "ruff",
+    entry = "uv run --locked ruff check --fix",
+    language = "system",
+    types_or = ["python", "pyi", "jupyter"]
+  },
+  {
+    id = "ruff-format",
+    name = "ruff format",
+    entry = "uv run --locked ruff format",
+    language = "system",
+    types_or = ["python", "pyi", "jupyter"]
+  },
+  {
+    id = "mypy",
+    name = "mypy",
+    entry = "uv run --locked mypy .",
+    language = "system",
+    pass_filenames = false,
+    types = ["python"]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/Yelp/detect-secrets"
+rev = "v1.5.0"
+hooks = [
+  { id = "detect-secrets",
+    args = ["--baseline", ".secrets.baseline"]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/PyCQA/bandit"
+rev = "1.9.4"
+hooks = [
+  {
+    id = "bandit",
+    args = [
+      "-s",
+      "B101"
+    ],
+    additional_dependencies = ["pbr"]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/adrienverge/yamllint"
+rev = "v1.38.0"
+hooks = [
+  { id = "yamllint" }
+]
+
+[[repos]]
+repo = "https://github.com/sqlfluff/sqlfluff"
+rev = "4.5.0"
+hooks = [
+  {
+    id = "sqlfluff-lint",
+    args = [
+      "--dialect",
+      "athena",
+      "--templater",
+      "jinja",
+      "--ignore",
+      "templating"
+    ]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/antonbabenko/pre-commit-terraform"
+rev = "v1.109.5"
+hooks = [
+  { id = "terraform_fmt" },
+  { id = "terraform_tflint" },
+  {
+    id = "terraform_validate",
+    args = ["--tf-init-args=-lockfile=readonly"]
+  },
+  {
+    id = "terraform_checkov",
+    args = [
+      "--args=--framework terraform",
+      "--args=--quiet",
+      "--args=--compact"
+    ]
+  }
+]

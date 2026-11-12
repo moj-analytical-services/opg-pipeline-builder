@@ -1,6 +1,7 @@
+"""Tests for structured logging configuration, handlers, controllers and integration behavior."""
+
 # pyright: reportPrivateUsage=false
 # pylint: disable=protected-access
-"""Tests for structured logging configuration, handlers, controllers and integration behavior."""
 
 import inspect
 import json
@@ -1302,7 +1303,7 @@ class TestJsonlLogHandler:
             handler.emit(record)
 
     @pytest.mark.parametrize("closed", [False, True])
-    def test_close(self, closed: bool) -> None:  # noqa: FBT001
+    def test_close(self, closed: bool) -> None:
         """Close open handlers once and leave already closed handlers untouched."""
         handler = create_handler()
         handler._closed = closed
@@ -1415,8 +1416,8 @@ class TestJsonlLogHandler:
     )
     def test_flush_closed_repeated(
         self,
-        closed: bool,  # noqa: FBT001
-        warned: bool,  # noqa: FBT001
+        closed: bool,
+        warned: bool,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Skip warning and buffering for a closed or previously warned handler."""
@@ -1475,8 +1476,8 @@ class TestLoggingController:
     def test_exit(
         self,
         controller: log.LoggingController,
-        body_fails: bool,  # noqa: FBT001
-        shutdown_fails: bool,  # noqa: FBT001
+        body_fails: bool,
+        shutdown_fails: bool,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Preserve a body exception and annotate it if shutdown also fails."""
@@ -1791,7 +1792,7 @@ class TestModuleLogger:
     )
     def test_require_logging_configured(
         self,
-        configured: bool,  # noqa: FBT001
+        configured: bool,
         exception: Any,
     ) -> None:
         """Only the package JSONL handler satisfies the configured guard."""
@@ -2009,7 +2010,7 @@ class TestLoggingEndToEnd:
             assert handler._part_number == 1
         controller.shutdown()
 
-    def expected_e2e_event(  # noqa: PLR0913
+    def expected_e2e_event(
         self,
         error_type: str,
         process: str,

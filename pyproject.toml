@@ -22,14 +22,16 @@ dependencies = [
 package = true
 exclude-newer = "7 days"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "duckdb>=2.0.0",
-    "mypy>=2.4.0",
-    "pre-commit>=4.6.0",
-    "ruff>=0.16.0",
+    "mypy==2.3.0",
+    "prek>=0.5.10",
+    "ruff>=0.17.4",
 ]
+
+[project.optional-dependencies]
 test = [
+    "duckdb==1.5.4",
     "freezegun>=1.5.5",
     "moto[glue]>=5.2.2",
     "pytest>=9.1.1",
@@ -63,6 +65,16 @@ plugins = ["pydantic.mypy"]
 
 [tool.ruff]
 exclude = ["typings", "playground"]
+force-exclude = true
+# Legacy code pending rewrite.
+extend-exclude = [
+    "src/opg_pipeline_builder/transform_engines",
+    "src/opg_pipeline_builder/utils",
+    "src/opg_pipeline_builder/database.py",
+    "src/opg_pipeline_builder/transforms.py",
+    "src/opg_pipeline_builder/validator.py",
+    "tests/old_unit/*"
+]
 
 [tool.ruff.lint]
 select = [
@@ -123,6 +135,7 @@ ignore = [
     "D105", # docstrings on magic methods, useless docstrings are well known
     "E501", # line length is handled by the formatter
     "ISC001", # implicit string concatenation is handled by the formatter (conflicts with ruff format)
+    "PLR2004", # Magic numbers are allowed
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -136,7 +149,10 @@ ignore = [
     "ARG", # some arguments are unused in tests functions but useful (e.g. mocks)
     "S101", # asserts are OK for tests
     "SLF001", # accessing private members is OK for tests
-    "PLR2004", # magic value used in comparison
+    "FBT001", # Boolean-typed positional argument in function definition
+    "FBT002", # Boolean-typed keyword argument in function definition
+    "PLR0913", # too many arguments in function definition
+    "PLR0917", # too many positional arguments in function definition
 ]
 
 [tool.ruff.lint.pydocstyle]

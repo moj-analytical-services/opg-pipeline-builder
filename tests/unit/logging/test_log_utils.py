@@ -1,5 +1,5 @@
 # """Unit tests for the logging helper utilities."""
-import datetime
+import datetime as dt
 import logging
 from datetime import UTC
 
@@ -10,8 +10,8 @@ from opg_pipeline_builder.logging import log_utils
 
 def test_format_datetime() -> None:
     """Test that format_datetime returns the expected ISO string."""
-    dt = datetime.datetime(2026, 9, 22, 10, 45, 23, 245000, tzinfo=UTC)
-    formatted = log_utils.format_datetime(dt)
+    test_datetime = dt.datetime(2026, 9, 22, 10, 45, 23, 245000, tzinfo=UTC)
+    formatted = log_utils.format_datetime(test_datetime)
     assert formatted == "2026-09-22T10:45:23.245000Z"
 
 
@@ -50,7 +50,7 @@ def test_not_empty_false(value: object) -> None:
 )
 def test_truncate_text(
     value: str,
-    keep_end: bool,  # noqa: FBT001
+    keep_end: bool,
     expected: str,
 ) -> None:
     """Test that text over the limit is capped from the chosen end, with a marker of what was removed."""
@@ -101,7 +101,7 @@ def test_validate_s3_contains_bucket_or_s3(prefix: str, bucket: str) -> None:
 def test_validate_prefix_layout(
     log_store_prefix: str,
     athena_prefix: str,
-    valid: bool,  # noqa: FBT001
+    valid: bool,
 ) -> None:
     """Test that the raw log prefix cannot equal or sit inside the curated Athena prefix."""
     errors = log_utils.validate_prefix_layout(log_store_prefix, athena_prefix)

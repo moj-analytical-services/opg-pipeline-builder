@@ -7,10 +7,12 @@ import pytest
 from _pytest.monkeypatch import MonkeyPatch
 from moto import mock_aws
 
-from opg_pipeline_builder.logging.log import configure_logging
+from opg_pipeline_builder.logging.log import (
+    configure_logging,
+)
 
 
-@pytest.fixture
+@pytest.fixture(name="monkeypatch")
 def monkeypatch_session() -> Generator[MonkeyPatch]:
     """Create MonkeyPatch for setting environment variables."""
     m = MonkeyPatch()
@@ -19,7 +21,7 @@ def monkeypatch_session() -> Generator[MonkeyPatch]:
 
 
 @pytest.fixture(autouse=True)
-def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
+def set_env_vars(monkeypatch: MonkeyPatch) -> None:
     """Run before all tests to create environment variables."""
     test_env_vars = {
         "AWS_ACCESS_KEY_ID": "test_key_id",
@@ -28,37 +30,37 @@ def set_env_vars(monkeypatch_session: MonkeyPatch) -> None:
         "AWS_SESSION_TOKEN": "test_session_token",  # nosec
         "AWS_DEFAULT_REGION": "eu-west-1",
         "DEFAULT_BUCKET": "test-bucket",
-        "DATABASE": "test-database",
+        "PIPELINE_NAME": "test_pipeline",
         "ENV": "test",
     }
 
     for key, value in test_env_vars.items():
-        monkeypatch_session.setenv(key, value)
+        monkeypatch.setenv(key, value)
 
 
-@pytest.fixture(autouse=True, scope="session")
-def suppress_aws_logs() -> Generator[None]:
-    """Suppress AWS diagnostics during tests and restore the original logger levels."""
+@pytest.fixture(name="suppress_aws_logs", autouse=True, scope="session")
+def _suppress_aws_logs() -> Generator[None]:
+    """Suppress AWS library logs for the lifetime of the mocked clients."""
     loggers = [logging.getLogger(name) for name in ("botocore", "awswrangler", "boto3")]
-    levels = [logger.level for logger in loggers]
+    original_levels = [logger.level for logger in loggers]
     for logger in loggers:
         logger.setLevel(logging.CRITICAL)
-    try:
-        yield
-    finally:
-        for logger, level in zip(loggers, levels, strict=True):
-            logger.setLevel(level)
+
+    yield
+
+    for logger, level in zip(loggers, original_levels, strict=True):
+        logger.setLevel(level)
 
 
 @pytest.fixture(name="s3", scope="session")
-def mock_s3(suppress_aws_logs: None) -> Generator[boto3.client]:
+def mock_s3() -> Generator[boto3.client]:
     """Return a mocked S3 client."""
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
 
 
 @pytest.fixture(name="glue", scope="session")
-def mock_glue(suppress_aws_logs: None) -> Generator[boto3.client]:
+def mock_glue() -> Generator[boto3.client]:
     """Return a mocked Glue client."""
     with mock_aws():
         yield boto3.client("glue", region_name="eu-west-2")

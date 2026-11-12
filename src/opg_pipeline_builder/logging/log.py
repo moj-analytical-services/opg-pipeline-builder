@@ -721,7 +721,7 @@ class ModuleLogger(BaseModel):
     def with_table(self, table: str) -> Generator[None]:
         """Set the table for log calls made in this thread/task within this block.
 
-        The value is held in a ContextVar, so concurrent threads/tasks sharing thi
+        The value is held in a ContextVar, so concurrent threads/tasks sharing this
         ModuleLogger never see each other's table, and nested blocks restore the
         previous value on exit. New threads (including ThreadPoolExecutor workers)
         start with no active block, so they fall back to the logger's table.

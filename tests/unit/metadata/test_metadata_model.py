@@ -75,8 +75,8 @@ def create_table_metadata(
     columns: list[m.Column],
     description: str = "description",
     **extra_fields: Any,
-) -> m.TableMetaData:
-    return m.TableMetaData(
+) -> m.TableMetadata:
+    return m.TableMetadata(
         name=name,
         description=description,
         file_formats=file_formats,
@@ -633,7 +633,7 @@ class TestFileFormat:
         )
 
 
-class TestTableMetaData:
+class TestTableMetadata:
     def test_table_metadata_valid(self) -> None:
         """Test that creating valid table metadata works correctly."""
         table_metadata = create_table_metadata(
@@ -1034,10 +1034,10 @@ class TestTableMetaData:
         assert sensitive_columns == []
 
 
-class TestMetaData:
+class TestMetadata:
     def test_metadata_valid(self) -> None:
-        """Test that the MetaData model is correctly instantiated and contains the expected tables and columns."""
-        metadata = m.MetaData(
+        """Test that the Metadata model is correctly instantiated and contains the expected tables and columns."""
+        metadata = m.Metadata(
             database="test",
             tables={
                 "test_table": create_table_metadata(
@@ -1059,8 +1059,8 @@ class TestMetaData:
         assert metadata.tables["test_table2"].file_formats[0].stage == "curated"
 
     def test_metadata_get_table_metadata_valid(self) -> None:
-        """Test that get_table_metadata returns the correct TableMetaData object for a valid table."""
-        metadata = m.MetaData(
+        """Test that get_table_metadata returns the correct TableMetadata object for a valid table."""
+        metadata = m.Metadata(
             database="test",
             tables={
                 "test_table": create_table_metadata(
@@ -1091,7 +1091,7 @@ class TestMetaData:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that get_table_metadata raises an InvalidTableError for an invalid table."""
-        metadata = m.MetaData(
+        metadata = m.Metadata(
             database="test",
             tables={
                 "test_table": create_table_metadata(
@@ -1119,8 +1119,8 @@ class TestMetaData:
         )
 
     def test_output_to_df(self) -> None:
-        """Test the output_to_df method of the MetaData class."""
-        metadata = m.MetaData(
+        """Test the output_to_df method of the Metadata class."""
+        metadata = m.Metadata(
             database="test",
             tables={
                 "test_table": create_table_metadata(
@@ -1344,4 +1344,4 @@ def test_metadata_models_forbid_extra_fields() -> None:
             "database": "test",
             "unexpected_attribute": "value",
         }
-        m.MetaData.model_validate(metadata_data)
+        m.Metadata.model_validate(metadata_data)

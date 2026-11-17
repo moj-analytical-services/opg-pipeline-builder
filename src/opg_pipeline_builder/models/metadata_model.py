@@ -229,7 +229,7 @@ class FileFormat(BaseModel):
         raise exc.InvalidFormatError(err)
 
 
-class TableMetaData(BaseModel):
+class TableMetadata(BaseModel):
     """Pydantic model representing a metadata entry for a specific table."""
 
     model_config = ConfigDict(extra="forbid")
@@ -240,7 +240,7 @@ class TableMetaData(BaseModel):
     columns: list[Column]
 
     @model_validator(mode="after")
-    def validate_all_fields_unique(self) -> "TableMetaData":
+    def validate_all_fields_unique(self) -> "TableMetadata":
         """Check if any columns have the same name."""
         column_counts = Counter(column.name for column in self.columns)
         duplicate = False
@@ -258,7 +258,7 @@ class TableMetaData(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_all_file_format_stages_unique(self) -> "TableMetaData":
+    def validate_all_file_format_stages_unique(self) -> "TableMetadata":
         """Check if any file format stages are defined more than once."""
         stage_counts = Counter(format_obj.stage for format_obj in self.file_formats)
         duplicate = False
@@ -276,7 +276,7 @@ class TableMetaData(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_column_stages_match_file_format_stages(self) -> "TableMetaData":
+    def validate_column_stages_match_file_format_stages(self) -> "TableMetadata":
         """Check that all stages defined for columns have a corresponding file format."""
         unreconciled_format_stages = [
             format_obj.stage for format_obj in self.file_formats
@@ -393,20 +393,20 @@ class TableMetaData(BaseModel):
         return [column for column in self.columns if column.sensitive]
 
 
-class MetaData(BaseModel):
+class Metadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     database: str
-    tables: dict[str, TableMetaData]
+    tables: dict[str, TableMetadata]
 
-    def get_table_metadata(self, table_name: str) -> TableMetaData:
-        """Retrieve the TableMetaData object for a specific table.
+    def get_table_metadata(self, table_name: str) -> TableMetadata:
+        """Retrieve the TableMetadata object for a specific table.
 
         Args:
             table_name (str): Table to retrieve
 
         Returns:
-            TableMetaData: The TableMetaData object
+            TableMetadata: The TableMetadata object
 
         """
         table = self.tables.get(table_name, None)
@@ -448,7 +448,7 @@ class MetaData(BaseModel):
         return pd.concat(output_dfs)
 
 
-def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
+def load_metadata(metadata_path: Path, database_name: str) -> Metadata:
     """Load a metadata file and convert it into the Pydantic model.
 
     Args:
@@ -456,7 +456,7 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
         metadata_path (Path): The base path where metadata files are stored
 
     Returns:
-        MetaData: The Metadata object
+        Metadata: The Metadata object
     """
     log.info("Loading metadata for database: '%s'.", database_name, stage="Start")
 
@@ -473,12 +473,12 @@ def load_metadata(metadata_path: Path, database_name: str) -> MetaData:
         with (file).open(encoding="utf-8", mode="r") as json_file:
             log.info("Validating metadata for %s", file.stem)
             metadata_file = json.load(json_file)
-            database_metadata[file.stem] = TableMetaData.model_validate(
+            database_metadata[file.stem] = TableMetadata.model_validate(
                 metadata_file,
                 context={"table_name": metadata_file["name"]},
             )
     log.info("Finished loading metadata.", stage="End")
-    return MetaData(database=database_name, tables=database_metadata)
+    return Metadata(database=database_name, tables=database_metadata)
 
 
 def output_metadata_as_csv(

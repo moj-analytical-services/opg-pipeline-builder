@@ -1,0 +1,55 @@
+# METADATA MODELS
+
+
+class InvalidColumnNameError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidFormatError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidSemanticTypeError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidStageError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidTypeError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidColumnError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class InvalidTableError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class DuplicateFieldsError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error
+
+
+class DuplicateFileFormatStagesError(Exception):
+    def __init__(self, error: str):
+        super().__init__(error)
+        self.error = error

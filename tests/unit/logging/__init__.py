@@ -1,1 +1,1 @@
-"""Unit tests for the logging module."""
+"""Unit tests for the logging package."""

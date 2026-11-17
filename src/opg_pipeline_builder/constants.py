@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+ALLOWED_ENVS: tuple[str, ...] = ("test", "preprod", "prod")
+
 ALLOWED_SEMANTIC_TYPES: tuple[str, ...] = (
     "date",
     "datetime",

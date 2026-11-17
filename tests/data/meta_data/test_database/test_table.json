@@ -1,137 +1,217 @@
 {
   "columns": [
     {
+      "description": "The unique identifier for the record.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "int",
+      "is_composite_key": true,
+      "is_partition": false,
       "name": "id",
-      "nullable": true,
-      "stages": [
-        {
-          "name": "raw",
-          "type": "int32"
-        },
-        {
-          "name": "processed",
-          "type": "int32"
-        },
-        {
-          "name": "curated",
-          "type": "int32"
-        }
-      ]
+      "nullable": false,
+      "output_data_type": "int",
+      "semantic_type": "numeric_identifier",
+      "sensitive": false
     },
     {
+      "description": "Name of client",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "str",
+      "is_composite_key": false,
+      "is_partition": false,
       "name": "name",
       "nullable": true,
-      "stages": [
-        {
-          "name": "raw",
-          "type": "int32"
-        },
-        {
-          "name": "processed",
-          "type": "string"
-        },
-        {
-          "name": "curated",
-          "type": "int64"
-        }
-      ]
+      "output_data_type": "str",
+      "semantic_type": "generic_string",
+      "sensitive": true
     },
     {
+      "description": "The address of the client.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "str",
+      "is_composite_key": false,
+      "is_partition": false,
       "name": "address",
       "nullable": true,
-      "stages": [
-        {
-          "name": "raw",
-          "pattern": "^\\[(\\s*(\".*\"|null)\\s*,\\s*)*(\\s*(\".*\"|null)\\s*){1}\\]$|^{(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*,\\s*)*(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*){1}}$|^\\[\\]$",
-          "type": "string"
-        },
-        {
-          "name": "processed",
-          "type": "list<string>"
-        },
-        {
-          "name": "curated",
-          "type": "list<string>"
-        }
-      ]
+      "output_data_type": "str",
+      "regex_pattern": "^\\[(\\s*(\".*\"|null)\\s*,\\s*)*(\\s*(\".*\"|null)\\s*){1}\\]$|^{(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*,\\s*)*(\\s*\"[0-9A-Za-z-]+\"\\s*:\\s*(\".*\"|null)\\s*){1}}$|^\\[\\]$",
+      "semantic_type": "full_address",
+      "sensitive": true
     },
     {
-      "name": "condition",
+      "allowed_values": [
+        "civil",
+        "criminal",
+        "family",
+        "other"
+      ],
+      "description": "type of case",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "str",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "case_type",
       "nullable": true,
-      "stages": [
-        {
-          "name": "raw",
-          "type": "int32"
-        },
-        {
-          "name": "processed",
-          "type": "int32"
-        }
-      ]
+      "output_data_type": "str",
+      "semantic_type": "string_classification"
     },
     {
-      "name": "condition_id",
+      "default_value": 0,
+      "description": "The number of days which the case has been open for.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "int",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "length_open_for",
       "nullable": true,
-      "stages": [
-        {
-          "name": "curated",
-          "type": "string"
-        }
-      ]
+      "output_data_type": "int",
+      "semantic_type": "period_of_time"
     },
     {
-      "name": "Resolution",
+      "default_value": 0,
+      "description": "Number of contact client has had with caseworker",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "int",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "number_of_contacts",
       "nullable": true,
-      "stages": [
-        {
-          "name": "raw",
-          "type": "bool"
-        }
-      ]
+      "output_data_type": "int",
+      "semantic_type": "quantity"
     },
     {
-      "name": "resolution",
+      "allowed_values": [
+        1,
+        2,
+        3
+      ],
+      "description": "The triage level of the case.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "int",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "triage_level",
       "nullable": true,
-      "stages": [
-        {
-          "name": "processed",
-          "type": "bool"
-        }
-      ]
+      "output_data_type": "int",
+      "semantic_type": "string_classification"
     },
     {
-      "name": "resolution_id",
+      "description": "Indicates whether the case is currently open.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "bool",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "is_open",
       "nullable": true,
-      "stages": [
-        {
-          "name": "curated",
-          "type": "bool"
-        }
-      ]
+      "output_data_type": "bool",
+      "semantic_type": "boolean_flag"
+    },
+    {
+      "description": "The date the case was created.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "str",
+      "input_value_format": "date",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "created_date",
+      "nullable": true,
+      "output_data_type": "date",
+      "semantic_type": "date"
+    },
+    {
+      "description": "The date and time the record was created.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "str",
+      "input_value_format": "datetime",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "record_created_datetime",
+      "nullable": true,
+      "output_data_type": "datetime",
+      "semantic_type": "datetime"
+    },
+    {
+      "description": "The date and time the record was last updated.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "datetime",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "record_updated_datetime",
+      "nullable": true,
+      "output_data_type": "datetime",
+      "semantic_type": "datetime"
+    },
+    {
+      "description": "The date and time the record landed.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "datetime",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "land_datetime",
+      "nullable": true,
+      "output_data_type": "datetime",
+      "semantic_type": "datetime"
+    },
+    {
+      "description": "The date and time the record was processed.",
+      "etl_stages": [
+        "raw",
+        "curated"
+      ],
+      "input_data_type": "datetime",
+      "is_composite_key": false,
+      "is_partition": false,
+      "name": "processed_datetime",
+      "nullable": true,
+      "output_data_type": "datetime",
+      "semantic_type": "datetime"
     }
   ],
-  "converted_from": "arrow_schema",
-  "description": "",
+  "description": "A test table for unit testing.",
   "file_formats": [
     {
-      "format": "csv",
-      "name": "raw"
+      "format": "parquet",
+      "stage": "raw"
     },
     {
       "format": "parquet",
-      "name": "processed"
-    },
-    {
-      "format": "parquet",
-      "name": "curated"
+      "stage": "curated"
     }
   ],
-  "name": "test_table",
-  "partitions": [
-    "condition_id",
-    "resolution_id"
-  ],
-  "primary_key": [],
-  "schema_link": "https://moj-analytical-services.github.io/metadata_schema/mojap_metadata/v1.3.0.json",
-  "sensitive": true
+  "name": "test_table"
 }

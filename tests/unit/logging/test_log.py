@@ -36,14 +36,6 @@ DEFAULT_PREFIX = "prefix/to/log"
 DEFAULT_DATABASE = "test-database"
 
 
-def create_bucket(s3: boto3.client, bucket: str = "log-bucket") -> None:
-    """Create an S3 bucket for a test."""
-    s3.create_bucket(
-        Bucket=bucket,
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
-
-
 def create_handler(
     apply_patches: bool = True,
     bucket: str = DEFAULT_BUCKET,
@@ -134,7 +126,7 @@ def read_jsonl_logs(
     return output
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def reset_package_logger() -> Generator[None]:
     """Restore the shared package logger without flushing stale handlers."""
     package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
@@ -299,7 +291,6 @@ class TestStructuredLogRecord:
 class TestJsonlLogHandler:
     def test_init(self, s3: boto3.client) -> None:
         """Test that the handler initializes correctly with default values."""
-        create_bucket(s3)
         with (
             patch.object(JsonlLogHandler, "_validate_log_location") as mock_location,
             patch.object(JsonlLogHandler, "_write_configuration_log") as mock_write,
@@ -323,7 +314,7 @@ class TestJsonlLogHandler:
 
     def test_validate_log_location_valid(self, s3: boto3.client) -> None:
         """Test that the marker file is generated, and only one ever exists."""
-        create_bucket(s3)
+
         create_handler(apply_patches=False)
         create_handler(
             database="other-database",
@@ -363,7 +354,6 @@ class TestJsonlLogHandler:
         self, exception: Any, s3: boto3.client
     ) -> None:
         """Test that an exception is raised when the log location is invalid or inaccessible."""
-        create_bucket(s3)
         with (
             patch.object(s3, "put_object", side_effect=exception),
             patch(
@@ -376,7 +366,7 @@ class TestJsonlLogHandler:
 
     def test_write_configuration_log(self, s3: boto3.client) -> None:
         """Test that the configuration log is written correctly."""
-        create_bucket(s3)
+
         with freeze_time("2024-01-02T00:00:00Z"):
             handler = create_handler()
             handler._write_configuration_log()
@@ -504,7 +494,7 @@ class TestJsonlLogHandler:
 
     def test_put_object_success(self, s3: boto3.client) -> None:
         """Test that the handler successfully puts an object to S3."""
-        create_bucket(s3, "log-bucket")
+
         handler = create_handler()
 
         key = handler._object_key(str(os.getpid()), handler._part_number)
@@ -517,7 +507,7 @@ class TestJsonlLogHandler:
 
     def test_flush_locked_success(self, s3: boto3.client) -> None:
         """Test that the handler successfully flushes the buffer to S3."""
-        create_bucket(s3, "log-bucket")
+
         handler = create_handler(apply_patches=False, batch_size=5)
 
         handler.emit(create_log_record(message="First application event"))
@@ -688,7 +678,7 @@ class TestLoggingController:
         """Test that the flush method calls the handler's _flush_locked method."""
         controller = self.create_controller()
         with patch.object(
-            controller._logger.handlers[0], "_flush_locked"
+            controller._logger.handlers[2], "_flush_locked"
         ) as mock_flush_locked:
             controller.flush()
 
@@ -799,15 +789,15 @@ class TestConfigureLogging:
 
     def test_configure_returns_success(self, s3: boto3.client) -> None:
         """Test that configure_logging returns a LoggingController and sets up handlers correctly."""
-        create_bucket(s3)
+
         controller = self.configure_logging_wrapper()
         package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
         assert package_logger.level == logging.INFO
         assert package_logger.propagate is False
-        assert [handler.get_name() for handler in package_logger.handlers] == [
-            _CONSOLE_HANDLER_NAME,
-            _JSONL_HANDLER_NAME,
-        ]
+        assert all(
+            exp_handler in [handler.get_name() for handler in package_logger.handlers]
+            for exp_handler in [_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME]
+        )
         assert isinstance(controller, LoggingController)
 
     @pytest.mark.parametrize("batch_size", [0, -1, True])
@@ -818,17 +808,32 @@ class TestConfigureLogging:
 
     def test_duplicate_configuration_raises(self, s3: boto3.client) -> None:
         """Test that configuring logging twice raises a RuntimeError."""
-        create_bucket(s3)
+
         self.configure_logging_wrapper()
         with pytest.raises(RuntimeError, match="Logger has already been configured"):
             self.configure_logging_wrapper()
+
+    def test_duplicate_configuration_ignores_third_party_handlers(
+        self, s3: boto3.client
+    ) -> None:
+        """Test that configuring logging ignores third-party handlers."""
+        package_logger = logging.getLogger(PACKAGE_LOGGER_NAME)
+        third_party_handler = logging.StreamHandler()
+        package_logger.addHandler(third_party_handler)
+
+        self.configure_logging_wrapper()
+
+        assert third_party_handler in package_logger.handlers
 
     def test_fails_when_bucket_missing(self, s3: boto3.client) -> None:
         """Test that configure_logging raises immediately if S3 is unreachable, attaching no handlers."""
         with pytest.raises(RuntimeError, match="Failed to prepare JSONL log location"):
             self.configure_logging_wrapper(bucket="does-not-exist")
 
-        assert logging.getLogger(PACKAGE_LOGGER_NAME).handlers == []
+        assert all(
+            handler.get_name() not in [_CONSOLE_HANDLER_NAME, _JSONL_HANDLER_NAME]
+            for handler in logging.getLogger(PACKAGE_LOGGER_NAME).handlers
+        )
 
 
 class TestModuleLogger:
@@ -907,7 +912,7 @@ class TestModuleLogger:
 
     def test_lazy_percent_formatting_is_applied(self, s3: boto3.client) -> None:
         """Test that %s-style args passed through are lazily interpolated into the final message."""
-        create_bucket(s3)
+
         _ = configure_logging(
             bucket=DEFAULT_BUCKET,
             prefix=DEFAULT_PREFIX,
@@ -1042,7 +1047,7 @@ class TestLoggingEndToEnd:
         self, s3: boto3.client
     ) -> None:
         """Test a full pipeline run: an automatic batch flush, a manual flush, then a deliberate shutdown."""
-        create_bucket(s3, DEFAULT_BUCKET)
+
         function_name = inspect.currentframe().f_code.co_name  # type: ignore[union-attr]
 
         with freeze_time("2024-01-02T00:00:00Z"):
@@ -1192,7 +1197,7 @@ class TestLoggingEndToEnd:
         context manager) flushes and closes the handler too, but never calls `removeHandler()`
         and never touches the controller, so both stay unaffected.
         """
-        create_bucket(s3, DEFAULT_BUCKET)
+
         function_name = inspect.currentframe().f_code.co_name  # type: ignore[union-attr]
 
         with freeze_time("2024-01-02T00:00:00Z"):
@@ -1256,7 +1261,6 @@ class TestLoggingEndToEnd:
         ignored in atexit callback" for errors it doesn't recognise. Either way the RuntimeError
         propagates out of the trigger itself, and nothing partial reaches S3.
         """
-        create_bucket(s3, DEFAULT_BUCKET)
 
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
@@ -1290,7 +1294,7 @@ class TestLoggingEndToEnd:
         through controller.flush() handles the same failures and recovery correctly, without
         re-asserting every detail already covered there.
         """
-        create_bucket(s3, DEFAULT_BUCKET)
+
         controller, jsonl_handler = self.configure(batch_size=100)
         pipeline_logger = ModuleLogger(
             logger=logging.getLogger(f"{PACKAGE_LOGGER_NAME}.pipeline")
@@ -1332,7 +1336,7 @@ class TestLoggingEndToEnd:
         """Test that multiple threads writing through the same handler produce exactly the
         expected records, with none lost or duplicated, and sequential, gap-free part numbers.
         """
-        create_bucket(s3, DEFAULT_BUCKET)
+
         worker_count = 3
         messages_per_worker = 5
 
@@ -1420,7 +1424,6 @@ class TestLoggingEndToEnd:
         self, s3: boto3.client
     ) -> None:
         """Test that shutting down immediately after configure_logging still flushes the config record."""
-        create_bucket(s3, DEFAULT_BUCKET)
 
         with freeze_time("2024-01-02T00:00:00Z"):
             controller, jsonl_handler = self.configure(batch_size=10)
@@ -1447,7 +1450,6 @@ class TestLoggingEndToEnd:
         """Test that two runs for the same database/data_delivery_period but different attempt_no
         write to distinct S3 partitions without colliding or mixing records.
         """
-        create_bucket(s3, DEFAULT_BUCKET)
 
         with freeze_time("2024-01-02T00:00:00Z"):
             first_controller, first_handler = self.configure(

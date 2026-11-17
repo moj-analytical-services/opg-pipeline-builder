@@ -10,11 +10,13 @@ from opg_pipeline_builder.models.utils import field_name, table_name
 logger = getLogger(__name__)
 
 
-class DataDelivery(BaseModel):
+class DataDeliveryTracker(BaseModel):
+    """Model representing the tracking of data delivery."""
+
     data_delivery_period: datetime
-    database_name: str
+    pipeline_name: str
     received_datetime: datetime
-    pipeline_params: str
+    pipeline_params: list[str]
     current_pipeline_stage: str
     valid: bool
     status: str
@@ -30,8 +32,10 @@ class DataDelivery(BaseModel):
         return value
 
 
-class Table(BaseModel):
-    database_name: str
+class TableTracker(BaseModel):
+    """Model representing the tracking of a table."""
+
+    pipeline_name: str
     table_name: str
     current_pipeline_stage: str
     status: str
@@ -51,8 +55,10 @@ class Table(BaseModel):
         return value
 
 
-class File(BaseModel):
-    database_name: str
+class FileTracker(BaseModel):
+    """Model representing the tracking of a file."""
+
+    pipeline_name: str
     data_delivery_period: datetime
     filename: str
     file_received_date: datetime
@@ -78,8 +84,10 @@ class File(BaseModel):
         return value
 
 
-class RunSourceFile(BaseModel):
-    database_name: str
+class RunSourceFileTracker(BaseModel):
+    """Model representing the tracking of a source file within a run."""
+
+    pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
     filename: str
@@ -105,8 +113,10 @@ class RunSourceFile(BaseModel):
         return value
 
 
-class Run(BaseModel):
-    database_name: str
+class RunTracker(BaseModel):
+    """Model representing the tracking of a run."""
+
+    pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
     run_start: datetime
@@ -115,9 +125,7 @@ class Run(BaseModel):
     purpose: Literal[
         "BAU",
         "Deletion",
-        "Addition/Correction",
-        "Re-delivery",
-        "Reconstitution",
+        "Remediation",
         "Maintenance",
     ]
     status: str
@@ -135,8 +143,42 @@ class Run(BaseModel):
         return value
 
 
-class PipelineRun(BaseModel):
-    database_name: str
+def create_run_tracker(  # noqa: PLR0913, PLR0917
+    pipeline_name: str,
+    data_delivery_period: datetime,
+    attempt_no: int,
+    run_start: datetime,
+    run_end: datetime,
+    run_id: str,
+    purpose: Literal[
+        "BAU",
+        "Deletion",
+        "Remediation",
+        "Maintenance",
+    ],
+    status: str,
+    lease_expires_at: datetime,
+    log_location: str,
+) -> RunTracker:
+    """Create a new RunTracker instance."""
+    return RunTracker(
+        pipeline_name=pipeline_name,
+        data_delivery_period=data_delivery_period,
+        attempt_no=attempt_no,
+        run_start=run_start,
+        run_end=run_end,
+        run_id=run_id,
+        purpose=purpose,
+        status=status,
+        lease_expires_at=lease_expires_at,
+        log_location=log_location,
+    )
+
+
+class PipelineRunTracker(BaseModel):
+    """Model representing the tracking of a pipeline run."""
+
+    pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
     reference_snapshot_ids: list[str]
@@ -148,8 +190,10 @@ class PipelineRun(BaseModel):
     records_deleted: int
 
 
-class MaintenanceRun(BaseModel):
-    database_name: str
+class MaintenanceRunTracker(BaseModel):
+    """Model representing the tracking of a maintenance run."""
+
+    pipeline_name: str
     data_delivery_period: datetime
     attempt_no: int
     maintenance_target_tavles: list[str]

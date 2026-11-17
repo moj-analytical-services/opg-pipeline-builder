@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import polars as pl
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -416,7 +417,61 @@ class MetaData(BaseModel):
 
         return table
 
-    def output_to_df(self) -> pd.DataFrame:
+    def create_reference_table_for_tables(self) -> list[pl.DataFrame]:
+        """Create reference tables for all tables in the metadata.
+
+        Returns:
+            list[pl.DataFrame]: A list of Polars DataFrames representing reference tables for each table.
+
+        """
+        reference_tables: list[pl.DataFrame] = []
+
+        for table in self.tables.values():
+            reference_tables.append(
+                pl.DataFrame(
+                    {
+                        "database_name": [self.database],
+                        "table_name": [table.name],
+                        "description": [table.description],
+                    }
+                )
+            )
+
+        return reference_tables
+
+    def create_reference_table_for_columns(self) -> list[pl.DataFrame]:
+        """Create reference tables for all columns in all tables in the metadata.
+
+        Returns:
+            list[pl.DataFrame]: A list of Polars DataFrames representing reference tables for each column.
+
+        """
+        reference_tables: list[pl.DataFrame] = []
+
+        for table in self.tables.values():
+            for column in table.columns:
+                reference_tables.append(
+                    pl.DataFrame(
+                        {
+                            "database_name": [self.database],
+                            "table_name": [table.name],
+                            "column_name": [column.name],
+                            "description": [column.description],
+                            "data_type": [column.output_data_type],
+                            "semantic_type": [column.semantic_type],
+                            "format": [column.output_value_format],
+                            "allowed_values": [column.allowed_values],
+                            "default_value": [column.default_value],
+                            "pattern": [column.regex_pattern],
+                            "nullable": [column.nullable],
+                            "sensitive": [column.sensitive],
+                        }
+                    )
+                )
+
+        return reference_tables
+
+    def output_opg_metadata_format(self) -> pd.DataFrame:
         """Combine the metadata for each table into a single dataframe.
 
         This is specifically to provide the metadata in a format required by OPG.
@@ -497,7 +552,7 @@ def output_metadata_as_csv(
 
     for database_name in metadata_files:
         metadata = load_metadata(metadata_path, database_name)
-        metadata_dfs.append(metadata.output_to_df())
+        metadata_dfs.append(metadata.output_opg_metadata_format())
 
     metadata_df = pd.concat(metadata_dfs)
 

@@ -1,5 +1,6 @@
 from logging import getLogger
 
+import polars as pl
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -19,7 +20,10 @@ log = ModuleLogger(logger=getLogger(__name__))
 
 
 class PipelineConfig(BaseModel):
-    """Pydantic model representing the pipeline configuration."""
+    """Pydantic model representing the pipeline configuration.
+
+    See design doc `designs/reference_data` on the documentation site for more details.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -28,6 +32,8 @@ class PipelineConfig(BaseModel):
     land_path: str
     archive_path: str
     curated_path: str
+    github_repo: str
+    data_cadence: str
 
     @field_validator("name")
     @classmethod
@@ -50,3 +56,14 @@ class PipelineConfig(BaseModel):
             raise exc.InvalidPathError(err)
 
         return value
+
+    def create_reference_table(self) -> pl.DataFrame:
+        """Create a reference table for the pipeline configuration."""
+        return pl.DataFrame(
+            {
+                "database_name": [self.name],
+                "description": [self.description],
+                "github_repo": [self.github_repo],
+                "data_cadence": [self.data_cadence],
+            }
+        )

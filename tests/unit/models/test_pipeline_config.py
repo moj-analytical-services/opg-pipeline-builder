@@ -12,6 +12,8 @@ def create_pipeline_config(
     land_path: str = "s3://bucket-name/{{ env }}/{{ db }}/land/table-name",
     archive_path: str = "s3://bucket-name/{{ env }}/{{ db }}/archive/table-name",
     curated_path: str = "s3://bucket-name/{{ env }}/{{ db }}/curated/table-name",
+    github_repo: str = "https://github.com/user/repo",
+    data_cadence: str = "daily",
 ) -> PipelineConfig:
     """Create a PipelineConfig instance with default or provided values."""
     return PipelineConfig(
@@ -20,6 +22,8 @@ def create_pipeline_config(
         land_path=land_path,
         archive_path=archive_path,
         curated_path=curated_path,
+        github_repo=github_repo,
+        data_cadence=data_cadence,
     )
 
 

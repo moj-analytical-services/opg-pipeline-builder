@@ -144,7 +144,7 @@ class TransformEngineUtils(BaseModel):
         files = self.list_table_files(stage=stage, table_name=table_name, **kwargs)
         primary_partition_name = self.db.primary_partition_name()
 
-        partitions = [
+        partitions: list[str | int] = [
             extract_mojap_partition(f, timestamp_partition_name=primary_partition_name)
             for f in files
         ]
@@ -287,7 +287,7 @@ class TransformEngineUtils(BaseModel):
         stages = stages or {"input": "raw_hist", "output": "curated"}
         transform_stage_args = {table_name: stages}
 
-        tf_args = self.db.transform_args([table_name], **transform_stage_args)
+        tf_args = self.db.transform_args([table_name], **transform_stage_args)  # type: ignore[arg-type]
 
         tf_type = tf_args["transforms"][table_name]["transform_type"]
         output_path = tf_args["transforms"][table_name]["output"]["path"]

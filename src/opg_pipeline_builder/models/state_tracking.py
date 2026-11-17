@@ -5,9 +5,10 @@ from typing import Literal
 from pydantic import BaseModel, ValidationInfo, field_validator
 
 from opg_pipeline_builder.constants import ALLOWED_STATUSES
+from opg_pipeline_builder.logging import ModuleLogger
 from opg_pipeline_builder.models.utils import field_name, table_name
 
-logger = getLogger(__name__)
+log = ModuleLogger(logger=getLogger(__name__), process="Settings validation")
 
 
 class DataDeliveryTracker(BaseModel):
@@ -27,7 +28,7 @@ class DataDeliveryTracker(BaseModel):
         """Validate that the status is one of the allowed statuses."""
         if value not in ALLOWED_STATUSES:
             err = f"Status '{value}' is not allowed. Must be one of {ALLOWED_STATUSES}."
-            logger.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table=table_name(info), field=field_name(info))
             raise ValueError(err)
         return value
 
@@ -50,7 +51,7 @@ class TableTracker(BaseModel):
         """Validate that the status is one of the allowed statuses."""
         if value not in ALLOWED_STATUSES:
             err = f"Status '{value}' is not allowed. Must be one of {ALLOWED_STATUSES}."
-            logger.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table=table_name(info), field=field_name(info))
             raise ValueError(err)
         return value
 
@@ -79,7 +80,7 @@ class FileTracker(BaseModel):
         """Validate that the status is one of the allowed statuses."""
         if value not in ALLOWED_STATUSES:
             err = f"Status '{value}' is not allowed. Must be one of {ALLOWED_STATUSES}."
-            logger.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table=table_name(info), field=field_name(info))
             raise ValueError(err)
         return value
 
@@ -108,7 +109,7 @@ class RunSourceFileTracker(BaseModel):
         """Validate that the status is one of the allowed statuses."""
         if value not in ALLOWED_STATUSES:
             err = f"Status '{value}' is not allowed. Must be one of {ALLOWED_STATUSES}."
-            logger.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table=table_name(info), field=field_name(info))
             raise ValueError(err)
         return value
 
@@ -138,12 +139,12 @@ class RunTracker(BaseModel):
         """Validate that the status is one of the allowed statuses."""
         if value not in ALLOWED_STATUSES:
             err = f"Status '{value}' is not allowed. Must be one of {ALLOWED_STATUSES}."
-            logger.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table=table_name(info), field=field_name(info))
             raise ValueError(err)
         return value
 
 
-def create_run_tracker(  # noqa: PLR0913, PLR0917
+def create_run_tracker(
     pipeline_name: str,
     data_delivery_period: datetime,
     attempt_no: int,
@@ -210,6 +211,6 @@ class MaintenanceRunTracker(BaseModel):
         """Validate that the status is one of the allowed statuses."""
         if value not in ALLOWED_STATUSES:
             err = f"Status '{value}' is not allowed. Must be one of {ALLOWED_STATUSES}."
-            logger.error(err, table=table_name(info), field=field_name(info))
+            log.error(err, table=table_name(info), field=field_name(info))
             raise ValueError(err)
         return value

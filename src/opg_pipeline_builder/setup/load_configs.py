@@ -36,9 +36,7 @@ def load_pipeline_config(configs_folder: Path, name: str) -> PipelineConfig:
         with (configs_folder / f"{name}.yml").open(encoding="utf-8") as config_file:
             config = yaml.safe_load(config_file)
     except yaml.YAMLError as exc:
-        log.error(  # noqa: TRY400
-            "Failed to parse configuration for pipeline '%s': %s", name, exc
-        )
+        log.error("Failed to parse configuration for pipeline '%s': %s", name, exc)
         raise
 
     pipeline_config = PipelineConfig(**config)

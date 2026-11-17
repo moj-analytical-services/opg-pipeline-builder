@@ -591,7 +591,7 @@ class TestLoggingConfig:
         ):
             log.LoggingConfig.model_validate(
                 create_config(
-                    data_delivery_period=datetime(2024, 1, 1, 12, 0),  # noqa: DTZ001
+                    data_delivery_period=datetime(2024, 1, 1, 12, 0),
                 )
             )
 
@@ -817,7 +817,7 @@ class TestJsonlLogHandler:
             try:
                 try:
                     err = "missing_column"
-                    raise KeyError(err)  # noqa: TRY301
+                    raise KeyError(err)
                 except KeyError as cause:
                     error = ValueError("bad row")
                     error.add_note("while loading table_a")
@@ -1330,8 +1330,9 @@ class TestJsonlLogHandler:
         """Dump remaining rows and raise without registration when the final flush fails."""
         handler = create_handler()
         handler._buffer = [{"A": "B"}]
+        assert handler._buffer == [{"A": "B"}]
 
-        with (  # noqa: PT012
+        with (
             patch.object(handler, "_locked") as locked,
             patch.object(handler, "_flush_locked") as flush,
             patch.object(handler, "_dump_unwritten_records") as dump,
@@ -1341,7 +1342,6 @@ class TestJsonlLogHandler:
                 RuntimeError, match=re.escape("Failed to write 1 log records to S3.")
             ),
         ):
-            assert handler._buffer == [{"A": "B"}]
             handler.close()
 
         locked.assert_called_once()
